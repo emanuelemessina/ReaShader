@@ -1,0 +1,6 @@
+﻿  Building Custom Rule D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/pluginterfaces/CMakeLists.txt
+  conststringtable.cpp
+  coreiids.cpp
+  funknown.cpp
+  ustring.cpp
+  pluginterfaces.vcxproj -> D:\Library\Coding\GitHub\_Reaper\ReaShader\build\lib\Debug\pluginterfaces.lib

@@ -1,0 +1,14 @@
+﻿  Building Custom Rule D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/vstgui4/vstgui/standalone/CMakeLists.txt
+  application.cpp
+  genericalertbox.cpp
+  shareduiresources.cpp
+  uidescriptionwindowcontroller.cpp
+  window.cpp
+  value.cpp
+  win32application.cpp
+  win32async.cpp
+  win32commondirectories.cpp
+  win32menu.cpp
+  win32preference.cpp
+  win32window.cpp
+  vstgui_standalone.vcxproj -> D:\Library\Coding\GitHub\_Reaper\ReaShader\build\lib\Debug\vstgui_standalone.lib

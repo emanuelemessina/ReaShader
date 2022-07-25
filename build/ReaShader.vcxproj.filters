@@ -1,0 +1,75 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\mypluginprocessor.cpp">
+      <Filter>Source Files\main</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\public.sdk\source\main\dllmain.cpp">
+      <Filter>Source Files\main</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\myplugincontroller.cpp">
+      <Filter>Source Files\main</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\mypluginentry.cpp">
+      <Filter>Source Files\main</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\vst-sdk-bundle\reaper-sdk\WDL\lice\lice.cpp">
+      <Filter>SDKs\wdl\lice</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\myplugincids.h">
+      <Filter>Source Files\main\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\myplugincontroller.h">
+      <Filter>Source Files\main\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\mypluginprocessor.h">
+      <Filter>Source Files\main\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\version.h">
+      <Filter>Source Files\main\headers</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\resource\myplugineditor.uidesc" />
+    <None Include="..\README.md">
+      <Filter>Repo Files</Filter>
+    </None>
+    <None Include="..\doc\vst_documentation_em.md">
+      <Filter>Repo Files</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{DF5E2250-3631-397A-8336-919B137180F0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Repo Files">
+      <UniqueIdentifier>{58147641-62c3-4443-8523-4d5fe31fb5d6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\main">
+      <UniqueIdentifier>{058f4e7a-d6fc-47d6-823f-3f54f5bd2449}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\main\headers">
+      <UniqueIdentifier>{8a6d95af-0d8f-4211-83d1-b70c8d0400a7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\others">
+      <UniqueIdentifier>{390e8025-df3d-411f-a7b8-a70ff2b09bf8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="SDKs">
+      <UniqueIdentifier>{03ebd4cd-dbec-4fa9-9ec9-4f3cbb0ab9d0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="SDKs\wdl">
+      <UniqueIdentifier>{b3017045-f263-42d9-96d8-e91258a9dfea}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="SDKs\wdl\lice">
+      <UniqueIdentifier>{54b75474-cd1c-4e94-a750-b6d27a75787f}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\resource\win32resource.rc" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,10 @@
+^D:\LIBRARY\CODING\GITHUB\_REAPER\VST-SDK-BUNDLE\VST3-SDK\VST3SDK\PUBLIC.SDK\SAMPLES\VST-HOSTING\INSPECTORAPP\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SD:/Library/Coding/GitHub/_Reaper/ReaShader -BD:/Library/Coding/GitHub/_Reaper/ReaShader/build --check-stamp-file D:/Library/Coding/GitHub/_Reaper/ReaShader/build/vst3sdk/public.sdk/samples/vst-hosting/inspectorapp/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

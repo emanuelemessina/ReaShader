@@ -1,0 +1,26 @@
+# CMake generation dependency list for this directory.
+C:/Program Files/CMake/share/cmake-3.24/Modules/CMakeParseArguments.cmake
+C:/Program Files/CMake/share/cmake-3.24/Modules/CMakePrintHelpers.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/CMakeLists.txt
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_AAXSupport.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_AddCommonOptions.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_AddSMTGLibrary.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_AddVST3Library.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_AddVST3Options.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_Bundle.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_CodeSign.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_ConfigureCmakeGenerator.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_CoreAudioSupport.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_CustomModuleTarget.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_DetectPlatform.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_ExportedSymbols.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_Global.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_PlatformIOS.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_PlatformToolset.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_Platform_Windows.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_PrefixHeader.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_SetDebugExecutable.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_SetupVST3LibraryDefaultPath.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_UniversalBinary.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_VST3_SDK.cmake
+D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/cmake/modules/SMTG_VstGuiSupport.cmake

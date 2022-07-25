@@ -1,0 +1,43 @@
+{
+  "Name": "",
+  "Version": "1.0.0.0",
+  "Factory Info": {
+    "Vendor": "Emanuele Messina",
+    "URL": "https://www.mycompanyname.com",
+    "E-Mail": "mailto:emanuelemessina.em@gmail.com",
+    "Flags": {
+      "Unicode": true,
+      "Classes Discardable": false,
+      "Component Non Discardable": false,
+    },
+  },
+  "Classes": [
+    {
+      "CID": "E0F1D00DC00B511782AD083BE3690071",
+      "Category": "Audio Module Class",
+      "Name": "ReaShader",
+      "Vendor": "Emanuele Messina",
+      "Version": "1.0.0.0",
+      "SDKVersion": "VST 3.7.5",
+      "Sub Categories": [
+        "Fx",
+      ],
+      "Class Flags": 1,
+      "Cardinality": 2147483647,
+      "Snapshots": [
+      ],
+    },
+    {
+      "CID": "BA5B52819C3559EAAC0EB279F509F17C",
+      "Category": "Component Controller Class",
+      "Name": "ReaShaderController",
+      "Vendor": "Emanuele Messina",
+      "Version": "1.0.0.0",
+      "SDKVersion": "VST 3.7.5",
+      "Class Flags": 0,
+      "Cardinality": 2147483647,
+      "Snapshots": [
+      ],
+    },
+  ],
+}
