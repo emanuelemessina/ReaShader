@@ -1,0 +1,7 @@
+﻿  Building Custom Rule D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/CMakeLists.txt
+  vst3groupcontroller.cpp
+  vst3padcontroller.cpp
+  vst3editor.cpp
+  vstguieditor.cpp
+  vstgui_win32_bundle_support.cpp
+  vstgui_support.vcxproj -> D:\Library\Coding\GitHub\_Reaper\ReaShader\build\lib\Release\vstgui_support.lib

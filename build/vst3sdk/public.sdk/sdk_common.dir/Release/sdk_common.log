@@ -1,0 +1,8 @@
+﻿  Building Custom Rule D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/public.sdk/CMakeLists.txt
+  commoniids.cpp
+  openurl.cpp
+  systemclipboard_win32.cpp
+  threadchecker_linux.cpp
+  threadchecker_win32.cpp
+  vstpresetfile.cpp
+  sdk_common.vcxproj -> D:\Library\Coding\GitHub\_Reaper\ReaShader\build\lib\Release\sdk_common.lib

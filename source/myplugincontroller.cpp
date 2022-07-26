@@ -27,7 +27,7 @@ namespace ReaShader {
 
 		// Here you could register some parameters
 
-		parameters.addParameter(STR16("Gain"), STR16("dB"), 0, .5, Vst::ParameterInfo::kCanAutomate, ReaShaderParamIds::uAudioGain);
+		parameters.addParameter(STR16("Audio Gain"), STR16("dB"), 0, .5, Vst::ParameterInfo::kCanAutomate, ReaShaderParamIds::uAudioGain);
 		parameters.addParameter(STR16("Video Param"), STR16("units"), 0, .5, Vst::ParameterInfo::kCanAutomate, ReaShaderParamIds::uVideoParam);
 
 		return result;
@@ -89,6 +89,7 @@ namespace ReaShader {
 		{
 			// create your editor here and return a IPlugView ptr of it
 			auto* view = new VSTGUI::VST3Editor(this, "view", "myplugineditor.uidesc");
+
 			return view;
 		}
 		return nullptr;

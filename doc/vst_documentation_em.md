@@ -7,38 +7,70 @@ _by Emanuele Messina_
 
 <br>
 
-## Preliminary
+## **Preliminary**
 
 <br>
 
-### Solution starting properties
+### <span style="color:lightgreen">Solution custom property sheet</span>
 
-1. Output Directory: `$(MSBuildProjectDirectory)\VST3\$(Configuration)\$(PlatformTarget)`
-2. Intermediate Directory: `$(OutDir)\intermediate`
+<br>
+
+Define the following macros in a custom property sheet:
+
+- TargetBuildDir : `$(MSBuildProjectDirectory)\VST3\$(Configuration)\$(PlatformTarget)` (output files main directory)
+- VST3BundleOutDir : `$(TargetBuildDir)\$(ProjectName).vst3` (folder where all the compiled vst3 files will reside, this is the folder to be deployed)
+
+<br>
+
+### <span style="color:lightgreen">Solution properties overrides</span>
+
+<br>
+
+1. Output Directory: `$(VST3BundleOutDir)\win-$(PlatformTarget)` (Folder of the compiled .vst3 file. The compiled .vst3 file needs to reside in a subfolder next to Resources and moduleinfo.json)
+2. Intermediate Directory: `$(TargetBuildDir)\intermediate` (intermediate files, will be next to the deploy folder)
 3. Debug command: `$(ReaperDir)\reaper.exe` , Attach: `yes`
 4. Additional include directories: `$(MSBuildProjectDirectory)` and vst3sdk path (ok if absolute)
-5. Generate Program Database File: `$(MSBuildProjectDirectory)\WIN_PDB64\Debug\ReaShader.pdb`
+5. Generate Program Database File: `$(MSBuildProjectDirectory)\WIN_PDB64\$(Configuration)\ReaShader.pdb`
+5. Import Library: `$(MSBuildProjectDirectory)\lib\$(Configuration)\ReaShader.lib`
+5. Resources Additional Include Directories: same as C++ Additional Include Directories
+5. Preprocessor Definitions
+	- DEBUG:
+		```
+		%(PreprocessorDefinitions)
+		WIN32
+		_DEBUG
+		_WINDOWS
+		SMTG_RENAME_ASSERT=1
+		DEVELOPMENT=1
+		_UNICODE
+		VSTGUI_LIVE_EDITING=1
+		VSTGUI_ENABLE_DEPRECATED_METHODS=1
+		SMTG_MODULE_IS_BUNDLE=1
+		CMAKE_INTDIR=\"Debug\"
+		$(TargetName)_EXPORTS
+		```
+	- RELEASE:
+		```
+		%(PreprocessorDefinitions)
+		WIN32
+		_WINDOWS
+		NDEBUG
+		SMTG_RENAME_ASSERT=1
+		RELEASE=1
+		_UNICODE
+		VSTGUI_ENABLE_DEPRECATED_METHODS=1
+		SMTG_MODULE_IS_BUNDLE=1
+		CMAKE_INTDIR=\"Release\"
+		$(TargetName)_EXPORTS
+		```
 6. Pre-Link Event:
 ```bat
 setlocal
-"C:\Program Files\CMake\bin\cmake.exe" -E make_directory $(OutDir)Contents\Resources
+"C:\Program Files\CMake\bin\cmake.exe" -E make_directory $(VST3BundleOutDir)\Resources
 if %errorlevel% neq 0 goto :cmEnd
-"C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different D:/Library/Coding/GitHub/_Reaper/ReaShader/resource/myplugineditor.uidesc $(OutDir)Contents\Resources
+"C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different $(MSBuildProjectDirectory)\..\resource\myplugineditor.uidesc $(VST3BundleOutDir)\Resources
 if %errorlevel% neq 0 goto :cmEnd
-"C:\Program Files\CMake\bin\cmake.exe" -E echo "[SMTG] Copied resource/myplugineditor.uidesc to $(OutDir)Contents\Resources"
-if %errorlevel% neq 0 goto :cmEnd
-:cmEnd
-endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
-:cmErrorLevel
-exit /b %1
-:cmDone
-if %errorlevel% neq 0 goto :VCEnd
-setlocal
-"C:\Program Files\CMake\bin\cmake.exe" -E make_directory $(OutDir)\Contents\Resources\Snapshots
-if %errorlevel% neq 0 goto :cmEnd
-"C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different D:/Library/Coding/GitHub/_Reaper/ReaShader/resource/E0F1D00DC00B511782AD083BE3690071_snapshot.png $(OutDir)\Contents\Resources\Snapshots
-if %errorlevel% neq 0 goto :cmEnd
-"C:\Program Files\CMake\bin\cmake.exe" -E echo "[SMTG] Copied resource/E0F1D00DC00B511782AD083BE3690071_snapshot.png to $(OutDir)\Contents\Resources\Snapshots"
+"C:\Program Files\CMake\bin\cmake.exe" -E echo "[SMTG] Copied resource/myplugineditor.uidesc to $(VST3BundleOutDir)\Resources"
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
@@ -47,11 +79,24 @@ exit /b %1
 :cmDone
 if %errorlevel% neq 0 goto :VCEnd
 setlocal
-"C:\Program Files\CMake\bin\cmake.exe" -E make_directory $(OutDir)\Contents\Resources\Snapshots
+"C:\Program Files\CMake\bin\cmake.exe" -E make_directory $(VST3BundleOutDir)\Resources\Snapshots
 if %errorlevel% neq 0 goto :cmEnd
-"C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different D:/Library/Coding/GitHub/_Reaper/ReaShader/resource/E0F1D00DC00B511782AD083BE3690071_snapshot_2.0x.png $(OutDir)\Contents\Resources\Snapshots
+"C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different $(MSBuildProjectDirectory)\..\resource\E0F1D00DC00B511782AD083BE3690071_snapshot.png $(VST3BundleOutDir)\Resources\Snapshots
 if %errorlevel% neq 0 goto :cmEnd
-"C:\Program Files\CMake\bin\cmake.exe" -E echo "[SMTG] Copied resource/E0F1D00DC00B511782AD083BE3690071_snapshot_2.0x.png to $(OutDir)\Contents\Resources\Snapshots"
+"C:\Program Files\CMake\bin\cmake.exe" -E echo "[SMTG] Copied resource/E0F1D00DC00B511782AD083BE3690071_snapshot.png to $(VST3BundleOutDir)\Resources\Snapshots"
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -E make_directory $(VST3BundleOutDir)\Resources\Snapshots
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different  $(MSBuildProjectDirectory)\..\resource\E0F1D00DC00B511782AD083BE3690071_snapshot_2.0x.png $(VST3BundleOutDir)\Resources\Snapshots
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E echo "[SMTG] Copied resource/E0F1D00DC00B511782AD083BE3690071_snapshot_2.0x.png to $(VST3BundleOutDir)\Resources\Snapshots"
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
@@ -63,11 +108,11 @@ if %errorlevel% neq 0 goto :VCEnd
 7. Post-Build Event:
 ```bat
 setlocal
-cd D:\Library\Coding\GitHub\_Reaper\ReaShader\build\bin
+cd $(MSBuildProjectDirectory)\bin
 if %errorlevel% neq 0 goto :cmEnd
 D:
 if %errorlevel% neq 0 goto :cmEnd
-D:\Library\Coding\GitHub\_Reaper\ReaShader\build\bin\Debug\moduleinfotool.exe -create -version 1.0.0.0 -path $(OutDir)$(TargetFileName) -output $(OutDir)Contents\moduleinfo.json
+ $(MSBuildProjectDirectory)\bin\Debug\moduleinfotool.exe -create -version 1.0.0.0 -path $(TargetPath) -output $(VST3BundleOutDir)\moduleinfo.json
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
@@ -76,13 +121,13 @@ exit /b %1
 :cmDone
 if %errorlevel% neq 0 goto :VCEnd
 setlocal
-cd D:\Library\Coding\GitHub\_Reaper\ReaShader\build\bin
+cd $(MSBuildProjectDirectory)\bin
 if %errorlevel% neq 0 goto :cmEnd
 D:
 if %errorlevel% neq 0 goto :cmEnd
 echo [SMTG] Validator started...
 if %errorlevel% neq 0 goto :cmEnd
-D:\Library\Coding\GitHub\_Reaper\ReaShader\build\bin\Debug\validator.exe $(OutDir)\ReaShader.vst3
+$(MSBuildProjectDirectory)\bin\Debug\validator.exe $(TargetPath)
 if %errorlevel% neq 0 goto :cmEnd
 echo [SMTG] Validator finished.
 if %errorlevel% neq 0 goto :cmEnd
@@ -99,7 +144,7 @@ if %errorlevel% neq 0 goto :cmEnd
 if %errorlevel% neq 0 goto :cmEnd
 echo [SMTG] Creation of the new link...
 if %errorlevel% neq 0 goto :cmEnd
-:: # line commented out-># mklink /D C:\Users\emanuele\AppData\Local\Programs\Common\VST3\ReaShader.vst3 D:\Library\Coding\GitHub\_Reaper\ReaShader\build\VST3\Debug\ReaShader.vst3 
+:: # line commented out-># mklink /D C:\Users\emanuele\AppData\Local\Programs\Common\VST3\ReaShader.vst3 $(VST3BundleOutDir)
 if %errorlevel% neq 0 goto :cmEnd
 echo [SMTG] Finished.
 if %errorlevel% neq 0 goto :cmEnd
@@ -111,29 +156,39 @@ exit /b %1
 if %errorlevel% neq 0 goto :VCEnd
 ```
 
-### TODOs
+### <span style="color:lightgreen">TODOs</span>
 
 8. Organize subfolders in solution
 
 <br>
 
-## Project structure
+---
 
 <br>
 
-### VST Info
+## **Project structure**
+
+<br>
+
+### <span style="color:lightgreen">VST Info</span>
 
 - `version.h`: file and legal
 - `mypluginentry.cpp`: plugin and developer
+	- plugin display name (eg. can be changed depending on release/debug)
+- `CMakeLists.txt`: version number and mac bundle
 
-### Main files
+### <span style="color:lightgreen">Main files</span>
 
 - `myplugincontroller.cpp`: communication with the DAW, handling parameters and the UI.
 - `mypluginprocessor.cpp`: processing and persistence.
 - `win32resource.rc`: resources file.
 - `myplugincids.h`: various ids (the parameter ids enum can be put here). 
 
-### Parameters
+<br>
+
+### <span style="color:lightgreen">Parameters</span>
+
+<br>
 
 Parameters enum can be declared in `myplugincids.h`:
 ```c++
@@ -146,13 +201,24 @@ Parameters enum can be declared in `myplugincids.h`:
 		uNumParams
 	};
 ```
-Then a map can be declared in `mypluginprocessor.h` to allocate the internal variables and init with defaults:
+Then a map can be declared inside the Processor class inside `mypluginprocessor.h` to allocate the internal variables and init with defaults:
 ```c++
-std::map<Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue> rParams = {
+std::map<Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue> rParams
+```
+> Can be typedef'd for convenience: 
+>```c++
+>	typedef std::map<Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue> rParamsMap;
+>	...
+>	rParamsMap rParams;
+>```
+Then initialized in the Processor constructor with default values:
+```c++
+ rParams = {
 			{ReaShaderParamIds::uAudioGain, 1.f},
 			{ReaShaderParamIds::uVideoParam, 0.5f}
 		};
 ```
+
 Simple `setState` and `getState` from the Processor:
 ```c++
 	tresult PLUGIN_API ReaShaderProcessor::setState(IBStream* state)
@@ -220,13 +286,16 @@ Parameters are registered in the controller `initialize` method:
 
 <br>
 
-## FUnknown
+---
 
 <br>
 
-Convenient snippets and doc collected while wandering through the sdk files...
+## **FUnknown**
 
----
+<br>
+
+_Convenient snippets and doc collected while wandering through the sdk files..._
+
 <br>
 
 
@@ -258,11 +327,15 @@ The SDK provides a class called FUID for this purpose.
 
 <br>
 
-## Reaper aware VST
+---
 
 <br>
 
-### API Connection
+## **Reaper aware VST**
+
+<br>
+
+### <span style="color:lightgreen">API Connection</span>
 
 <br>
 
@@ -271,6 +344,8 @@ The SDK provides a class called FUID for this purpose.
 <br>
 
 #### VST 2.4
+
+<br>
 
 The context call must be made inside or after `effOpen` dispatcher event, otherwise the returned context will be null.
 Careful also to pass a non-empty/correctly-initialized `m_effect` object, otherwise the returned context will be null anywhere.
@@ -291,6 +366,8 @@ Then it can be fed to api functions obtained with another audioMaster call, eg:
  ```
 
 #### VST3
+
+<br>
 
 The audioMasterCallback does not exist anymore. Reaper API must be queried through the appropriate vst3 interface declared in `reaper_vst3_interfaces.h`.
 To ensure that the Reaper Host Context is initialized, the call can be made in the Processor `setActive` method.
@@ -317,14 +394,114 @@ tresult PLUGIN_API ReaShaderProcessor::setActive(TBool state){
             // feed ctx to reaper api function
             m_videoproc = video_CreateVideoProcessor(ctx, IREAPERVideoProcessor::REAPER_VIDEO_PROCESSOR_VERSION);
         }
-
+	}
+	else {
+		delete m_videoproc; // --> not sure about memory leak otherwise (terminate or destructor do not work if put there), also makes validator fail
+	}
     ...
-    
+}
 ```
 
-### As a video processor
+<br>
 
-#### IVideoFrame
+**IMPORTANT**: make sure to free Reaper API objects as soon as possible otherwise Reaper will crash on VST removal.
+
+*Remarks*: `validator.exe` crashes with `delete m_videoproc` for some reason. Comment the validator out in the post-build event command.
+
+<br>
+
+---
+
+<br>
+
+## **IREAPERVideoProcessor</span>**
+
+<br>
+
+After creating the video processor from `video_CreateVideoProcessor`, the callbacks pointers need to be set.
+<br>
+They need to be static methods, otherwise there will be a hell of pointer-type conversion errors.
+<br>
+The problem is to pass data between the current Processor instance (the one who instantiated the IREAPERVideoProcessor) and the video processor.
+<br>
+First thing first, it is crucial to make the video processor point to the rParams (internal processor param state map), but also other data can be pass if userdata is made to point to an array of pointers.
+<br>
+Fortunately, the IREAPERVideoProcessor class specifies a `void* userdata` pointer that can be set to point to some data in the current Processor instance.
+
+<br>
+
+### <span style="color:lightgreen">RSData</span>
+
+<br>
+
+`RSData` is a helper class that does just that.
+
+<br>
+
+>Eg. we want to pass a `myColor` to the video processor (in addition to the rParams).
+
+<br>
+
+Declare the `RSData` object in the Processor, in addition to the rParamsMap:
+```c++
+	rParamsMap rParams;
+	RSData* m_data;
+
+	...
+
+	int myColor {5}; // we want to pass this to the video processor
+```
+In the Processor constructor, initialize the `RSData` object with how many items needed to pass:
+```c++
+	m_data = new RSData(2);
+```
+Then push the item pointers (do not exceed the initial items size specified, `push` actually returs null in that case):
+```c++
+	m_data->push(&rParams);
+	m_data->push(&myColor);
+```
+When the video processor is created, pass the `RSData` object instance:
+```c++
+	m_videoproc->userdata = m_data;
+```
+
+<br>
+
+Now the items can be retrieved from the static callbacks (eg):
+```c++
+bool getVideoParam(IREAPERVideoProcessor* vproc, int idx, double* valueOut)
+{
+	// called from video thread, gets current state
+
+	if (idx >= 0 && idx < ReaShader::uNumParams)
+	{
+		RSData* rsData = (RSData*)vproc->userdata; // cast as RSData instance
+
+		// directly pass parameters to the video processor
+
+		*valueOut = (*(rParamsMap*)rsData->get(0)).at(idx);
+		// get the first item (rParams map) , cast as wanted type (in this case we know it's rParamsMap)
+		
+		return true;
+	}
+	return false;
+}
+
+IVideoFrame* processVideoFrame(IREAPERVideoProcessor* vproc, const double* parmlist, int nparms, double project_time, double frate, int force_format)
+{
+	...
+	RSData* rsData = (RSData*)vproc->userdata; // cast as RSData instance
+	...
+	int thatColor = *(int*)rsData->get(1) // myColor was pushed as second item
+	...
+}
+```
+
+<br>
+
+### <span style="color:lightgreen">IVideoFrame</span>
+
+<br>
 
 `IVideoFrame` is actually very similar to a `LICE_IBitmap`.
 In fact, a `LICE_IBitmap` can be constructed from an `IVideoFrame`, provided that we render it with `RGBA` color format.

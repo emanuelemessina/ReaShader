@@ -10,7 +10,11 @@
 
 #include "public.sdk/source/main/pluginfactory.h"
 
+#ifdef RELEASE
 #define stringPluginName "ReaShader"
+#else
+#define stringPluginName "ReaShader (DEBUG)"
+#endif
 
 using namespace Steinberg::Vst;
 using namespace ReaShader;
@@ -23,7 +27,7 @@ using namespace ReaShader;
 //------------------------------------------------------------------------
 
 BEGIN_FACTORY_DEF("Emanuele Messina",
-	"https://www.mycompanyname.com",
+	"https://www.linkedin.com/in/emanuelemessinadev/",
 	"mailto:emanuelemessina.em@gmail.com")
 
 	//---First Plug-in included in this factory-------

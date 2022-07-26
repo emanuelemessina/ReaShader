@@ -16,6 +16,9 @@
     <ClCompile Include="..\..\vst-sdk-bundle\reaper-sdk\WDL\lice\lice.cpp">
       <Filter>SDKs\wdl\lice</Filter>
     </ClCompile>
+    <ClCompile Include="mptorpdata.cpp">
+      <Filter>Source Files\others</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\myplugincids.h">
@@ -30,14 +33,22 @@
     <ClInclude Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\version.h">
       <Filter>Source Files\main\headers</Filter>
     </ClInclude>
+    <ClInclude Include="..\resource\resource.h">
+      <Filter>Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="mptorpdata.h">
+      <Filter>Source Files\others</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\resource\myplugineditor.uidesc" />
     <None Include="..\README.md">
       <Filter>Repo Files</Filter>
     </None>
     <None Include="..\doc\vst_documentation_em.md">
       <Filter>Repo Files</Filter>
+    </None>
+    <None Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\resource\myplugineditor.uidesc">
+      <Filter>Resources</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
@@ -65,11 +76,33 @@
     <Filter Include="SDKs\wdl\lice">
       <UniqueIdentifier>{54b75474-cd1c-4e94-a750-b6d27a75787f}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Resources">
+      <UniqueIdentifier>{9f4a24f2-621e-4b7c-b6ad-3c125a496543}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Resources\images">
+      <UniqueIdentifier>{20dea387-6a56-4907-ae6d-e79bf1dc0ab0}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\CMakeLists.txt" />
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\resource\win32resource.rc" />
+    <Image Include="..\src\background.png">
+      <Filter>Resources\images</Filter>
+    </Image>
+    <Image Include="..\src\fader-body.png">
+      <Filter>Resources\images</Filter>
+    </Image>
+    <Image Include="..\src\fader-handle.png">
+      <Filter>Resources\images</Filter>
+    </Image>
+    <Image Include="..\src\reashader text.png">
+      <Filter>Resources\images</Filter>
+    </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\resource\win32resource.rc">
+      <Filter>Resources</Filter>
+    </ResourceCompile>
   </ItemGroup>
 </Project>

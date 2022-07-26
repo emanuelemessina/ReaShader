@@ -12,12 +12,16 @@
 
 #include "reaper_vst3_interfaces.h"
 
+#include <stdlib.h>     /* srand, rand */
+#include <time.h>       /* time */
+
+#include "mptorpdata.h"
+
 using namespace Steinberg;
 
 namespace ReaShader {
 
 	// global definitions but only used in this file
-	ReaShaderProcessor* rspInstance;
 	IVideoFrame* processVideoFrame(IREAPERVideoProcessor* vproc, const double* parmlist, int nparms, double project_time, double frate, int force_format);
 	bool getVideoParam(IREAPERVideoProcessor* vproc, int idx, double* valueOut);
 
@@ -29,12 +33,31 @@ namespace ReaShader {
 		//--- set the wanted controller for our processor
 		setControllerClass(kReaShaderControllerUID);
 
-		rspInstance = this;
+		// Set parameters defaults
+		rParams = {
+			{ReaShaderParamIds::uAudioGain, 1.f},
+			{ReaShaderParamIds::uVideoParam, 0.5f}
+		};
+
+		srand(time(NULL));
+
+		myColor = rand() % 0xffffff | (0xff0000);
+
+		//m_data = (int**)malloc(sizeof(int*) * 2);
+		m_data = new RSData(2);
+
+		m_data->push(&rParams);
+		m_data->push(&myColor);
+
+		/*m_data[0] = (int*)&(rParams);
+		m_data[1] = (int*)&myColor;*/
 	}
 
 	//------------------------------------------------------------------------
 	ReaShaderProcessor::~ReaShaderProcessor()
-	{}
+	{
+
+	}
 
 	//------------------------------------------------------------------------
 	tresult PLUGIN_API ReaShaderProcessor::initialize(FUnknown* context)
@@ -97,13 +120,16 @@ namespace ReaShader {
 						m_videoproc = video_CreateVideoProcessor(ctx, IREAPERVideoProcessor::REAPER_VIDEO_PROCESSOR_VERSION);
 						if (m_videoproc)
 						{
-							m_videoproc->userdata = this;
+							m_videoproc->userdata = m_data;
 							m_videoproc->process_frame = processVideoFrame;
 							m_videoproc->get_parameter_value = getVideoParam;
 						}
 					}
 				}
 			}
+		}
+		else {
+			delete m_videoproc; // --> !!MUST!! OTHERWISE MEMORY ACCESS VIOLATION (terminate or destructor do not work)
 		}
 
 		return AudioEffect::setActive(state);
@@ -198,9 +224,12 @@ namespace ReaShader {
 
 			LICE_WrapperBitmap* bitmap = new LICE_WrapperBitmap((LICE_pixel*)bits, w, h, w, false);
 
+			RSData* rsData = (RSData*)vproc->userdata;
+
 			for (int y = 0; y < parmlist[uVideoParam + 1] * h; y++) {
 				for (int x = 0; x < w; x++) {
-					LICE_PutPixel(bitmap, x, y, 0xffffff, 0xff, LICE_BLIT_MODE_ADD);
+					//LICE_PutPixel(bitmap, x, y, *((int*)(((int**)vproc->userdata)[1])), 0xff, LICE_BLIT_MODE_COPY);
+					LICE_PutPixel(bitmap, x, y, *(int*)rsData->get(1), 0xff, LICE_BLIT_MODE_COPY);
 				}
 			}
 
@@ -271,15 +300,16 @@ namespace ReaShader {
 	{
 		// called from video thread, gets current state
 
-		if (idx >= 0 && idx < uNumParams)
+		if (idx >= 0 && idx < ReaShader::uNumParams)
 		{
+			RSData* rsData = (RSData*)vproc->userdata;
 			// directly pass parameters to the video processor
-			*valueOut = rspInstance->rParams.at(idx);
+			//*valueOut = (*((std::map<Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue>*) (((int**)vproc->userdata)[0]))).at(idx);
+			*valueOut = (*(rParamsMap*)rsData->get(0)).at(idx);
 
 			return true;
 		}
 		return false;
 	}
-
 
 } // namespace ReaShader

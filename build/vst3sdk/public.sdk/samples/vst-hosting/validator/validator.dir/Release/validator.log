@@ -1,0 +1,185 @@
+﻿  Building Custom Rule D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/public.sdk/samples/vst-hosting/validator/CMakeLists.txt
+  memorystream.cpp
+  moduleinit.cpp
+  moduleinfoparser.cpp
+  connectionproxytest.cpp
+  eventlisttest.cpp
+  hostclassestest.cpp
+  parameterchangestest.cpp
+  pluginterfacesupporttest.cpp
+  processdatatest.cpp
+  plugprovider.cpp
+  busactivation.cpp
+  busconsistency.cpp
+  businvalidindex.cpp
+  checkaudiobusarrangement.cpp
+  scanbusses.cpp
+  sidechainarrangement.cpp
+  editorclasses.cpp
+  midilearn.cpp
+  midimapping.cpp
+  plugcompat.cpp
+  scanparameters.cpp
+  suspendresume.cpp
+  terminit.cpp
+  keyswitch.cpp
+  noteexpression.cpp
+  automation.cpp
+  process.cpp
+  processcontextrequirements.cpp
+  processformat.cpp
+  processinputoverwriting.cpp
+  processtail.cpp
+  processthreaded.cpp
+  silenceflags.cpp
+  silenceprocessing.cpp
+  speakerarrangement.cpp
+  variableblocksize.cpp
+  bypasspersistence.cpp
+  invalidstatetransition.cpp
+  repeatidenticalstatetransition.cpp
+  validstatetransition.cpp
+  testbase.cpp
+  checkunitstructure.cpp
+  scanprograms.cpp
+  scanunits.cpp
+  vsttestsuite.cpp
+  testing.cpp
+  main.cpp
+  usediids.cpp
+  validator.cpp
+  module_win32.cpp
+  validator.vcxproj -> D:\Library\Coding\GitHub\_Reaper\ReaShader\build\bin\Release\validator.exe
+  Running validator selftest:
+  
+  [ConnectionProxy: Connect and disconnect]
+  [Succeeded]
+  
+  [ConnectionProxy: Disconnect wrong object]
+  [Succeeded]
+  
+  [ConnectionProxy: Send message on UI thread]
+  [Succeeded]
+  
+  [ConnectionProxy: Send message on 2nd thread]
+  [Succeeded]
+  
+  [EventList: Set and get single event]
+  [Succeeded]
+  
+  [EventList: Count events]
+  [Succeeded]
+  
+  [EventList: Overflow]
+  [Succeeded]
+  
+  [EventList: Get unknown event]
+  [Succeeded]
+  
+  [EventList: Resize]
+  [Succeeded]
+  
+  [HostApplication: Create instance of IAttributeList]
+  [Succeeded]
+  
+  [HostApplication: Create instance of IMessage]
+  [Succeeded]
+  
+  [HostAttributeList: Int]
+  [Succeeded]
+  
+  [HostAttributeList: Float]
+  [Succeeded]
+  
+  [HostAttributeList: String]
+  [Succeeded]
+  
+  [HostAttributeList: Binary]
+  [Succeeded]
+  
+  [HostAttributeList: Multiple Set]
+  [Succeeded]
+  
+  [ParameterValueQueue: Set paramID]
+  [Succeeded]
+  
+  [ParameterValueQueue: Set/get point]
+  [Succeeded]
+  
+  [ParameterValueQueue: Set/get multiple points]
+  [Succeeded]
+  
+  [ParameterValueQueue: Ordered points]
+  [Succeeded]
+  
+  [ParameterValueQueue: Clear]
+  [Succeeded]
+  
+  [ParameterChanges: Parameter count]
+  [Succeeded]
+  
+  [ParameterChanges: Clear queue]
+  [Succeeded]
+  
+  [ParameterChanges: Increase max parameters]
+  [Succeeded]
+  
+  [ParameterChanges: Get parameter data]
+  [Succeeded]
+  
+  [ParameterChangeTransfer: Add/get change]
+  [Succeeded]
+  
+  [ParameterChangeTransfer: Remove changes]
+  [Succeeded]
+  
+  [ParameterChangeTransfer: Transfer changes to]
+  [Succeeded]
+  
+  [ParameterChangeTransfer: Transfer changes from]
+  [Succeeded]
+  
+  [PlugInterfaceSupport: Initial interfaces]
+  [Succeeded]
+  
+  [PlugInterfaceSupport: Add interface]
+  [Succeeded]
+  
+  [PlugInterfaceSupport: Remove interface]
+  [Succeeded]
+  
+  [HostProcessData: No bus]
+  [Succeeded]
+  
+  [HostProcessData: 1 out bus no channels]
+  [Succeeded]
+  
+  [HostProcessData: 1 out bus 2 channels]
+  [Succeeded]
+  
+  [HostProcessData: 1 in & out bus 2 channels]
+  [Succeeded]
+  
+  [HostProcessData: 2 in & out bus dif channels]
+  [Succeeded]
+  
+  [HostProcessData: Set all channel buffers 32]
+  [Succeeded]
+  
+  [HostProcessData: Set all channel buffers 64]
+  [Succeeded]
+  
+  [HostProcessData: Set individual channel buffers 32]
+  [Succeeded]
+  
+  [HostProcessData: Set individual channel buffers 32 combined]
+  [Succeeded]
+  
+  [HostProcessData: Set individual channel buffers 64]
+  [Succeeded]
+  
+  [HostProcessData: Set individual channel buffers 64 combined]
+  [Succeeded]
+  
+  Executed 43 Tests.
+  0 failed test(s).

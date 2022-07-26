@@ -10,7 +10,6 @@
 #include "pluginterfaces/base/funknown.h"
 #include "pluginterfaces/vst/vsttypes.h"
 
-
 namespace ReaShader {
 	//------------------------------------------------------------------------
 	static const Steinberg::FUID kReaShaderProcessorUID(0xE0F1D00D, 0xC00B5117, 0x82AD083B, 0xE3690071);

@@ -11,9 +11,13 @@
 
 #include "video_processor.h"
 
+#include "mptorpdata.h"
+
 using namespace Steinberg;
 
 namespace ReaShader {
+
+	typedef std::map<Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue> rParamsMap;
 
 	//------------------------------------------------------------------------
 	//  ReaShaderProcessor
@@ -59,15 +63,18 @@ namespace ReaShader {
 
 		friend class ReaShaderController;
 
-		std::map<Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue> rParams = {
-			{ReaShaderParamIds::uAudioGain, 1.f},
-			{ReaShaderParamIds::uVideoParam, 0.5f}
-		};
+	protected:
 
 		FUnknown* context;
 		IREAPERVideoProcessor* m_videoproc;
-	};
 
-	//------------------------------------------------------------------------
+		rParamsMap rParams;
+		RSData* m_data;
+
+	private:
+
+		int myColor;
+
+	};
 
 } // namespace ReaShader

@@ -1,0 +1,13 @@
+﻿  Building Custom Rule D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/base/CMakeLists.txt
+  baseiids.cpp
+  fbuffer.cpp
+  fdebug.cpp
+  fdynlib.cpp
+  fobject.cpp
+  fstreamer.cpp
+  fstring.cpp
+  timer.cpp
+  updatehandler.cpp
+  fcondition.cpp
+  flock.cpp
+  base.vcxproj -> D:\Library\Coding\GitHub\_Reaper\ReaShader\build\lib\Release\base.lib
