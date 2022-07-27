@@ -398,6 +398,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\mypluginentry.cpp" />
     <ClCompile Include="D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\public.sdk\source\main\dllmain.cpp" />
     <ClInclude Include="mptorpdata.h" />
+    <ClInclude Include="uimsgcontroller.h" />
     <None Include="..\doc\vst_documentation_em.md" />
     <None Include="..\README.md" />
     <None Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\resource\myplugineditor.uidesc">

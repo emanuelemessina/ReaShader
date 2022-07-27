@@ -13,7 +13,10 @@
 
 #include "mptorpdata.h"
 
+#include "pluginterfaces/vst/ivstmessage.h"
+
 using namespace Steinberg;
+using namespace Vst;
 
 namespace ReaShader {
 
@@ -62,6 +65,11 @@ namespace ReaShader {
 		//------------------------------------------------------------------------
 
 		friend class ReaShaderController;
+
+		/** We want to receive message. */
+		Steinberg::tresult PLUGIN_API notify(Vst::IMessage* message) SMTG_OVERRIDE;
+		/** Test of a communication channel between controller and component */
+		tresult receiveText(const char* text) SMTG_OVERRIDE;
 
 	protected:
 

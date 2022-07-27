@@ -38,7 +38,7 @@
 				"SplitViewSize_1_1": "0.5173333333333333117209917872969526797533",
 				"SplitViewSize_2_0": "0.5659340659340659218656810480752028524876",
 				"SplitViewSize_2_1": "0.4294871794871794601355929899000329896808",
-				"TabSwitchValue": "4",
+				"TabSwitchValue": "0",
 				"UI Theme": "Dark",
 				"Version": "1",
 				"WriteRCFile": "true"
@@ -48,7 +48,7 @@
 			},
 			"UIAttributesController": {},
 			"UIViewCreatorDataSource": {
-				"SelectedRow": "30"
+				"SelectedRow": "10"
 			},
 			"UIBitmapsDataSource": {
 				"SelectedRow": "3"
@@ -256,6 +256,17 @@
 									"wheel-inc-value": "0.1"
 								}
 							}
+						}
+					},
+					"Message View": {
+						"attributes": {
+							"class": "Message View",
+							"mouse-enabled": "true",
+							"opacity": "1",
+							"origin": "480, 290",
+							"size": "100, 100",
+							"transparent": "false",
+							"wants-focus": "false"
 						}
 					}
 				}

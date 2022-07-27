@@ -17,7 +17,7 @@
       <Filter>SDKs\wdl\lice</Filter>
     </ClCompile>
     <ClCompile Include="mptorpdata.cpp">
-      <Filter>Source Files\others</Filter>
+      <Filter>Source Files\others\mptorpodata</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -37,7 +37,10 @@
       <Filter>Resources</Filter>
     </ClInclude>
     <ClInclude Include="mptorpdata.h">
-      <Filter>Source Files\others</Filter>
+      <Filter>Source Files\others\mptorpodata</Filter>
+    </ClInclude>
+    <ClInclude Include="uimsgcontroller.h">
+      <Filter>Source Files\others\ruicontrollers</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -81,6 +84,12 @@
     </Filter>
     <Filter Include="Resources\images">
       <UniqueIdentifier>{20dea387-6a56-4907-ae6d-e79bf1dc0ab0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\others\mptorpodata">
+      <UniqueIdentifier>{d3f8e5c0-d08b-4402-8144-9706ca22f61a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\others\ruicontrollers">
+      <UniqueIdentifier>{92799ff5-caef-4a4c-a278-e74ff97fb60f}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
