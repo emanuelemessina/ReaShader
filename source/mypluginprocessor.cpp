@@ -49,9 +49,42 @@ namespace ReaShader {
 		m_data->push(&rParams);
 		m_data->push(&myColor);
 
-		/*m_data[0] = (int*)&(rParams);
-		m_data[1] = (int*)&myColor;*/
 	}
+
+	tresult PLUGIN_API ReaShaderProcessor::notify(IMessage* message)
+	{
+		if (!message)
+			return kInvalidArgument;
+
+		if (strcmp(message->getMessageID(), "BinaryMessage") == 0)
+		{
+			const void* data;
+			uint32 size;
+			if (message->getAttributes()->getBinary("MyData", data, size) == kResultOk)
+			{
+				// we are in UI thread
+				// size should be 100
+				if (size == 100 && ((char*)data)[1] == 1) // yeah...
+				{
+					fprintf(stderr, "[ReaShaderProcessor] received the binary message!\n");
+				}
+				return kResultOk;
+			}
+		}
+
+		return AudioEffect::notify(message);
+	}
+
+	tresult ReaShaderProcessor::receiveText(const char* text)
+	{
+		// received from Controller
+		fprintf(stderr, "[AGain] received: ");
+		fprintf(stderr, "%s", text);
+		fprintf(stderr, "\n");
+
+		return kResultOk;
+	}
+
 
 	//------------------------------------------------------------------------
 	ReaShaderProcessor::~ReaShaderProcessor()
@@ -232,7 +265,6 @@ namespace ReaShader {
 					LICE_PutPixel(bitmap, x, y, *(int*)rsData->get(1), 0xff, LICE_BLIT_MODE_COPY);
 				}
 			}
-
 			//  parmlist[0] is wet, [1] is parameter
 		}
 		return vf;
@@ -290,6 +322,8 @@ namespace ReaShader {
 		for (auto const& [uParamId, value] : rParams) {
 			streamer.writeFloat(value);
 		}
+
+		this->sendTextMessage("hellooooo");
 
 		return kResultOk;
 	}

@@ -33,6 +33,43 @@ namespace ReaShader {
 		return result;
 	}
 
+	tresult ReaShaderController::receiveText(const char* text)
+	{
+		// received from Component
+		if (text)
+		{
+			fprintf(stderr, "[AGainController] received: ");
+			fprintf(stderr, "%s", text);
+			fprintf(stderr, "\n");
+		}
+		return kResultOk;
+	}
+
+	tresult PLUGIN_API ReaShaderController::notify(IMessage* message)
+	{
+		if (!message)
+			return kInvalidArgument;
+
+		if (strcmp(message->getMessageID(), "BinaryMessage") == 0)
+		{
+			const void* data;
+			uint32 size;
+			if (message->getAttributes()->getBinary("MyData", data, size) == kResultOk)
+			{
+				// we are in UI thread
+				// size should be 100
+				if (size == 100 && ((char*)data)[1] == 1) // yeah...
+				{
+					fprintf(stderr, "[ReaShaderController] received the binary message!\n");
+				}
+				return kResultOk;
+			}
+		}
+
+		return EditControllerEx1::notify(message);
+	}
+
+
 	//------------------------------------------------------------------------
 	tresult PLUGIN_API ReaShaderController::terminate()
 	{
