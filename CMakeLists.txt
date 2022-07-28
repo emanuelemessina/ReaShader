@@ -19,13 +19,13 @@ add_subdirectory(${vst3sdk_SOURCE_DIR} ${PROJECT_BINARY_DIR}/vst3sdk)
 smtg_enable_vst3_sdk()
 
 smtg_add_vst3plugin(ReaShader
-    source/version.h
-    source/myplugincids.h
-    source/mypluginprocessor.h
-    source/mypluginprocessor.cpp
-    source/myplugincontroller.h
-    source/myplugincontroller.cpp
-    source/mypluginentry.cpp
+    source/main/version.h
+    source/main/myplugincids.h
+    source/main/mypluginprocessor.h
+    source/main/mypluginprocessor.cpp
+    source/main/myplugincontroller.h
+    source/main/myplugincontroller.cpp
+    source/main/mypluginentry.cpp
 )
 
 #- VSTGUI Wanted ----

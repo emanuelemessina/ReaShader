@@ -1,16 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <ClCompile Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\mypluginprocessor.cpp">
-      <Filter>Source Files\main</Filter>
-    </ClCompile>
     <ClCompile Include="D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\public.sdk\source\main\dllmain.cpp">
-      <Filter>Source Files\main</Filter>
-    </ClCompile>
-    <ClCompile Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\myplugincontroller.cpp">
-      <Filter>Source Files\main</Filter>
-    </ClCompile>
-    <ClCompile Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\mypluginentry.cpp">
       <Filter>Source Files\main</Filter>
     </ClCompile>
     <ClCompile Include="..\..\vst-sdk-bundle\reaper-sdk\WDL\lice\lice.cpp">
@@ -19,20 +10,17 @@
     <ClCompile Include="mptorpdata.cpp">
       <Filter>Source Files\others\mptorpodata</Filter>
     </ClCompile>
+    <ClCompile Include="..\source\main\myplugincontroller.cpp">
+      <Filter>Source Files\main</Filter>
+    </ClCompile>
+    <ClCompile Include="..\source\main\mypluginentry.cpp">
+      <Filter>Source Files\main</Filter>
+    </ClCompile>
+    <ClCompile Include="..\source\main\mypluginprocessor.cpp">
+      <Filter>Source Files\main</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\myplugincids.h">
-      <Filter>Source Files\main\headers</Filter>
-    </ClInclude>
-    <ClInclude Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\myplugincontroller.h">
-      <Filter>Source Files\main\headers</Filter>
-    </ClInclude>
-    <ClInclude Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\mypluginprocessor.h">
-      <Filter>Source Files\main\headers</Filter>
-    </ClInclude>
-    <ClInclude Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\version.h">
-      <Filter>Source Files\main\headers</Filter>
-    </ClInclude>
     <ClInclude Include="..\resource\resource.h">
       <Filter>Resources</Filter>
     </ClInclude>
@@ -41,6 +29,18 @@
     </ClInclude>
     <ClInclude Include="uimsgcontroller.h">
       <Filter>Source Files\others\ruicontrollers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\source\main\myplugincids.h">
+      <Filter>Source Files\main\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\source\main\myplugincontroller.h">
+      <Filter>Source Files\main\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\source\main\mypluginprocessor.h">
+      <Filter>Source Files\main\headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\source\main\version.h">
+      <Filter>Source Files\main\headers</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -82,9 +82,6 @@
     <Filter Include="Resources">
       <UniqueIdentifier>{9f4a24f2-621e-4b7c-b6ad-3c125a496543}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Resources\images">
-      <UniqueIdentifier>{20dea387-6a56-4907-ae6d-e79bf1dc0ab0}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Source Files\others\mptorpodata">
       <UniqueIdentifier>{d3f8e5c0-d08b-4402-8144-9706ca22f61a}</UniqueIdentifier>
     </Filter>
@@ -94,20 +91,6 @@
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\CMakeLists.txt" />
-  </ItemGroup>
-  <ItemGroup>
-    <Image Include="..\src\background.png">
-      <Filter>Resources\images</Filter>
-    </Image>
-    <Image Include="..\src\fader-body.png">
-      <Filter>Resources\images</Filter>
-    </Image>
-    <Image Include="..\src\fader-handle.png">
-      <Filter>Resources\images</Filter>
-    </Image>
-    <Image Include="..\src\reashader text.png">
-      <Filter>Resources\images</Filter>
-    </Image>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\resource\win32resource.rc">
