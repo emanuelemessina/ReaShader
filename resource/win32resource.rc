@@ -89,13 +89,13 @@ END
 // PNG
 //
 
-background                PNG                     "D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\src\\background.png"
+background                PNG                     "D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\resource\\images\\background.png"
 
-fader_body                PNG                     "D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\src\\fader-body.png"
+fader_body                PNG                     "D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\resource\\images\\fader-body.png"
 
-fader_handle                PNG                     "D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\src\\fader-handle.png"
+fader_handle                PNG                     "D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\resource\\images\\fader-handle.png"
 
-logo                PNG                     "D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\src\\reashader text.png"
+logo                PNG                     "D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\resource\\images\\reashader text.png"
 
 #endif    // English (United States) resources
 /////////////////////////////////////////////////////////////////////////////

@@ -386,16 +386,16 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\source\main\myplugincontroller.cpp" />
+    <ClCompile Include="..\source\main\mypluginentry.cpp" />
+    <ClCompile Include="..\source\main\mypluginprocessor.cpp" />
     <ClCompile Include="mptorpdata.cpp" />
     <ClInclude Include="..\resource\resource.h" />
-    <ClInclude Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\version.h" />
-    <ClInclude Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\myplugincids.h" />
-    <ClInclude Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\mypluginprocessor.h" />
+    <ClInclude Include="..\source\main\myplugincids.h" />
+    <ClInclude Include="..\source\main\myplugincontroller.h" />
+    <ClInclude Include="..\source\main\mypluginprocessor.h" />
+    <ClInclude Include="..\source\main\version.h" />
     <ClCompile Include="..\..\vst-sdk-bundle\reaper-sdk\WDL\lice\lice.cpp" />
-    <ClCompile Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\mypluginprocessor.cpp" />
-    <ClInclude Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\myplugincontroller.h" />
-    <ClCompile Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\myplugincontroller.cpp" />
-    <ClCompile Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\source\mypluginentry.cpp" />
     <ClCompile Include="D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\public.sdk\source\main\dllmain.cpp" />
     <ClInclude Include="mptorpdata.h" />
     <ClInclude Include="uimsgcontroller.h" />
@@ -448,12 +448,6 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <Project>{D06C5636-4DA3-3AAF-8267-308A2072591A}</Project>
       <Name>vstgui_uidescription</Name>
     </ProjectReference>
-  </ItemGroup>
-  <ItemGroup>
-    <Image Include="..\src\background.png" />
-    <Image Include="..\src\fader-body.png" />
-    <Image Include="..\src\fader-handle.png" />
-    <Image Include="..\src\reashader text.png" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

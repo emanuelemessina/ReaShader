@@ -42,6 +42,7 @@ namespace ReaShader {
 			fprintf(stderr, "%s", text);
 			fprintf(stderr, "\n");
 		}
+
 		return kResultOk;
 	}
 
