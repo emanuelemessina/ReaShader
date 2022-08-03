@@ -1,14 +1,8 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <ClCompile Include="D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\public.sdk\source\main\dllmain.cpp">
-      <Filter>Source Files\main</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\vst-sdk-bundle\reaper-sdk\WDL\lice\lice.cpp">
-      <Filter>SDKs\wdl\lice</Filter>
-    </ClCompile>
-    <ClCompile Include="mptorpdata.cpp">
-      <Filter>Source Files\others\mptorpodata</Filter>
+      <Filter>Libraries\wdl\lice</Filter>
     </ClCompile>
     <ClCompile Include="..\source\main\myplugincontroller.cpp">
       <Filter>Source Files\main</Filter>
@@ -19,16 +13,22 @@
     <ClCompile Include="..\source\main\mypluginprocessor.cpp">
       <Filter>Source Files\main</Filter>
     </ClCompile>
+    <ClCompile Include="D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\public.sdk\source\main\dllmain.cpp">
+      <Filter>Source Files\main\do not touch</Filter>
+    </ClCompile>
+    <ClCompile Include="..\source\others\mptorpdata\mptorpdata.cpp">
+      <Filter>Source Files\others\mptorpodata</Filter>
+    </ClCompile>
+    <ClCompile Include="..\source\others\rsprocessor.cpp">
+      <Filter>Source Files\others</Filter>
+    </ClCompile>
+    <ClCompile Include="..\source\others\vk\vktools.cpp">
+      <Filter>Source Files\others\vktools</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\resource\resource.h">
       <Filter>Resources</Filter>
-    </ClInclude>
-    <ClInclude Include="mptorpdata.h">
-      <Filter>Source Files\others\mptorpodata</Filter>
-    </ClInclude>
-    <ClInclude Include="uimsgcontroller.h">
-      <Filter>Source Files\others\ruicontrollers</Filter>
     </ClInclude>
     <ClInclude Include="..\source\main\myplugincids.h">
       <Filter>Source Files\main\headers</Filter>
@@ -42,6 +42,15 @@
     <ClInclude Include="..\source\main\version.h">
       <Filter>Source Files\main\headers</Filter>
     </ClInclude>
+    <ClInclude Include="..\source\others\mptorpdata\mptorpdata.h">
+      <Filter>Source Files\others\mptorpodata</Filter>
+    </ClInclude>
+    <ClInclude Include="..\source\others\ruicontrollers\uimsgcontroller.h">
+      <Filter>Source Files\others\ruicontrollers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\source\others\vk\vktools.h">
+      <Filter>Source Files\others\vktools</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\README.md">
@@ -52,6 +61,12 @@
     </None>
     <None Include="D:\Library\Coding\GitHub\_Reaper\ReaShader\resource\myplugineditor.uidesc">
       <Filter>Resources</Filter>
+    </None>
+    <None Include="..\source\shaders\vert.glsl">
+      <Filter>Source Files\shaders</Filter>
+    </None>
+    <None Include="..\source\shaders\frag.glsl">
+      <Filter>Source Files\shaders</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
@@ -70,15 +85,6 @@
     <Filter Include="Source Files\others">
       <UniqueIdentifier>{390e8025-df3d-411f-a7b8-a70ff2b09bf8}</UniqueIdentifier>
     </Filter>
-    <Filter Include="SDKs">
-      <UniqueIdentifier>{03ebd4cd-dbec-4fa9-9ec9-4f3cbb0ab9d0}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="SDKs\wdl">
-      <UniqueIdentifier>{b3017045-f263-42d9-96d8-e91258a9dfea}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="SDKs\wdl\lice">
-      <UniqueIdentifier>{54b75474-cd1c-4e94-a750-b6d27a75787f}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Resources">
       <UniqueIdentifier>{9f4a24f2-621e-4b7c-b6ad-3c125a496543}</UniqueIdentifier>
     </Filter>
@@ -87,6 +93,24 @@
     </Filter>
     <Filter Include="Source Files\others\ruicontrollers">
       <UniqueIdentifier>{92799ff5-caef-4a4c-a278-e74ff97fb60f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Libraries">
+      <UniqueIdentifier>{03ebd4cd-dbec-4fa9-9ec9-4f3cbb0ab9d0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Libraries\wdl">
+      <UniqueIdentifier>{b3017045-f263-42d9-96d8-e91258a9dfea}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Libraries\wdl\lice">
+      <UniqueIdentifier>{54b75474-cd1c-4e94-a750-b6d27a75787f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\main\do not touch">
+      <UniqueIdentifier>{04d27e16-67ba-4e35-b6fe-f17a60670f61}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\shaders">
+      <UniqueIdentifier>{adde28f4-09d6-4f44-b3bc-1098a40d3ab1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\others\vktools">
+      <UniqueIdentifier>{2117b36c-326f-4c85-825a-5a92f0404dde}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>

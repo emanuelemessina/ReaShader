@@ -1,3 +1,6 @@
 .vs
 VST3
 WIN_PDB64
+bin
+vst3sdk
+lib

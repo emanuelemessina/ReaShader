@@ -8,10 +8,16 @@
 
 #include "pluginterfaces/vst/ivstmessage.h"
 
+
+
+#include <thread>
+#include <mutex>
+
 using namespace Steinberg;
 using namespace Vst;
 
 namespace ReaShader {
+
 
 	//------------------------------------------------------------------------
 	//  ReaShaderController
@@ -60,6 +66,7 @@ namespace ReaShader {
 
 			//------------------------------------------------------------------------
 	protected:
+		bool windowShouldClose{ false };
 	};
 
 	//------------------------------------------------------------------------
