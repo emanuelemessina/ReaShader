@@ -11,16 +11,24 @@
 
 #include "video_processor.h"
 
-#include "mptorpdata.h"
+#include "mptorpdata/mptorpdata.h"
 
 #include "pluginterfaces/vst/ivstmessage.h"
+
+#include <vulkan/vulkan.h>
+#include "vk/vktools.h"
 
 using namespace Steinberg;
 using namespace Vst;
 
 namespace ReaShader {
 
+	// internal processor params map
 	typedef std::map<Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue> rParamsMap;
+
+	// reaper video processor functions
+	IVideoFrame* processVideoFrame(IREAPERVideoProcessor* vproc, const double* parmlist, int nparms, double project_time, double frate, int force_format);
+	bool getVideoParam(IREAPERVideoProcessor* vproc, int idx, double* valueOut);
 
 	//------------------------------------------------------------------------
 	//  ReaShaderProcessor
@@ -65,6 +73,7 @@ namespace ReaShader {
 		//------------------------------------------------------------------------
 
 		friend class ReaShaderController;
+		friend IVideoFrame* processVideoFrame(IREAPERVideoProcessor* vproc, const double* parmlist, int nparms, double project_time, double frate, int force_format);
 
 		/** We want to receive message. */
 		Steinberg::tresult PLUGIN_API notify(Vst::IMessage* message) SMTG_OVERRIDE;
@@ -83,6 +92,35 @@ namespace ReaShader {
 
 		int myColor;
 
+		void initVulkan();
+		void cleanupVulkan();
+
+		VkInstance myVkInstance;
+		vkt::vktDeletionQueue deletionQueue;
+
+		vkt::vktPhysicalDevice* vktPhysicalDevice;
+
+		vkt::vktDevice* vktDevice;
+
+		vkt::vktAttachment* vkColorAttachment;
+
+		VkRenderPass vkRenderPass;
+		VkPipelineLayout vkPipelineLayout;
+		VkPipelineCache vkPipelineCache;
+		VkPipeline vkGraphicsPipeline;
+
+		VkFramebuffer vkFramebuffer;
+		VkCommandPool vkCommandPool;
+
+		VkCommandBuffer vkDrawCommandBuffer;
+		VkCommandBuffer vkTransferCommandBuffer;
+
+		VkSemaphore vkRenderFinishedSemaphore;
+		VkFence vkInFlightFence;
+
+		VmaAllocator vmaAllocator;
+
+		vkt::Mesh myMesh;
 	};
 
 } // namespace ReaShader

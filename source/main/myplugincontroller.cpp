@@ -7,6 +7,10 @@
 #include "vstgui/plugin-bindings/vst3editor.h"
 #include "base/source/fstreamer.h"
 
+#include <thread>
+#include <stdio.h>
+#include <chrono>
+
 using namespace Steinberg;
 
 namespace ReaShader {
@@ -14,6 +18,7 @@ namespace ReaShader {
 	//------------------------------------------------------------------------
 	// ReaShaderController Implementation
 	//------------------------------------------------------------------------
+
 	tresult PLUGIN_API ReaShaderController::initialize(FUnknown* context)
 	{
 		// Here the Plug-in will be instanciated
