@@ -17,7 +17,7 @@ namespace ReaShader {
 		VkPipelineLayout pipelineLayout,
 		VkPipeline graphicsPipeline,
 		VkFramebuffer frameBuffer,
-		VkCommandBuffer& drawCommandBuffer,
+		VkCommandBuffer& commandBuffer,
 		VkSemaphore& renderFinishedSemaphore,
 		VkFence& inFlightFence,
 		vkt::Mesh mesh,
@@ -27,8 +27,7 @@ namespace ReaShader {
 		VkDevice device = vktDevice->device;
 
 		// begin command buffer
-		VkCommandBuffer commandBuffer = vktDevice->createCommandBuffer(nullptr, drawCommandBuffer);
-		drawCommandBuffer = commandBuffer;
+		vktDevice->restartCommandBuffer(commandBuffer);
 
 		// begin render pass
 		VkRenderPassBeginInfo renderPassInfo{};
@@ -73,10 +72,8 @@ namespace ReaShader {
 
 		// set push constants
 
-		//make a model view matrix for rendering the object
-	//camera position
+		//camera position
 		glm::vec3 camPos = { 0.f,0.f,-2.f };
-
 		glm::mat4 view = glm::translate(glm::mat4(1.f), camPos);
 		//camera projection
 		glm::mat4 projection = glm::perspective(glm::radians(70.f), 1700.f / 900.f, 0.1f, 200.0f);
@@ -107,11 +104,114 @@ namespace ReaShader {
 	}
 
 	void transferFrame(vkt::vktDevice* vktDevice,
+		vkt::vktInitProperties vktInitProperties,
 		VkImage srcImage,
+		vkt::AllocatedImage* frameTransferDest,
 		int*& destBuffer,
-		VkCommandBuffer& prevCommandBuffer,
+		VkCommandBuffer& commandBuffer,
 		VkSemaphore& renderFinishedSemaphore,
-		VkFence& inFlightFence);
+		VkFence& inFlightFence
+	) {
+
+		// init command buffer
+
+		vktDevice->restartCommandBuffer(commandBuffer);
+
+		// Transition destination image to transfer destination layout
+
+		vkt::insertImageMemoryBarrier(
+			commandBuffer,
+			frameTransferDest->image,
+			0,
+			VK_ACCESS_TRANSFER_WRITE_BIT,
+			VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
+
+		// srcImage is already in VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, and does not need to be transitioned
+
+		// do the blit/copy
+
+		// If source and destination support blit we'll blit as this also does automatic format conversion (e.g. from BGR to RGB)
+		if (vktInitProperties.supportsBlit)
+		{
+			// Define the region to blit (we will blit the whole swapchain image)
+			VkOffset3D blitSize;
+			blitSize.x = PROJ_W;
+			blitSize.y = PROJ_H;
+			blitSize.z = 1;
+			VkImageBlit imageBlitRegion{};
+			imageBlitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			imageBlitRegion.srcSubresource.layerCount = 1;
+			imageBlitRegion.srcOffsets[1] = blitSize;
+			imageBlitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			imageBlitRegion.dstSubresource.layerCount = 1;
+			imageBlitRegion.dstOffsets[1] = blitSize;
+
+			// Issue the blit command
+			vkCmdBlitImage(
+				commandBuffer,
+				srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+				frameTransferDest->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				1,
+				&imageBlitRegion,
+				VK_FILTER_NEAREST);
+		}
+		else
+		{
+			// Otherwise use image copy (requires us to manually flip components)
+			VkImageCopy imageCopyRegion{};
+			imageCopyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			imageCopyRegion.srcSubresource.layerCount = 1;
+			imageCopyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			imageCopyRegion.dstSubresource.layerCount = 1;
+			imageCopyRegion.extent.width = PROJ_W;
+			imageCopyRegion.extent.height = PROJ_H;
+			imageCopyRegion.extent.depth = 1;
+
+			// Issue the copy command
+			vkCmdCopyImage(
+				commandBuffer,
+				srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+				frameTransferDest->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				1,
+				&imageCopyRegion);
+		}
+
+		// Transition destination image to general layout, which is the required layout for mapping the image memory later on
+		vkt::insertImageMemoryBarrier(
+			commandBuffer,
+			frameTransferDest->image,
+			VK_ACCESS_TRANSFER_WRITE_BIT,
+			VK_ACCESS_MEMORY_READ_BIT,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			VK_IMAGE_LAYOUT_GENERAL,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
+
+		// submit queue (wait for draw frame)
+
+		vktDevice->submitQueue(commandBuffer, inFlightFence, VK_NULL_HANDLE, renderFinishedSemaphore);
+
+		// wait fence since now we are on cpu
+
+		vkWaitForFences(vktDevice->device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
+		vkResetFences(vktDevice->device, 1, &inFlightFence);
+
+		// Get layout of the image (including row pitch)
+		VkImageSubresource subResource{};
+		subResource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		VkSubresourceLayout subResourceLayout;
+
+		vkGetImageSubresourceLayout(vktDevice->device, frameTransferDest->image, &subResource, &subResourceLayout);
+
+		// dest image is already mapped
+		memcpy((void*)destBuffer, (void*)((int)(frameTransferDest->allocationInfo).pMappedData + subResourceLayout.offset), sizeof(LICE_pixel) * PROJ_W * PROJ_H);
+
+	}
 
 	/* video */
 
@@ -170,7 +270,9 @@ namespace ReaShader {
 			);
 
 			transferFrame(rsProcessor->vktDevice,
+				rsProcessor->vktInitProperties,
 				rsProcessor->vkColorAttachment->image,
+				rsProcessor->frameTransferDest,
 				bits,
 				rsProcessor->vkTransferCommandBuffer,
 				rsProcessor->vkRenderFinishedSemaphore,
@@ -321,7 +423,7 @@ namespace ReaShader {
 		rasterizer.rasterizerDiscardEnable = VK_FALSE;
 		rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
 		rasterizer.lineWidth = 1.0f;
-		rasterizer.cullMode = VK_CULL_MODE_NONE;
+		rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
 		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
 		rasterizer.depthBiasEnable = VK_FALSE;
 		rasterizer.depthBiasConstantFactor = 0.0f; // Optional
@@ -462,149 +564,9 @@ namespace ReaShader {
 		return frameBuffer;
 	}
 
-	void transferFrame(vkt::vktDevice* vktDevice,
-		VkImage srcImage,
-		int*& destBuffer,
-		VkCommandBuffer& transferCommandBuffer,
-		VkSemaphore& renderFinishedSemaphore,
-		VkFence& inFlightFence
-	) {
-
-		int* imagedata;
-
-		// create dest image
-
-		vkt::vktAttachment* dest = new vkt::vktAttachment(vktDevice);
-		dest->createImage(
-			PROJ_W, PROJ_H,
-			VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
-			VK_IMAGE_TILING_LINEAR,
-			VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-		);
-
-
-		// init command buffer
-
-		VkCommandBuffer commandBuffer = vktDevice->createCommandBuffer(nullptr, transferCommandBuffer);
-		transferCommandBuffer = commandBuffer;
-
-		// Transition destination image to transfer destination layout
-
-		vkt::insertImageMemoryBarrier(
-			commandBuffer,
-			dest->image,
-			0,
-			VK_ACCESS_TRANSFER_WRITE_BIT,
-			VK_IMAGE_LAYOUT_UNDEFINED,
-			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
-
-		// srcImage is already in VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, and does not need to be transitioned
-
-		// do the blit/copy
-
-		bool supportsBlit = true;
-
-		// Check blit support for source and destination
-		VkFormatProperties formatProps;
-
-		// Check if the device supports blitting to linear images
-		vkGetPhysicalDeviceFormatProperties(vktDevice->vktPhysicalDevice->physicalDevice, VK_FORMAT_R8G8B8A8_UNORM, &formatProps);
-		if (!(formatProps.linearTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT)) {
-			std::cerr << "Device does not support blitting to linear tiled images, using copy instead of blit!" << std::endl;
-			supportsBlit = false;
-		}
-
-		// If source and destination support blit we'll blit as this also does automatic format conversion (e.g. from BGR to RGB)
-		if (supportsBlit)
-		{
-			// Define the region to blit (we will blit the whole swapchain image)
-			VkOffset3D blitSize;
-			blitSize.x = PROJ_W;
-			blitSize.y = PROJ_H;
-			blitSize.z = 1;
-			VkImageBlit imageBlitRegion{};
-			imageBlitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			imageBlitRegion.srcSubresource.layerCount = 1;
-			imageBlitRegion.srcOffsets[1] = blitSize;
-			imageBlitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			imageBlitRegion.dstSubresource.layerCount = 1;
-			imageBlitRegion.dstOffsets[1] = blitSize;
-
-			// Issue the blit command
-			vkCmdBlitImage(
-				commandBuffer,
-				srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-				dest->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-				1,
-				&imageBlitRegion,
-				VK_FILTER_NEAREST);
-		}
-		else
-		{
-			// Otherwise use image copy (requires us to manually flip components)
-			VkImageCopy imageCopyRegion{};
-			imageCopyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			imageCopyRegion.srcSubresource.layerCount = 1;
-			imageCopyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			imageCopyRegion.dstSubresource.layerCount = 1;
-			imageCopyRegion.extent.width = PROJ_W;
-			imageCopyRegion.extent.height = PROJ_H;
-			imageCopyRegion.extent.depth = 1;
-
-			// Issue the copy command
-			vkCmdCopyImage(
-				commandBuffer,
-				srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-				dest->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-				1,
-				&imageCopyRegion);
-		}
-
-		// Transition destination image to general layout, which is the required layout for mapping the image memory later on
-		vkt::insertImageMemoryBarrier(
-			commandBuffer,
-			dest->image,
-			VK_ACCESS_TRANSFER_WRITE_BIT,
-			VK_ACCESS_MEMORY_READ_BIT,
-			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			VK_IMAGE_LAYOUT_GENERAL,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
-
-		// submit queue (wait for draw frame)
-
-		vktDevice->submitQueue(commandBuffer, inFlightFence, VK_NULL_HANDLE, renderFinishedSemaphore);
-
-		// wait fence since now we are on cpu
-
-		vkWaitForFences(vktDevice->device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
-		vkResetFences(vktDevice->device, 1, &inFlightFence);
-
-		// Get layout of the image (including row pitch)
-		VkImageSubresource subResource{};
-		subResource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		VkSubresourceLayout subResourceLayout;
-
-		vkGetImageSubresourceLayout(vktDevice->device, dest->image, &subResource, &subResourceLayout);
-
-		// Map image memory so we can start copying from it
-		vkMapMemory(vktDevice->device, dest->memory, 0, VK_WHOLE_SIZE, 0, (void**)&imagedata);
-		imagedata += subResourceLayout.offset;
-
-		memcpy((void*)destBuffer, (void*)imagedata, sizeof(LICE_pixel) * PROJ_W * PROJ_H);
-
-		// Clean up resources
-		delete(dest);
-	}
-
 	// MESH
 
-	void loadMesh(vkt::Mesh* mesh) {
+	void loadTriangle(vkt::Mesh* mesh) {
 		//make the array 3 vertices long
 		mesh->vertices.resize(3);
 
@@ -620,74 +582,38 @@ namespace ReaShader {
 
 		//we don't care about the vertex normals
 	}
-	void allocateMesh(VmaAllocator vmaAllocator, vkt::Mesh* mesh) {
-		//allocate vertex buffer
-		VkBufferCreateInfo bufferInfo = {};
-		bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		//this is the total size, in bytes, of the buffer we are allocating
-		bufferInfo.size = mesh->vertices.size() * sizeof(vkt::Vertex);
-		//this buffer is going to be used as a Vertex Buffer
-		bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-
-		VmaAllocationCreateInfo vmaallocInfo = {};
-		vmaallocInfo.usage = VMA_MEMORY_USAGE_GPU_TO_CPU;
-
-		//allocate the buffer
-		VK_CHECK_RESULT(vmaCreateBuffer(vmaAllocator, &bufferInfo, &vmaallocInfo,
-			&(mesh->vertexBuffer.buffer),
-			&(mesh->vertexBuffer.allocation),
-			nullptr));
-
-		//copy vertex data
-		void* data;
-		vmaMapMemory(vmaAllocator, mesh->vertexBuffer.allocation, &data);
-
-		memcpy(data, mesh->vertices.data(), mesh->vertices.size() * sizeof(vkt::Vertex));
-
-		vmaUnmapMemory(vmaAllocator, mesh->vertexBuffer.allocation);
-	}
 
 	void ReaShaderProcessor::initVulkan() {
 
 		// instance , device
 
-		myVkInstance = vkt::createVkInstance("ReaShader Effect", "No Engine");
-		deletionQueue.push_function([=]() { vkDestroyInstance(myVkInstance, nullptr); });
+		myVkInstance = vkt::createVkInstance(deletionQueue, "ReaShader Effect", "No Engine");
 
-		vktPhysicalDevice = new vkt::vktPhysicalDevice(vkt::pickSuitablePhysicalDevice(myVkInstance, &isPhysicalDeviceSuitable));
-		deletionQueue.push_function([=]() { delete(vktPhysicalDevice); });
+		vktPhysicalDevice = new vkt::vktPhysicalDevice(deletionQueue, myVkInstance, vkt::pickSuitablePhysicalDevice(myVkInstance, &isPhysicalDeviceSuitable));
 
-		vktDevice = new vkt::vktDevice(vktPhysicalDevice);
-		deletionQueue.push_function([=]() { delete(vktDevice); });
-
-		// memory allocator
-
-		VmaAllocatorCreateInfo allocatorInfo = {};
-		allocatorInfo.physicalDevice = vktPhysicalDevice->physicalDevice;
-		allocatorInfo.device = vktDevice->device;
-		allocatorInfo.instance = myVkInstance;
-		vmaCreateAllocator(&allocatorInfo, &vmaAllocator);
-		deletionQueue.push_function([=]() { vmaDestroyAllocator(vmaAllocator); });
+		vktDevice = new vkt::vktDevice(deletionQueue, vktPhysicalDevice);
 
 		// meshes
 
-		loadMesh(&myMesh);
-		allocateMesh(vmaAllocator, &myMesh);
-		deletionQueue.push_function([=]() { vmaDestroyBuffer(vmaAllocator, myMesh.vertexBuffer.buffer, myMesh.vertexBuffer.allocation); });
+		loadTriangle(&triangleMesh);
+		vktDevice->allocateMesh(&triangleMesh);
+
+		myMesh.load_from_obj("D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\resource\\meshes\\Suzanne.obj");
+		vktDevice->allocateMesh(&myMesh);
 
 		// swap chain here (optional)
 
 		// render target
 
-		vkColorAttachment = new vkt::vktAttachment(vktDevice);
-		deletionQueue.push_function([=]() { delete(vkColorAttachment); });
+		vkColorAttachment = new vkt::AllocatedImage(deletionQueue, vktDevice);
 
 		vkColorAttachment->createImage(
-			PROJ_W, PROJ_H,
+			{ PROJ_W, PROJ_H },
 			VK_IMAGE_TYPE_2D,
 			VK_FORMAT_B8G8R8A8_UNORM,
 			VK_IMAGE_TILING_OPTIMAL,
 			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+			VMA_MEMORY_USAGE_GPU_ONLY,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 		);
 
@@ -696,6 +622,21 @@ namespace ReaShader {
 			VK_FORMAT_B8G8R8A8_UNORM,
 			VK_IMAGE_ASPECT_COLOR_BIT
 		);
+
+		// frame transfer
+
+		frameTransferDest = new vkt::AllocatedImage(deletionQueue, vktDevice);
+		frameTransferDest->createImage(
+			{ PROJ_W, PROJ_H },
+			VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
+			VK_IMAGE_TILING_LINEAR,
+			VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+			VMA_MEMORY_USAGE_GPU_TO_CPU,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT
+		);
+
+		// pipeline
 
 		vkRenderPass = createRenderPass(vktDevice->device);
 		deletionQueue.push_function([=]() { vkDestroyRenderPass(vktDevice->device, vkRenderPass, nullptr); });
@@ -712,17 +653,20 @@ namespace ReaShader {
 
 		vkDrawCommandBuffer = vktDevice->createCommandBuffer();
 		vkTransferCommandBuffer = vktDevice->createCommandBuffer();
-		deletionQueue.push_function([=]() {
-			std::vector<VkCommandBuffer> cmds = { vkDrawCommandBuffer , vkTransferCommandBuffer };
-			vkFreeCommandBuffers(vktDevice->device, vktDevice->commandPool, cmds.size(), cmds.data());
-			});
 
-		vkInFlightFence = vktDevice->createFence(false);
-		vkRenderFinishedSemaphore = vktDevice->createSemaphore();
+		vkInFlightFence = vktDevice->createFence(false, deletionQueue);
+		vkRenderFinishedSemaphore = vktDevice->createSemaphore(deletionQueue);
 
-		deletionQueue.push_function([=]() {
-			vktDevice->destroySyncObjects({ vkInFlightFence , vkRenderFinishedSemaphore });
-			});
+		// check init properties
+
+		// Check blit support for source and destination
+		if (!(vktDevice->vktPhysicalDevice->getFormatProperties(VK_FORMAT_R8G8B8A8_UNORM).linearTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT))
+		{
+			std::cerr << "Device does not support blitting to linear tiled images, using copy instead of blit!" << std::endl;
+		}
+		else {
+			vktInitProperties.supportsBlit = true;
+		}
 	}
 
 	void ReaShaderProcessor::cleanupVulkan() {
