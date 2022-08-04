@@ -20,7 +20,8 @@
 
 #include "vk_mem_alloc.h"
 
-#include <glm/vec3.hpp>
+#include "glm.hpp"
+#include "gtx/transform.hpp"
 
 using namespace std;
 

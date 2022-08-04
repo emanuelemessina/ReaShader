@@ -74,7 +74,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\source\others;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\vstgui4;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\base\..;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\public.sdk\..;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\pluginterfaces\..;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\reaper-sdk\sdk;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\reaper-sdk\WDL;$(MSBuildProjectDirectory)\..\source\main;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\glm;C:\VulkanSDK\1.3.216.0\Include;$(MSBuildProjectDirectory);C:\VulkanSDK\VulkanMemoryAllocator\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\source\others;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\vstgui4;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\base\..;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\public.sdk\..;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\pluginterfaces\..;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\reaper-sdk\sdk;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\reaper-sdk\WDL;$(MSBuildProjectDirectory)\..\source\main;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle;C:\VulkanSDK\1.3.216.0\Include;$(MSBuildProjectDirectory);C:\VulkanSDK\VulkanMemoryAllocator\include;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\glm\glm</AdditionalIncludeDirectories>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
@@ -156,7 +156,17 @@ cd $(MSBuildProjectDirectory)\bin
 if %errorlevel% neq 0 goto :cmEnd
 D:
 if %errorlevel% neq 0 goto :cmEnd
+
+:: MODULE INFO GENERATION
+
 $(MSBuildProjectDirectory)\bin\Debug\moduleinfotool.exe -create -version 1.0.0.0 -path $(TargetPath) -output $(VST3BundleOutDir)\moduleinfo.json
+
+:: COMPILE SHADERS 
+
+cd $(MSBuildProjectDirectory)\..\source\shaders
+glslc -fshader-stage=vert vert.glsl -o vert.spv
+glslc -fshader-stage=frag frag.glsl -o frag.spv
+
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -218,7 +228,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\source\others;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\vstgui4;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\base\..;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\public.sdk\..;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\pluginterfaces\..;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\reaper-sdk\sdk;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\reaper-sdk\WDL;$(MSBuildProjectDirectory)\..\source\main;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\glm;C:\VulkanSDK\1.3.216.0\Include;$(MSBuildProjectDirectory);C:\VulkanSDK\VulkanMemoryAllocator\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\source\others;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\vstgui4;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\base\..;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\public.sdk\..;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\pluginterfaces\..;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\reaper-sdk\sdk;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\reaper-sdk\WDL;$(MSBuildProjectDirectory)\..\source\main;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle;C:\VulkanSDK\1.3.216.0\Include;$(MSBuildProjectDirectory);C:\VulkanSDK\VulkanMemoryAllocator\include;D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\glm\glm</AdditionalIncludeDirectories>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <DisableSpecificWarnings>6031;6308;6330;6385;6386;28125;28251;4221</DisableSpecificWarnings>

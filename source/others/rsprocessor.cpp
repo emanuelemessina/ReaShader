@@ -7,14 +7,22 @@ namespace ReaShader {
 
 	// DRAW
 
+	struct MeshPushConstants {
+		glm::vec4 data;
+		glm::mat4 render_matrix;
+	};
+
 	void drawFrame(vkt::vktDevice* vktDevice,
 		VkRenderPass renderPass,
-		vkt::Mesh mesh,
+		VkPipelineLayout pipelineLayout,
 		VkPipeline graphicsPipeline,
 		VkFramebuffer frameBuffer,
 		VkCommandBuffer& drawCommandBuffer,
 		VkSemaphore& renderFinishedSemaphore,
-		VkFence& inFlightFence) {
+		VkFence& inFlightFence,
+		vkt::Mesh mesh,
+		double pushConstants[]
+	) {
 
 		VkDevice device = vktDevice->device;
 
@@ -62,6 +70,28 @@ namespace ReaShader {
 
 		VkDeviceSize offset = 0;
 		vkCmdBindVertexBuffers(commandBuffer, 0, 1, &mesh.vertexBuffer.buffer, &offset);
+
+		// set push constants
+
+		//make a model view matrix for rendering the object
+	//camera position
+		glm::vec3 camPos = { 0.f,0.f,-2.f };
+
+		glm::mat4 view = glm::translate(glm::mat4(1.f), camPos);
+		//camera projection
+		glm::mat4 projection = glm::perspective(glm::radians(70.f), 1700.f / 900.f, 0.1f, 200.0f);
+		projection[1][1] *= -1;
+		//model rotation
+		double frameNumber = pushConstants[0] * pushConstants[1]; // proj_time * frate
+		glm::mat4 model = glm::rotate(glm::mat4{ 1.0f }, (float)glm::radians(frameNumber * (float)pushConstants[2] * 5.f), glm::vec3(0, 1, 0));
+		//calculate final mesh matrix
+		glm::mat4 mesh_matrix = projection * view * model;
+
+		MeshPushConstants constants;
+		constants.render_matrix = mesh_matrix;
+
+		//upload the matrix to the GPU via push constants
+		vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &constants);
 
 		// draw
 
@@ -124,14 +154,20 @@ namespace ReaShader {
 				}
 			}*/
 
+			float rotSpeed = parmlist[uVideoParam + 1];
+			double pushConstants[] = { project_time, frate, rotSpeed };
+
 			drawFrame(rsProcessor->vktDevice,
 				rsProcessor->vkRenderPass,
-				rsProcessor->myMesh,
+				rsProcessor->vkPipelineLayout,
 				rsProcessor->vkGraphicsPipeline,
 				rsProcessor->vkFramebuffer,
 				rsProcessor->vkDrawCommandBuffer,
 				rsProcessor->vkRenderFinishedSemaphore,
-				rsProcessor->vkInFlightFence);
+				rsProcessor->vkInFlightFence,
+				rsProcessor->myMesh,
+				pushConstants
+			);
 
 			transferFrame(rsProcessor->vktDevice,
 				rsProcessor->vkColorAttachment->image,
@@ -285,7 +321,7 @@ namespace ReaShader {
 		rasterizer.rasterizerDiscardEnable = VK_FALSE;
 		rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
 		rasterizer.lineWidth = 1.0f;
-		rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+		rasterizer.cullMode = VK_CULL_MODE_NONE;
 		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
 		rasterizer.depthBiasEnable = VK_FALSE;
 		rasterizer.depthBiasConstantFactor = 0.0f; // Optional
@@ -345,18 +381,23 @@ namespace ReaShader {
 		colorBlending.blendConstants[2] = 0.0f; // Optional
 		colorBlending.blendConstants[3] = 0.0f; // Optional
 
+		// push constants
+
+		VkPushConstantRange push_constant;
+		push_constant.offset = 0;
+		push_constant.size = sizeof(MeshPushConstants);
+		push_constant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
 		// pipeline layout
 
 		VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
 		pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInfo.setLayoutCount = 0; // Optional
 		pipelineLayoutInfo.pSetLayouts = nullptr; // Optional
-		pipelineLayoutInfo.pushConstantRangeCount = 0; // Optional
-		pipelineLayoutInfo.pPushConstantRanges = nullptr; // Optional
+		pipelineLayoutInfo.pushConstantRangeCount = 1;
+		pipelineLayoutInfo.pPushConstantRanges = &push_constant;
 
-		if (vkCreatePipelineLayout(vktDevice->device, &pipelineLayoutInfo, nullptr, pipelineLayout) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create pipeline layout!");
-		}
+		VK_CHECK_RESULT(vkCreatePipelineLayout(vktDevice->device, &pipelineLayoutInfo, nullptr, pipelineLayout));
 
 		// pipeline cache
 

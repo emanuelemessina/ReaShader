@@ -1,5 +1,4 @@
-﻿  Building Custom Rule D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/vstgui4/vstgui/lib/CMakeLists.txt
-  animations.cpp
+﻿  animations.cpp
   animator.cpp
   timingfunctions.cpp
   cbitmap.cpp
@@ -63,9 +62,9 @@
   genericoptionmenu.cpp
   generictextedit.cpp
   vstguidebug.cpp
+  vstguiinit.cpp
 D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\vstgui4\vstgui\lib\cview.h(406,1): warning C4996: 'VSTGUI::IViewMouseListener': Use IViewListener/IViewEventListener instead (compiling source file D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\vstgui4\vstgui\lib\platform\common\genericoptionmenu.cpp)
 D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\vstgui4\vstgui\lib\cview.h(408,1): warning C4996: 'VSTGUI::IViewMouseListener': Use IViewListener/IViewEventListener instead (compiling source file D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\vstgui4\vstgui\lib\platform\common\genericoptionmenu.cpp)
-  vstguiinit.cpp
   d2dbitmap.cpp
   d2dbitmapcache.cpp
   d2ddrawcontext.cpp
