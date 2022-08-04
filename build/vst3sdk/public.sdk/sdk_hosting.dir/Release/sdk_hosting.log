@@ -1,11 +1,1 @@
-﻿  Building Custom Rule D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/public.sdk/CMakeLists.txt
-  connectionproxy.cpp
-  eventlist.cpp
-  hostclasses.cpp
-  module.cpp
-  parameterchanges.cpp
-  pluginterfacesupport.cpp
-  processdata.cpp
-  stringconvert.cpp
-  vstinitiids.cpp
-  sdk_hosting.vcxproj -> D:\Library\Coding\GitHub\_Reaper\ReaShader\build\lib\Release\sdk_hosting.lib
+﻿  sdk_hosting.vcxproj -> D:\Library\Coding\GitHub\_Reaper\ReaShader\build\lib\Release\sdk_hosting.lib

@@ -1,6 +1,1 @@
-﻿  Building Custom Rule D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/public.sdk/samples/vst-utilities/moduleinfotool/CMakeLists.txt
-  main.cpp
-  moduleinfocreator.cpp
-  moduleinfoparser.cpp
-  module_win32.cpp
-  moduleinfotool.vcxproj -> D:\Library\Coding\GitHub\_Reaper\ReaShader\build\bin\Release\moduleinfotool.exe
+﻿  moduleinfotool.vcxproj -> D:\Library\Coding\GitHub\_Reaper\ReaShader\build\bin\Release\moduleinfotool.exe

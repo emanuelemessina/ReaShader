@@ -1,5 +1,4 @@
-﻿  Building Custom Rule D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk/vstgui4/vstgui/uidescription/CMakeLists.txt
-  compresseduidescription.cpp
+﻿  compresseduidescription.cpp
   cstream.cpp
   uiattributes.cpp
   uicontentprovider.cpp
