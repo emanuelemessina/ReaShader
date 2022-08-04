@@ -31,14 +31,36 @@ using namespace std;
 	if (res != VK_SUCCESS)																				\
 	{																									\
 		std::cout << "Fatal : \"" << res << "\" in " << __FILE__ << " at line " << __LINE__ << "\n"; \
-		assert(res == VK_SUCCESS);																		\
+		throw std::runtime_error("exception!");																		\
 	}																									\
 }
 
 
 namespace vkt {
 
-	VkInstance createVkInstance(char* applicationName, char* engineName);
+	struct vktInitProperties {
+		bool supportsBlit = false;
+	};
+
+	struct vktDeletionQueue
+	{
+		std::deque<std::function<void()>> deletors;
+
+		void push_function(std::function<void()>&& function) {
+			deletors.push_back(function);
+		}
+
+		void flush() {
+			// reverse iterate the deletion queue to execute all the functions
+			for (auto it = deletors.rbegin(); it != deletors.rend(); it++) {
+				(*it)(); //call the function
+			}
+
+			deletors.clear();
+		}
+	};
+
+	VkInstance createVkInstance(vktDeletionQueue& deletionQueue, char* applicationName, char* engineName);
 
 	struct QueueFamilyIndices {
 		std::optional<uint32_t> graphicsFamily;
@@ -62,9 +84,10 @@ Instantiate a helper object with all the info about the physicalDevice specified
 	class vktPhysicalDevice {
 	public:
 
-		vktPhysicalDevice(VkPhysicalDevice physicalDevice) {
+		vktPhysicalDevice(vktDeletionQueue& deletionQueue, VkInstance instance, VkPhysicalDevice physicalDevice) {
 
 			this->physicalDevice = physicalDevice;
+			this->instance = instance;
 
 			queueFamilyIndices = findQueueFamilies(physicalDevice);
 
@@ -89,8 +112,11 @@ Instantiate a helper object with all the info about the physicalDevice specified
 				}
 			}
 
+			deletionQueue.push_function([=]() { delete(this); });
 		}
 		~vktPhysicalDevice() {}
+
+		VkInstance instance;
 
 		VkPhysicalDevice physicalDevice;
 
@@ -164,6 +190,42 @@ Instantiate a helper object with all the info about the physicalDevice specified
 			return (std::find(supportedExtensions.begin(), supportedExtensions.end(), extension) != supportedExtensions.end());
 		}
 
+		VkFormatProperties getFormatProperties(VkFormat format) {
+			VkFormatProperties formatProps;
+			vkGetPhysicalDeviceFormatProperties(physicalDevice, VK_FORMAT_R8G8B8A8_UNORM, &formatProps);
+			return formatProps;
+		}
+
+	};
+
+	struct AllocatedBuffer {
+		VkBuffer buffer;
+		VmaAllocation allocation;
+	};
+
+	struct VertexInputDescription {
+
+		std::vector<VkVertexInputBindingDescription> bindings;
+		std::vector<VkVertexInputAttributeDescription> attributes;
+
+		VkPipelineVertexInputStateCreateFlags flags = 0;
+	};
+
+	struct Vertex {
+
+		glm::vec3 position;
+		glm::vec3 normal;
+		glm::vec3 color;
+
+		static VertexInputDescription get_vertex_description();
+	};
+
+	struct Mesh {
+		std::vector<Vertex> vertices;
+
+		AllocatedBuffer vertexBuffer;
+
+		bool load_from_obj(const char* filename);
 	};
 
 	/**
@@ -173,6 +235,7 @@ Instantiate a helper object with all the info about the physicalDevice specified
 	class vktDevice {
 	public:
 		vktDevice(
+			vktDeletionQueue& deletionQueue,
 			vktPhysicalDevice* vktPhysicalDevice,
 			VkPhysicalDeviceFeatures enabledFeatures = {},
 			std::vector<const char*> enabledExtensions = {},
@@ -180,45 +243,52 @@ Instantiate a helper object with all the info about the physicalDevice specified
 		) {
 			this->device = vktPhysicalDevice->createLogicalDevice(enabledFeatures, enabledExtensions, useSwapChain);
 			this->vktPhysicalDevice = vktPhysicalDevice;
+			this->pDeletionQueue = &deletionQueue;
 
 			// Get a graphics queue from the device
 			vkGetDeviceQueue(device, vktPhysicalDevice->queueFamilyIndices.graphicsFamily.value(), 0, &graphicsQueue);
 
-			// create a command pool
+			// create a command pool in the graphics queue
 			commandPool = createCommandPool(vktPhysicalDevice->queueFamilyIndices.graphicsFamily.value());
+
+			// create memory allocator
+			VmaAllocatorCreateInfo allocatorInfo = {};
+			allocatorInfo.physicalDevice = vktPhysicalDevice->physicalDevice;
+			allocatorInfo.device = device;
+			allocatorInfo.instance = vktPhysicalDevice->instance;
+			vmaCreateAllocator(&allocatorInfo, &vmaAllocator);
+
+			deletionQueue.push_function([=]() { delete(this); });
 		}
 
 		~vktDevice() {
-			if (commandPool)
-			{
-				vkDestroyCommandPool(device, commandPool, nullptr);
-			}
-			if (device)
-			{
-				vkDestroyDevice(device, nullptr);
-			}
+			vmaDestroyAllocator(vmaAllocator);
+			vkDestroyCommandPool(device, commandPool, nullptr);
+			vkDestroyDevice(device, nullptr);
 		}
 
 		vktPhysicalDevice* vktPhysicalDevice;
 		VkDevice device;
 
+		vktDeletionQueue* pDeletionQueue;
+
 		VkQueue graphicsQueue = VK_NULL_HANDLE;
-
 		VkCommandPool commandPool = VK_NULL_HANDLE;
+		VmaAllocator vmaAllocator = VK_NULL_HANDLE;
 
-		// ------
-
+		// create pipeline objects
 		VkShaderModule createShaderModule(char* spvPath);
-
 		VkCommandPool createCommandPool(uint32_t queueFamilyIndex);
-		VkCommandBuffer vktDevice::createCommandBuffer(VkCommandPool dedicatedCommandPool = VK_NULL_HANDLE, VkCommandBuffer previousCommandBuffer = VK_NULL_HANDLE);
+		VkCommandBuffer vktDevice::createCommandBuffer(VkCommandPool dedicatedCommandPool = VK_NULL_HANDLE);
+		void vktDevice::restartCommandBuffer(VkCommandBuffer& previousCommandBuffer, VkCommandPool dedicatedCommandPool = VK_NULL_HANDLE);
 
+		// wait and submit
 		void waitIdle() {
 			vkDeviceWaitIdle(device);
 		}
-
 		void submitQueue(VkCommandBuffer commandBuffer, VkFence fence, VkSemaphore signalSemaphore, VkSemaphore waitSemaphore);
 
+		// sync objects
 		VkFence createFence(bool signaled) {
 			VkFenceCreateInfo fenceInfo{};
 			fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -228,6 +298,14 @@ Instantiate a helper object with all the info about the physicalDevice specified
 			VK_CHECK_RESULT(vkCreateFence(device, &fenceInfo, nullptr, &fence));
 			return fence;
 		}
+		VkFence createFence(bool signaled, vktDeletionQueue deletionQueue) {
+			VkFence fence = createFence(signaled);
+			deletionQueue.push_function([=]() {
+				destroySyncObjects({ fence });
+				});
+			return fence;
+		}
+
 		VkSemaphore createSemaphore() {
 			VkSemaphoreCreateInfo semaphoreInfo{};
 			semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -235,18 +313,98 @@ Instantiate a helper object with all the info about the physicalDevice specified
 			VK_CHECK_RESULT(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore));
 			return semaphore;
 		}
+		VkSemaphore createSemaphore(vktDeletionQueue deletionQueue) {
+			VkSemaphore semaphore = createSemaphore();
+			deletionQueue.push_function([=]() {
+				destroySyncObjects({ semaphore });
+				});
+			return semaphore;
+		}
 
 		void destroySyncObjects(std::vector<std::any> objs) {
 			for (auto obj : objs)
 			{
-				if (typeid(obj) == typeid(VkFence))
+				if (obj.type() == typeid(VkFence))
 					vkDestroyFence(device, std::any_cast<VkFence>(obj), nullptr);
-				else if (typeid(obj) == typeid(VkSemaphore))
+				else if (obj.type() == typeid(VkSemaphore))
 					vkDestroySemaphore(device, std::any_cast<VkSemaphore>(obj), nullptr);
 			}
 		}
+
+		// allocated buffers
+		void allocateMesh(vkt::Mesh* mesh) {
+			//allocate vertex buffer
+			VkBufferCreateInfo bufferInfo = {};
+			bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+			//this is the total size, in bytes, of the buffer we are allocating
+			bufferInfo.size = mesh->vertices.size() * sizeof(vkt::Vertex);
+			//this buffer is going to be used as a Vertex Buffer
+			bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+
+			VmaAllocationCreateInfo vmaallocInfo = {};
+			vmaallocInfo.usage = VMA_MEMORY_USAGE_GPU_TO_CPU;
+
+			//allocate the buffer
+			VK_CHECK_RESULT(vmaCreateBuffer(vmaAllocator, &bufferInfo, &vmaallocInfo,
+				&(mesh->vertexBuffer.buffer),
+				&(mesh->vertexBuffer.allocation),
+				nullptr));
+
+			//copy vertex data
+			void* data;
+			vmaMapMemory(vmaAllocator, mesh->vertexBuffer.allocation, &data);
+
+			memcpy(data, mesh->vertices.data(), mesh->vertices.size() * sizeof(vkt::Vertex));
+
+			vmaUnmapMemory(vmaAllocator, mesh->vertexBuffer.allocation);
+
+			pDeletionQueue->push_function([=]() {
+				vmaDestroyBuffer(vmaAllocator, mesh->vertexBuffer.buffer, mesh->vertexBuffer.allocation);
+				});
+		}
+
 	};
 
+	class AllocatedImage {
+	public:
+		/**
+		The destructor is appended to the queue automatically.
+		*/
+		AllocatedImage(vktDeletionQueue& deletionQueue, vktDevice* vktDevice) {
+			this->vktDevice = vktDevice;
+			deletionQueue.push_function([=]() {
+				delete(this);
+				});
+		}
+		AllocatedImage(vktDevice* vktDevice) {
+			this->vktDevice = vktDevice;
+		}
+		~AllocatedImage();
+
+		vktDevice* vktDevice;
+		vktDeletionQueue* pDeletionQueue;
+
+		VkImage image = VK_NULL_HANDLE;
+		VkImageView imageView = VK_NULL_HANDLE;
+		VmaAllocation allocation;
+		VmaAllocationInfo allocationInfo{};
+
+		void createImage(VkExtent2D extent,
+			VkImageType type, VkFormat format,
+			VkImageTiling imageTiling,
+			VkImageUsageFlags usageFlags,
+			VmaMemoryUsage memoryUsage,
+			VkMemoryPropertyFlags memoryProperties,
+			VmaAllocationCreateFlags vmaFlags = NULL);
+		void createImageView(VkImageViewType type, VkFormat format, VkImageAspectFlagBits aspectMask);
+
+	};
+
+
+	/**
+	DEPRECATED
+	Manual allocation of a VkImage. Use AllocatedImage which uses VmaAllocator
+	*/
 	class vktAttachment {
 	public:
 		vktAttachment(vktDevice* vktDevice) {
@@ -288,51 +446,5 @@ Instantiate a helper object with all the info about the physicalDevice specified
 		VkPipelineStageFlags srcStageMask,
 		VkPipelineStageFlags dstStageMask,
 		VkImageSubresourceRange subresourceRange);
-
-	struct vktDeletionQueue
-	{
-		std::deque<std::function<void()>> deletors;
-
-		void push_function(std::function<void()>&& function) {
-			deletors.push_back(function);
-		}
-
-		void flush() {
-			// reverse iterate the deletion queue to execute all the functions
-			for (auto it = deletors.rbegin(); it != deletors.rend(); it++) {
-				(*it)(); //call the function
-			}
-
-			deletors.clear();
-		}
-	};
-
-	struct AllocatedBuffer {
-		VkBuffer buffer;
-		VmaAllocation allocation;
-	};
-
-	struct VertexInputDescription {
-
-		std::vector<VkVertexInputBindingDescription> bindings;
-		std::vector<VkVertexInputAttributeDescription> attributes;
-
-		VkPipelineVertexInputStateCreateFlags flags = 0;
-	};
-
-	struct Vertex {
-
-		glm::vec3 position;
-		glm::vec3 normal;
-		glm::vec3 color;
-
-		static VertexInputDescription get_vertex_description();
-	};
-
-	struct Mesh {
-		std::vector<Vertex> vertices;
-
-		AllocatedBuffer vertexBuffer;
-	};
 
 }

@@ -1,5 +1,12 @@
 #include "vktools.h"
 
+#define TINYOBJLOADER_IMPLEMENTATION
+#define TINYOBJLOADER_USE_MAPBOX_EARCUT
+#include "tiny_obj_loader.h"
+
+#define VMA_IMPLEMENTATION // to enable vma typedefs
+#include "vk_mem_alloc.h"
+
 namespace vkt {
 
 	// VALIDATION LAYERS
@@ -41,7 +48,7 @@ namespace vkt {
 
 	// CREATE INSTANCE
 
-	VkInstance createVkInstance(char* applicationName, char* engineName) {
+	VkInstance createVkInstance(vktDeletionQueue& deletionQueue, char* applicationName, char* engineName) {
 
 		if (enableVkValidationLayers && !checkValidationLayerSupport()) {
 			throw std::runtime_error("validation layers requested, but not available!");
@@ -69,9 +76,11 @@ namespace vkt {
 
 		VkInstance instance;
 
-		VK_CHECK_RESULT(vkCreateInstance(&createInfo, nullptr, &instance))
+		VK_CHECK_RESULT(vkCreateInstance(&createInfo, nullptr, &instance));
 
-			return instance;
+		deletionQueue.push_function([=]() { vkDestroyInstance(instance, nullptr); });
+
+		return instance;
 	}
 
 	// PICK PHYSICAL DEVICE
@@ -306,6 +315,73 @@ namespace vkt {
 		VK_CHECK_RESULT(vkCreateImageView(vktDevice->device, &colorImageView, nullptr, &imageView));
 	}
 
+	// ALLOCATED IMAGE
+
+	AllocatedImage::~AllocatedImage() {
+		if (imageView)
+			vkDestroyImageView(vktDevice->device, imageView, nullptr);
+		if (image) {
+			vmaDestroyImage(vktDevice->vmaAllocator, image, nullptr);
+		}
+		vmaFreeMemory(vktDevice->vmaAllocator, allocation);
+		vmaFlushAllocation(vktDevice->vmaAllocator, allocation, 0, VK_WHOLE_SIZE);
+	}
+	void AllocatedImage::createImage(VkExtent2D extent,
+		VkImageType type, VkFormat format,
+		VkImageTiling imageTiling,
+		VkImageUsageFlags usageFlags,
+		VmaMemoryUsage memoryUsage,
+		VkMemoryPropertyFlags memoryProperties,
+		VmaAllocationCreateFlags vmaFlags) {
+
+		VkImageCreateInfo createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+
+		createInfo.imageType = type;
+		createInfo.format = format;
+
+		createInfo.mipLevels = 1;
+		createInfo.arrayLayers = 1;
+
+		createInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+		createInfo.tiling = imageTiling; // VK_IMAGE_TILING_LINEAR
+
+		//createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+		createInfo.extent.width = extent.width;
+		createInfo.extent.height = extent.height;
+		createInfo.extent.depth = 1;
+
+		uint32_t uniqueQueueFamilies[1] = { vktDevice->vktPhysicalDevice->queueFamilyIndices.graphicsFamily.value() };
+
+		createInfo.queueFamilyIndexCount = 1;
+		createInfo.pQueueFamilyIndices = uniqueQueueFamilies;
+
+		createInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		createInfo.usage = usageFlags;
+
+		VmaAllocationCreateInfo alloccinfo = {};
+		alloccinfo.usage = memoryUsage;
+		alloccinfo.requiredFlags = VkMemoryPropertyFlags(memoryProperties);
+		alloccinfo.flags = vmaFlags;
+
+		VK_CHECK_RESULT(vmaCreateImage(vktDevice->vmaAllocator, &createInfo, &alloccinfo, &image, &allocation, &allocationInfo));
+	}
+	void AllocatedImage::createImageView(VkImageViewType type, VkFormat format, VkImageAspectFlagBits aspectFlags) {
+		VkImageViewCreateInfo colorImageView{};
+		colorImageView.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		colorImageView.viewType = type;
+		colorImageView.format = format;
+		colorImageView.subresourceRange = {};
+		colorImageView.subresourceRange.aspectMask = aspectFlags;
+		colorImageView.subresourceRange.baseMipLevel = 0;
+		colorImageView.subresourceRange.levelCount = 1;
+		colorImageView.subresourceRange.baseArrayLayer = 0;
+		colorImageView.subresourceRange.layerCount = 1;
+		colorImageView.image = image;
+		VK_CHECK_RESULT(vkCreateImageView(vktDevice->device, &colorImageView, nullptr, &imageView));
+	}
+
 	// SHADER MODULES
 
 	static std::vector<char> readFile(const std::string& filename) {
@@ -361,30 +437,22 @@ namespace vkt {
 	}
 
 	// COMMAND BUFFER
-
-	/**
-	Allocates new command buffer or resets the previous provided.
-	Then it begins.
+		/**
+	Allocates new command buffer, then it begins.
 	@param dedicatedCommandPool if a dedicated command pool is not specified, the command buffer is created from the standard graphics pool.
 	*/
-	VkCommandBuffer vktDevice::createCommandBuffer(VkCommandPool dedicatedCommandPool, VkCommandBuffer previousCommandBuffer) {
+	VkCommandBuffer vktDevice::createCommandBuffer(VkCommandPool dedicatedCommandPool) {
 
-		VkCommandBuffer commandBuffer = previousCommandBuffer;
+		VkCommandBuffer commandBuffer;
+		VkCommandPool commandPool = dedicatedCommandPool ? dedicatedCommandPool : this->commandPool;
 
-		if (previousCommandBuffer) {
-			vkResetCommandBuffer(previousCommandBuffer, 0);
-		}
-		else {
-			VkCommandBufferAllocateInfo allocInfo{};
-			allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-			allocInfo.commandPool = dedicatedCommandPool ? dedicatedCommandPool : commandPool;
-			allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-			allocInfo.commandBufferCount = 1;
+		VkCommandBufferAllocateInfo allocInfo{};
+		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		allocInfo.commandPool = commandPool;
+		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		allocInfo.commandBufferCount = 1;
 
-			if (vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer) != VK_SUCCESS) {
-				throw std::runtime_error("failed to allocate command buffers!");
-			}
-		}
+		VK_CHECK_RESULT(vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer));
 
 		VkCommandBufferBeginInfo beginInfo{};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -393,7 +461,30 @@ namespace vkt {
 
 		VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo));
 
+		pDeletionQueue->push_function([=]() {
+			vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+			});
+
 		return commandBuffer;
+	}
+
+	/**
+	Resets the previous command buffer provided.
+	Then it begins.
+	@param dedicatedCommandPool if a dedicated command pool is not specified, the command buffer is created from the standard graphics pool.
+	*/
+	void vktDevice::restartCommandBuffer(VkCommandBuffer& previousCommandBuffer, VkCommandPool dedicatedCommandPool) {
+
+		VkCommandPool commandPool = dedicatedCommandPool ? dedicatedCommandPool : this->commandPool;
+
+		vkResetCommandBuffer(previousCommandBuffer, 0);
+
+		VkCommandBufferBeginInfo beginInfo{};
+		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		beginInfo.flags = 0; // Optional
+		beginInfo.pInheritanceInfo = nullptr; // Optional
+
+		VK_CHECK_RESULT(vkBeginCommandBuffer(previousCommandBuffer, &beginInfo));
 	}
 
 	void vktDevice::submitQueue(VkCommandBuffer commandBuffer, VkFence fence, VkSemaphore signalSemaphore, VkSemaphore waitSemaphore) {
@@ -498,6 +589,88 @@ namespace vkt {
 		description.attributes.push_back(colorAttribute);
 
 		return description;
+	}
+
+	/**
+	All objects will get merged into one Mesh object. The object must be triangulated.
+	*/
+	bool Mesh::load_from_obj(const char* filename) {
+
+		tinyobj::ObjReaderConfig reader_config;
+		tinyobj::ObjReader reader;
+
+		if (!reader.ParseFromFile(filename, reader_config)) {
+			if (!reader.Error().empty()) {
+				std::cerr << "TinyObjReader: " << reader.Error();
+			}
+			return false;
+		}
+
+		if (!reader.Warning().empty()) {
+			std::cout << "TinyObjReader: " << reader.Warning();
+		}
+
+		auto& attrib = reader.GetAttrib();
+		auto& shapes = reader.GetShapes();
+		auto& materials = reader.GetMaterials();
+
+		//------
+
+		// Loop over shapes
+		for (size_t s = 0; s < shapes.size(); s++) {
+			// Loop over faces(polygon)
+			size_t index_offset = 0;
+			for (size_t f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++) {
+
+				size_t fv = size_t(shapes[s].mesh.num_face_vertices[f]);
+
+				// Loop over vertices in the face.
+				for (size_t v = 0; v < fv; v++) {
+
+					Vertex new_vert; // vertex struct to copy data to
+
+					// access to vertex
+					tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];
+
+					//vertex position
+					tinyobj::real_t vx = attrib.vertices[3 * size_t(idx.vertex_index) + 0];
+					tinyobj::real_t vy = attrib.vertices[3 * size_t(idx.vertex_index) + 1];
+					tinyobj::real_t vz = attrib.vertices[3 * size_t(idx.vertex_index) + 2];
+
+					new_vert.position.x = vx;
+					new_vert.position.y = vy;
+					new_vert.position.z = vz;
+
+					// Check if `normal_index` is zero or positive. negative = no normal data
+					if (idx.normal_index >= 0) {
+						tinyobj::real_t nx = attrib.normals[3 * size_t(idx.normal_index) + 0];
+						tinyobj::real_t ny = attrib.normals[3 * size_t(idx.normal_index) + 1];
+						tinyobj::real_t nz = attrib.normals[3 * size_t(idx.normal_index) + 2];
+
+						new_vert.normal.x = nx;
+						new_vert.normal.y = ny;
+						new_vert.normal.z = nz;
+					}
+
+					// Check if `texcoord_index` is zero or positive. negative = no texcoord data
+					if (idx.texcoord_index >= 0) {
+						tinyobj::real_t tx = attrib.texcoords[2 * size_t(idx.texcoord_index) + 0];
+						tinyobj::real_t ty = attrib.texcoords[2 * size_t(idx.texcoord_index) + 1];
+					}
+
+					//we are setting the vertex color as the vertex normal. This is just for display purposes
+					new_vert.color = new_vert.normal;
+
+					vertices.push_back(new_vert);
+				}
+				index_offset += fv;
+
+				// per-face material
+				shapes[s].mesh.material_ids[f];
+			}
+		}
+
+		return true;
 	}
 
 }

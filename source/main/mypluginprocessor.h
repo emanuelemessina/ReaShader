@@ -97,12 +97,14 @@ namespace ReaShader {
 
 		VkInstance myVkInstance;
 		vkt::vktDeletionQueue deletionQueue;
+		vkt::vktInitProperties vktInitProperties{};
 
 		vkt::vktPhysicalDevice* vktPhysicalDevice;
 
 		vkt::vktDevice* vktDevice;
 
-		vkt::vktAttachment* vkColorAttachment;
+		vkt::AllocatedImage* frameTransferDest;
+		vkt::AllocatedImage* vkColorAttachment;
 
 		VkRenderPass vkRenderPass;
 		VkPipelineLayout vkPipelineLayout;
@@ -118,8 +120,7 @@ namespace ReaShader {
 		VkSemaphore vkRenderFinishedSemaphore;
 		VkFence vkInFlightFence;
 
-		VmaAllocator vmaAllocator;
-
+		vkt::Mesh triangleMesh;
 		vkt::Mesh myMesh;
 	};
 
