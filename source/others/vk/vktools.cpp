@@ -433,6 +433,8 @@ namespace vkt {
 			throw std::runtime_error("failed to create command pool!");
 		}
 
+		pDeletionQueue->push_function([=]() { vkDestroyCommandPool(device, commandPool, nullptr); });
+
 		return commandPool;
 	}
 

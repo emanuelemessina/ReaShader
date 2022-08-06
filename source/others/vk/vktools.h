@@ -267,7 +267,6 @@ Instantiate a helper object with all the info about the physicalDevice specified
 
 		~vktDevice() {
 			vmaDestroyAllocator(vmaAllocator);
-			vkDestroyCommandPool(device, graphicsCommandPool, nullptr);
 			vkDestroyDevice(device, nullptr);
 		}
 
@@ -306,7 +305,7 @@ Instantiate a helper object with all the info about the physicalDevice specified
 			VK_CHECK_RESULT(vkCreateFence(device, &fenceInfo, nullptr, &fence));
 			return fence;
 		}
-		VkFence createFence(bool signaled, vktDeletionQueue deletionQueue) {
+		VkFence createFence(bool signaled, vktDeletionQueue& deletionQueue) {
 			VkFence fence = createFence(signaled);
 			deletionQueue.push_function([=]() {
 				destroySyncObjects({ fence });
@@ -321,7 +320,7 @@ Instantiate a helper object with all the info about the physicalDevice specified
 			VK_CHECK_RESULT(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore));
 			return semaphore;
 		}
-		VkSemaphore createSemaphore(vktDeletionQueue deletionQueue) {
+		VkSemaphore createSemaphore(vktDeletionQueue& deletionQueue) {
 			VkSemaphore semaphore = createSemaphore();
 			deletionQueue.push_function([=]() {
 				destroySyncObjects({ semaphore });
