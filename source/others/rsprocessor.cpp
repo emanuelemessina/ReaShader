@@ -12,7 +12,7 @@ namespace ReaShader {
 		glm::mat4 render_matrix;
 	};
 
-	void drawFrame(vkt::vktDevice* vktDevice,
+	void drawFrame(ReaShaderProcessor* rs, vkt::vktDevice* vktDevice,
 		VkRenderPass renderPass,
 		VkPipelineLayout pipelineLayout,
 		VkPipeline graphicsPipeline,
@@ -38,9 +38,16 @@ namespace ReaShader {
 		renderPassInfo.renderArea.extent.width = PROJ_W;
 		renderPassInfo.renderArea.extent.height = PROJ_H;
 
-		VkClearValue clearColor = { {{ 0.0f, 0.0f, 0.2f, 1.0f }} };
-		renderPassInfo.clearValueCount = 1;
-		renderPassInfo.pClearValues = &clearColor;
+		VkClearValue clearColor = { {{ 0.0f, 0.0f, 0.0f, 0.0f }} }; // transparent
+
+		//clear depth at 1
+		VkClearValue depthClear;
+		depthClear.depthStencil.depth = 1.f;
+
+		std::vector<VkClearValue> clearValues = { clearColor, depthClear };
+
+		renderPassInfo.clearValueCount = clearValues.size();
+		renderPassInfo.pClearValues = clearValues.data();
 
 		vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -100,13 +107,13 @@ namespace ReaShader {
 
 		// submit ( end command buffer )
 
-		vktDevice->submitQueue(commandBuffer, VK_NULL_HANDLE, renderFinishedSemaphore, VK_NULL_HANDLE);
+		vktDevice->submitQueue(commandBuffer, VK_NULL_HANDLE, renderFinishedSemaphore, rs->vkImageAvailableSemaphore);
 	}
 
 	void transferFrame(vkt::vktDevice* vktDevice,
 		vkt::vktInitProperties vktInitProperties,
 		VkImage srcImage,
-		vkt::AllocatedImage* frameTransferDest,
+		vkt::AllocatedImage* vkFrameTransfer,
 		int*& destBuffer,
 		VkCommandBuffer& commandBuffer,
 		VkSemaphore& renderFinishedSemaphore,
@@ -115,16 +122,18 @@ namespace ReaShader {
 
 		// init command buffer
 
+		vkQueueWaitIdle(vktDevice->transferQueue);
+
 		vktDevice->restartCommandBuffer(commandBuffer);
 
 		// Transition destination image to transfer destination layout
 
 		vkt::insertImageMemoryBarrier(
 			commandBuffer,
-			frameTransferDest->image,
+			vkFrameTransfer->image,
 			0,
 			VK_ACCESS_TRANSFER_WRITE_BIT,
-			VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			VK_PIPELINE_STAGE_TRANSFER_BIT,
 			VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -154,7 +163,7 @@ namespace ReaShader {
 			vkCmdBlitImage(
 				commandBuffer,
 				srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-				frameTransferDest->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				vkFrameTransfer->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 				1,
 				&imageBlitRegion,
 				VK_FILTER_NEAREST);
@@ -175,7 +184,7 @@ namespace ReaShader {
 			vkCmdCopyImage(
 				commandBuffer,
 				srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-				frameTransferDest->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				vkFrameTransfer->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 				1,
 				&imageCopyRegion);
 		}
@@ -183,7 +192,7 @@ namespace ReaShader {
 		// Transition destination image to general layout, which is the required layout for mapping the image memory later on
 		vkt::insertImageMemoryBarrier(
 			commandBuffer,
-			frameTransferDest->image,
+			vkFrameTransfer->image,
 			VK_ACCESS_TRANSFER_WRITE_BIT,
 			VK_ACCESS_MEMORY_READ_BIT,
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -194,7 +203,7 @@ namespace ReaShader {
 
 		// submit queue (wait for draw frame)
 
-		vktDevice->submitQueue(commandBuffer, inFlightFence, VK_NULL_HANDLE, renderFinishedSemaphore);
+		vktDevice->submitQueue(commandBuffer, inFlightFence, VK_NULL_HANDLE, renderFinishedSemaphore, vktDevice->transferQueue);
 
 		// wait fence since now we are on cpu
 
@@ -206,11 +215,94 @@ namespace ReaShader {
 		subResource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		VkSubresourceLayout subResourceLayout;
 
-		vkGetImageSubresourceLayout(vktDevice->device, frameTransferDest->image, &subResource, &subResourceLayout);
+		vkGetImageSubresourceLayout(vktDevice->device, vkFrameTransfer->image, &subResource, &subResourceLayout);
 
 		// dest image is already mapped
-		memcpy((void*)destBuffer, (void*)((int)(frameTransferDest->allocationInfo).pMappedData + subResourceLayout.offset), sizeof(LICE_pixel) * PROJ_W * PROJ_H);
+		memcpy((void*)destBuffer, (void*)((int)(vkFrameTransfer->allocationInfo).pMappedData + subResourceLayout.offset), sizeof(LICE_pixel) * PROJ_W * PROJ_H);
 
+	}
+
+	// load vf bits to color attachment
+	void loadBitsToImage(ReaShaderProcessor* rs, int* srcBuffer) {
+
+		vkQueueWaitIdle(rs->vktDevice->transferQueue);
+
+		rs->vktDevice->restartCommandBuffer(rs->vkTransferCommandBuffer);
+
+		vkt::insertImageMemoryBarrier(
+			rs->vkTransferCommandBuffer,
+			rs->vkFrameTransfer->image,
+			0,
+			VK_ACCESS_MEMORY_WRITE_BIT,
+			VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_IMAGE_LAYOUT_GENERAL,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
+
+		// submit command, signal fence
+		rs->vktDevice->submitQueue(rs->vkTransferCommandBuffer, rs->vkInFlightFence, VK_NULL_HANDLE, VK_NULL_HANDLE, rs->vktDevice->transferQueue);
+
+		// wait for it
+		vkWaitForFences(rs->vktDevice->device, 1, &rs->vkInFlightFence, VK_TRUE, UINT64_MAX);
+		vkResetFences(rs->vktDevice->device, 1, &rs->vkInFlightFence);
+
+		// Get layout of the image (including row pitch)
+		VkImageSubresource subResource{};
+		subResource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		VkSubresourceLayout subResourceLayout;
+		vkGetImageSubresourceLayout(rs->vktDevice->device, rs->vkFrameTransfer->image, &subResource, &subResourceLayout);
+
+		// copy bits from src to framedest
+		memcpy((void*)((int)(rs->vkFrameTransfer->allocationInfo).pMappedData + subResourceLayout.offset), (void*)srcBuffer, sizeof(LICE_pixel) * PROJ_W * PROJ_H);
+
+		rs->vktDevice->restartCommandBuffer(rs->vkTransferCommandBuffer);
+
+		// retransition frametransfer to src copy optiman
+
+		vkt::insertImageMemoryBarrier(
+			rs->vkTransferCommandBuffer,
+			rs->vkFrameTransfer->image,
+			VK_ACCESS_TRANSFER_WRITE_BIT,
+			VK_ACCESS_MEMORY_READ_BIT,
+			VK_IMAGE_LAYOUT_GENERAL,
+			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
+
+		// color attachment goes dst optimal
+
+		vkt::insertImageMemoryBarrier(
+			rs->vkTransferCommandBuffer,
+			rs->vkColorAttachment->image,
+			0,
+			VK_ACCESS_MEMORY_READ_BIT,
+			VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
+
+		// perform copy to color attachment
+
+		VkImageCopy imageCopyRegion{};
+		imageCopyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		imageCopyRegion.srcSubresource.layerCount = 1;
+		imageCopyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		imageCopyRegion.dstSubresource.layerCount = 1;
+		imageCopyRegion.extent.width = PROJ_W;
+		imageCopyRegion.extent.height = PROJ_H;
+		imageCopyRegion.extent.depth = 1;
+
+		vkCmdCopyImage(
+			rs->vkTransferCommandBuffer,
+			rs->vkFrameTransfer->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			rs->vkColorAttachment->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			1,
+			&imageCopyRegion);
+
+		rs->vktDevice->submitQueue(rs->vkTransferCommandBuffer, VK_NULL_HANDLE, rs->vkImageAvailableSemaphore, VK_NULL_HANDLE, rs->vktDevice->transferQueue);
 	}
 
 	/* video */
@@ -254,10 +346,12 @@ namespace ReaShader {
 				}
 			}*/
 
+			loadBitsToImage(rsProcessor, bits);
+
 			float rotSpeed = parmlist[uVideoParam + 1];
 			double pushConstants[] = { project_time, frate, rotSpeed };
 
-			drawFrame(rsProcessor->vktDevice,
+			drawFrame(rsProcessor, rsProcessor->vktDevice,
 				rsProcessor->vkRenderPass,
 				rsProcessor->vkPipelineLayout,
 				rsProcessor->vkGraphicsPipeline,
@@ -272,7 +366,7 @@ namespace ReaShader {
 			transferFrame(rsProcessor->vktDevice,
 				rsProcessor->vktInitProperties,
 				rsProcessor->vkColorAttachment->image,
-				rsProcessor->frameTransferDest,
+				rsProcessor->vkFrameTransfer,
 				bits,
 				rsProcessor->vkTransferCommandBuffer,
 				rsProcessor->vkRenderFinishedSemaphore,
@@ -311,40 +405,82 @@ namespace ReaShader {
 
 	VkRenderPass createRenderPass(VkDevice device) {
 
+		// color
+
 		VkAttachmentDescription colorAttachment{};
 		colorAttachment.format = VK_FORMAT_B8G8R8A8_UNORM;
 		colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD; // load existing attachment information
 		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		colorAttachment.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		colorAttachment.initialLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		colorAttachment.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL; // transition from dst to src optimal layout after render finished
 
 		VkAttachmentReference colorAttachmentRef{};
 		colorAttachmentRef.attachment = 0;
 		colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+		// depth
+
+		VkAttachmentDescription depth_attachment = {};
+		depth_attachment.flags = 0;
+		depth_attachment.format = VK_FORMAT_D32_SFLOAT;
+		depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+		depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+		VkAttachmentReference depth_attachment_ref = {};
+		depth_attachment_ref.attachment = 1;
+		depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+		// subpass
+
 		VkSubpassDescription subpass{};
 		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 		subpass.colorAttachmentCount = 1;
 		subpass.pColorAttachments = &colorAttachmentRef;
+		subpass.pDepthStencilAttachment = &depth_attachment_ref;
 
 		// Use subpass dependencies for layout transitions
-		std::array<VkSubpassDependency, 1> dependencies;
+		VkSubpassDependency colorDependencyInit{};
+		colorDependencyInit.srcSubpass = VK_SUBPASS_EXTERNAL;
+		colorDependencyInit.dstSubpass = 0;
+		colorDependencyInit.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+		colorDependencyInit.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		colorDependencyInit.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+		colorDependencyInit.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		colorDependencyInit.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
-		dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-		dependencies[0].dstSubpass = 0;
-		dependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-		dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		dependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-		dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+		VkSubpassDependency depthDependency{};
+		depthDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+		depthDependency.dstSubpass = 0;
+		depthDependency.srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+		depthDependency.srcAccessMask = 0;
+		depthDependency.dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+		depthDependency.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+		VkSubpassDependency colorDependencyFinal{};
+		colorDependencyFinal.srcSubpass = 0;
+		colorDependencyFinal.dstSubpass = VK_SUBPASS_EXTERNAL;
+		colorDependencyFinal.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		colorDependencyFinal.dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+		colorDependencyFinal.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		colorDependencyFinal.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+		colorDependencyFinal.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		std::vector<VkSubpassDependency> dependencies = { colorDependencyInit, depthDependency, colorDependencyFinal };
+
+		std::vector<VkAttachmentDescription> attachments = { colorAttachment, depth_attachment };
 
 		VkRenderPassCreateInfo renderPassInfo{};
 		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		renderPassInfo.attachmentCount = 1;
-		renderPassInfo.pAttachments = &colorAttachment;
+		renderPassInfo.attachmentCount = attachments.size();
+		renderPassInfo.pAttachments = attachments.data();
 		renderPassInfo.subpassCount = 1;
 		renderPassInfo.pSubpasses = &subpass;
 		renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
@@ -416,6 +552,20 @@ namespace ReaShader {
 		viewportState.viewportCount = 1;
 		viewportState.scissorCount = 1;
 
+		// depth stencil
+
+		VkPipelineDepthStencilStateCreateInfo depthStencilInfo = {};
+		depthStencilInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+		depthStencilInfo.pNext = nullptr;
+
+		depthStencilInfo.depthTestEnable = VK_TRUE; // don't draw on top of other things
+		depthStencilInfo.depthWriteEnable = VK_TRUE;
+		depthStencilInfo.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+		depthStencilInfo.depthBoundsTestEnable = VK_FALSE;
+		depthStencilInfo.minDepthBounds = 0.0f; // Optional
+		depthStencilInfo.maxDepthBounds = 1.0f; // Optional
+		depthStencilInfo.stencilTestEnable = VK_FALSE;
+
 		// rasterization
 		VkPipelineRasterizationStateCreateInfo rasterizer{};
 		rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
@@ -424,7 +574,7 @@ namespace ReaShader {
 		rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
 		rasterizer.lineWidth = 1.0f;
 		rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+		rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 		rasterizer.depthBiasEnable = VK_FALSE;
 		rasterizer.depthBiasConstantFactor = 0.0f; // Optional
 		rasterizer.depthBiasClamp = 0.0f; // Optional
@@ -520,7 +670,7 @@ namespace ReaShader {
 		pipelineInfo.pViewportState = &viewportState;
 		pipelineInfo.pRasterizationState = &rasterizer;
 		pipelineInfo.pMultisampleState = &multisampling;
-		pipelineInfo.pDepthStencilState = nullptr; // Optional
+		pipelineInfo.pDepthStencilState = &depthStencilInfo;
 		pipelineInfo.pColorBlendState = &colorBlending;
 		pipelineInfo.pDynamicState = &dynamicState;
 		// layout
@@ -545,14 +695,14 @@ namespace ReaShader {
 
 	// FRAMEBUFFER
 
-	VkFramebuffer createFramebuffer(VkDevice device, VkImageView imageView, VkRenderPass renderPass) {
-		VkImageView attachments[] = { imageView };
+	VkFramebuffer createFramebuffer(VkDevice device, VkImageView colorView, VkImageView depthView, VkRenderPass renderPass) {
+		std::vector<VkImageView> attachments = { colorView, depthView };
 
 		VkFramebufferCreateInfo framebufferInfo{};
 		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 		framebufferInfo.renderPass = renderPass;
-		framebufferInfo.attachmentCount = 1;
-		framebufferInfo.pAttachments = attachments;
+		framebufferInfo.attachmentCount = attachments.size();
+		framebufferInfo.pAttachments = attachments.data();
 		framebufferInfo.width = PROJ_W;
 		framebufferInfo.height = PROJ_H;
 		framebufferInfo.layers = 1;
@@ -612,7 +762,7 @@ namespace ReaShader {
 			VK_IMAGE_TYPE_2D,
 			VK_FORMAT_B8G8R8A8_UNORM,
 			VK_IMAGE_TILING_OPTIMAL,
-			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
 			VMA_MEMORY_USAGE_GPU_ONLY,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 		);
@@ -623,14 +773,32 @@ namespace ReaShader {
 			VK_IMAGE_ASPECT_COLOR_BIT
 		);
 
+		// depth buffer
+
+		vkDepthAttachment = new vkt::AllocatedImage(deletionQueue, vktDevice);
+		vkDepthAttachment->createImage(
+			{ PROJ_W, PROJ_H },
+			VK_IMAGE_TYPE_2D,
+			VK_FORMAT_D32_SFLOAT,
+			VK_IMAGE_TILING_OPTIMAL,
+			VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
+			VMA_MEMORY_USAGE_GPU_ONLY,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+		);
+		vkDepthAttachment->createImageView(
+			VK_IMAGE_VIEW_TYPE_2D,
+			VK_FORMAT_D32_SFLOAT,
+			VK_IMAGE_ASPECT_DEPTH_BIT
+		);
+
 		// frame transfer
 
-		frameTransferDest = new vkt::AllocatedImage(deletionQueue, vktDevice);
-		frameTransferDest->createImage(
+		vkFrameTransfer = new vkt::AllocatedImage(deletionQueue, vktDevice);
+		vkFrameTransfer->createImage(
 			{ PROJ_W, PROJ_H },
 			VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
 			VK_IMAGE_TILING_LINEAR,
-			VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, // both src and dst for copy cmds
 			VMA_MEMORY_USAGE_GPU_TO_CPU,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 			VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT
@@ -641,7 +809,7 @@ namespace ReaShader {
 		vkRenderPass = createRenderPass(vktDevice->device);
 		deletionQueue.push_function([=]() { vkDestroyRenderPass(vktDevice->device, vkRenderPass, nullptr); });
 
-		vkFramebuffer = createFramebuffer(vktDevice->device, vkColorAttachment->imageView, vkRenderPass);
+		vkFramebuffer = createFramebuffer(vktDevice->device, vkColorAttachment->imageView, vkDepthAttachment->imageView, vkRenderPass);
 		deletionQueue.push_function([=]() { vkDestroyFramebuffer(vktDevice->device, vkFramebuffer, nullptr); });
 
 		vkGraphicsPipeline = createGraphicsPipeline(vktDevice, vkRenderPass, &vkPipelineLayout, &vkPipelineCache);
@@ -652,10 +820,11 @@ namespace ReaShader {
 			});
 
 		vkDrawCommandBuffer = vktDevice->createCommandBuffer();
-		vkTransferCommandBuffer = vktDevice->createCommandBuffer();
+		vkTransferCommandBuffer = vktDevice->createCommandBuffer(vktDevice->transferCommandPool);
 
 		vkInFlightFence = vktDevice->createFence(false, deletionQueue);
 		vkRenderFinishedSemaphore = vktDevice->createSemaphore(deletionQueue);
+		vkImageAvailableSemaphore = vktDevice->createSemaphore(deletionQueue);
 
 		// check init properties
 

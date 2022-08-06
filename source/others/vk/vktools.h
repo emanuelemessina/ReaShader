@@ -247,9 +247,13 @@ Instantiate a helper object with all the info about the physicalDevice specified
 
 			// Get a graphics queue from the device
 			vkGetDeviceQueue(device, vktPhysicalDevice->queueFamilyIndices.graphicsFamily.value(), 0, &graphicsQueue);
+			// get transfer queue
+			vkGetDeviceQueue(device, vktPhysicalDevice->queueFamilyIndices.transferFamily.value(), 0, &transferQueue);
 
 			// create a command pool in the graphics queue
-			commandPool = createCommandPool(vktPhysicalDevice->queueFamilyIndices.graphicsFamily.value());
+			graphicsCommandPool = createCommandPool(vktPhysicalDevice->queueFamilyIndices.graphicsFamily.value());
+			// create transfer command pool
+			transferCommandPool = createCommandPool(vktPhysicalDevice->queueFamilyIndices.transferFamily.value());
 
 			// create memory allocator
 			VmaAllocatorCreateInfo allocatorInfo = {};
@@ -263,7 +267,7 @@ Instantiate a helper object with all the info about the physicalDevice specified
 
 		~vktDevice() {
 			vmaDestroyAllocator(vmaAllocator);
-			vkDestroyCommandPool(device, commandPool, nullptr);
+			vkDestroyCommandPool(device, graphicsCommandPool, nullptr);
 			vkDestroyDevice(device, nullptr);
 		}
 
@@ -273,20 +277,24 @@ Instantiate a helper object with all the info about the physicalDevice specified
 		vktDeletionQueue* pDeletionQueue;
 
 		VkQueue graphicsQueue = VK_NULL_HANDLE;
-		VkCommandPool commandPool = VK_NULL_HANDLE;
+		VkQueue transferQueue = VK_NULL_HANDLE;
+
+		VkCommandPool graphicsCommandPool = VK_NULL_HANDLE;
+		VkCommandPool transferCommandPool = VK_NULL_HANDLE;
+
 		VmaAllocator vmaAllocator = VK_NULL_HANDLE;
 
 		// create pipeline objects
 		VkShaderModule createShaderModule(char* spvPath);
 		VkCommandPool createCommandPool(uint32_t queueFamilyIndex);
 		VkCommandBuffer vktDevice::createCommandBuffer(VkCommandPool dedicatedCommandPool = VK_NULL_HANDLE);
-		void vktDevice::restartCommandBuffer(VkCommandBuffer& previousCommandBuffer, VkCommandPool dedicatedCommandPool = VK_NULL_HANDLE);
+		void vktDevice::restartCommandBuffer(VkCommandBuffer& previousCommandBuffer);
 
 		// wait and submit
 		void waitIdle() {
 			vkDeviceWaitIdle(device);
 		}
-		void submitQueue(VkCommandBuffer commandBuffer, VkFence fence, VkSemaphore signalSemaphore, VkSemaphore waitSemaphore);
+		void submitQueue(VkCommandBuffer commandBuffer, VkFence fence, VkSemaphore signalSemaphore, VkSemaphore waitSemaphore, VkQueue queue = VK_NULL_HANDLE);
 
 		// sync objects
 		VkFence createFence(bool signaled) {

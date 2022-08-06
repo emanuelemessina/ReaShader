@@ -80,15 +80,11 @@ namespace ReaShader {
 		/** Test of a communication channel between controller and component */
 		tresult receiveText(const char* text) SMTG_OVERRIDE;
 
-	protected:
-
 		FUnknown* context;
 		IREAPERVideoProcessor* m_videoproc;
 
 		rParamsMap rParams;
 		RSData* m_data;
-
-	private:
 
 		int myColor;
 
@@ -103,8 +99,9 @@ namespace ReaShader {
 
 		vkt::vktDevice* vktDevice;
 
-		vkt::AllocatedImage* frameTransferDest;
+		vkt::AllocatedImage* vkFrameTransfer;
 		vkt::AllocatedImage* vkColorAttachment;
+		vkt::AllocatedImage* vkDepthAttachment;
 
 		VkRenderPass vkRenderPass;
 		VkPipelineLayout vkPipelineLayout;
@@ -117,6 +114,7 @@ namespace ReaShader {
 		VkCommandBuffer vkDrawCommandBuffer;
 		VkCommandBuffer vkTransferCommandBuffer;
 
+		VkSemaphore vkImageAvailableSemaphore;
 		VkSemaphore vkRenderFinishedSemaphore;
 		VkFence vkInFlightFence;
 
