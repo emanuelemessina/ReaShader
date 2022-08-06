@@ -444,7 +444,7 @@ namespace vkt {
 	VkCommandBuffer vktDevice::createCommandBuffer(VkCommandPool dedicatedCommandPool) {
 
 		VkCommandBuffer commandBuffer;
-		VkCommandPool commandPool = dedicatedCommandPool ? dedicatedCommandPool : this->commandPool;
+		VkCommandPool commandPool = dedicatedCommandPool ? dedicatedCommandPool : this->graphicsCommandPool;
 
 		VkCommandBufferAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -471,11 +471,8 @@ namespace vkt {
 	/**
 	Resets the previous command buffer provided.
 	Then it begins.
-	@param dedicatedCommandPool if a dedicated command pool is not specified, the command buffer is created from the standard graphics pool.
-	*/
-	void vktDevice::restartCommandBuffer(VkCommandBuffer& previousCommandBuffer, VkCommandPool dedicatedCommandPool) {
-
-		VkCommandPool commandPool = dedicatedCommandPool ? dedicatedCommandPool : this->commandPool;
+*/
+	void vktDevice::restartCommandBuffer(VkCommandBuffer& previousCommandBuffer) {
 
 		vkResetCommandBuffer(previousCommandBuffer, 0);
 
@@ -487,7 +484,7 @@ namespace vkt {
 		VK_CHECK_RESULT(vkBeginCommandBuffer(previousCommandBuffer, &beginInfo));
 	}
 
-	void vktDevice::submitQueue(VkCommandBuffer commandBuffer, VkFence fence, VkSemaphore signalSemaphore, VkSemaphore waitSemaphore) {
+	void vktDevice::submitQueue(VkCommandBuffer commandBuffer, VkFence fence, VkSemaphore signalSemaphore, VkSemaphore waitSemaphore, VkQueue queue) {
 
 		if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
 			throw std::runtime_error("failed to record command buffer!");
@@ -513,8 +510,7 @@ namespace vkt {
 			submitInfo.pSignalSemaphores = signalSemaphores;
 		}
 
-
-		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, fence) != VK_SUCCESS) {
+		if (vkQueueSubmit(queue ? queue : graphicsQueue, 1, &submitInfo, fence) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit draw command buffer!");
 		}
 	}
