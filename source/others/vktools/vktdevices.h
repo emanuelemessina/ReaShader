@@ -1,67 +1,8 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
-
-#include <vector>
-
-#include <iostream>
-#include <stdexcept>
-#include <cstdlib>
-
-#include <optional>
-#include <fstream>
-#include <set>
-
-#include <assert.h>
-#include <array>
-#include <deque>
-#include <functional>
-#include <any>
-
-#include "vk_mem_alloc.h"
-
-#include "glm.hpp"
-#include "gtx/transform.hpp"
-
-using namespace std;
-
-#define VK_CHECK_RESULT(f)																				\
-{																										\
-	VkResult res = (f);																					\
-	if (res != VK_SUCCESS)																				\
-	{																									\
-		std::cout << "Fatal : \"" << res << "\" in " << __FILE__ << " at line " << __LINE__ << "\n"; \
-		throw std::runtime_error("exception!");																		\
-	}																									\
-}
-
+#include "vktools.h"
 
 namespace vkt {
-
-	struct vktInitProperties {
-		bool supportsBlit = false;
-	};
-
-	struct vktDeletionQueue
-	{
-		std::deque<std::function<void()>> deletors;
-
-		void push_function(std::function<void()>&& function) {
-			deletors.push_back(function);
-		}
-
-		void flush() {
-			// reverse iterate the deletion queue to execute all the functions
-			for (auto it = deletors.rbegin(); it != deletors.rend(); it++) {
-				(*it)(); //call the function
-			}
-
-			deletors.clear();
-		}
-	};
-
-	VkInstance createVkInstance(vktDeletionQueue& deletionQueue, char* applicationName, char* engineName);
-
 	struct QueueFamilyIndices {
 		std::optional<uint32_t> graphicsFamily;
 		std::optional<uint32_t> transferFamily;
@@ -198,35 +139,6 @@ Instantiate a helper object with all the info about the physicalDevice specified
 
 	};
 
-	struct AllocatedBuffer {
-		VkBuffer buffer;
-		VmaAllocation allocation;
-	};
-
-	struct VertexInputDescription {
-
-		std::vector<VkVertexInputBindingDescription> bindings;
-		std::vector<VkVertexInputAttributeDescription> attributes;
-
-		VkPipelineVertexInputStateCreateFlags flags = 0;
-	};
-
-	struct Vertex {
-
-		glm::vec3 position;
-		glm::vec3 normal;
-		glm::vec3 color;
-
-		static VertexInputDescription get_vertex_description();
-	};
-
-	struct Mesh {
-		std::vector<Vertex> vertices;
-
-		AllocatedBuffer vertexBuffer;
-
-		bool load_from_obj(const char* filename);
-	};
 
 	/**
 	Instantiate a logical VkDevice from the vktPhysicalDevice and options provided.
@@ -371,87 +283,4 @@ Instantiate a helper object with all the info about the physicalDevice specified
 		}
 
 	};
-
-	class AllocatedImage {
-	public:
-		/**
-		The destructor is appended to the queue automatically.
-		*/
-		AllocatedImage(vktDeletionQueue& deletionQueue, vktDevice* vktDevice) {
-			this->vktDevice = vktDevice;
-			deletionQueue.push_function([=]() {
-				delete(this);
-				});
-		}
-		AllocatedImage(vktDevice* vktDevice) {
-			this->vktDevice = vktDevice;
-		}
-		~AllocatedImage();
-
-		vktDevice* vktDevice;
-		vktDeletionQueue* pDeletionQueue;
-
-		VkImage image = VK_NULL_HANDLE;
-		VkImageView imageView = VK_NULL_HANDLE;
-		VmaAllocation allocation;
-		VmaAllocationInfo allocationInfo{};
-
-		void createImage(VkExtent2D extent,
-			VkImageType type, VkFormat format,
-			VkImageTiling imageTiling,
-			VkImageUsageFlags usageFlags,
-			VmaMemoryUsage memoryUsage,
-			VkMemoryPropertyFlags memoryProperties,
-			VmaAllocationCreateFlags vmaFlags = NULL);
-		void createImageView(VkImageViewType type, VkFormat format, VkImageAspectFlagBits aspectMask);
-
-	};
-
-
-	/**
-	DEPRECATED
-	Manual allocation of a VkImage. Use AllocatedImage which uses VmaAllocator
-	*/
-	class vktAttachment {
-	public:
-		vktAttachment(vktDevice* vktDevice) {
-			this->vktDevice = vktDevice;
-		}
-		~vktAttachment() {
-			// dealloc mem
-			vkUnmapMemory(vktDevice->device, memory);
-			vkFreeMemory(vktDevice->device, memory, nullptr);
-			// destroy vk objects
-			if (imageView) {
-				vkDestroyImageView(vktDevice->device, imageView, nullptr);
-			}
-			vkDestroyImage(vktDevice->device, image, nullptr);
-		}
-
-		void createImage(int w, int h, VkImageType type, VkFormat format, VkImageTiling imageTiling, VkImageUsageFlags usageFlags, VkMemoryPropertyFlags memoryProperties);
-		void createImageView(VkImageViewType type, VkFormat format, VkImageAspectFlagBits aspectMask);
-
-		// -------
-
-		vktDevice* vktDevice;
-
-		VkImage image;
-		VkImageView imageView = VK_NULL_HANDLE;
-		VkDeviceMemory memory;
-
-	private:
-		void bindToMemory(VkMemoryPropertyFlags memoryProperties);
-	};
-
-	void insertImageMemoryBarrier(
-		VkCommandBuffer cmdbuffer,
-		VkImage image,
-		VkAccessFlags srcAccessMask,
-		VkAccessFlags dstAccessMask,
-		VkImageLayout oldImageLayout,
-		VkImageLayout newImageLayout,
-		VkPipelineStageFlags srcStageMask,
-		VkPipelineStageFlags dstStageMask,
-		VkImageSubresourceRange subresourceRange);
-
 }
