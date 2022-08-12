@@ -286,7 +286,7 @@ namespace ReaShader {
 
 		for (auto const& [uParamId, value] : rParams) {
 			float savedParam = 0.f;
-			if (streamer.readFloat((float)savedParam) == false)
+			if (streamer.readFloat(savedParam) == false)
 				return kResultFalse;
 			rParams.at(uParamId) = savedParam;
 		}

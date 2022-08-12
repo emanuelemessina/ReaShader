@@ -1,6 +1,6 @@
 #pragma once
 
-#include "vktools.h"
+#include "vktools/vktools.h"
 
 namespace vkt {
 	struct QueueFamilyIndices {
@@ -117,7 +117,7 @@ Instantiate a helper object with all the info about the physicalDevice specified
 		/**
 		Returns a VkDevice (logical device) created from this physical device.
 		*/
-		VkDevice createLogicalDevice(VkPhysicalDeviceFeatures enabledFeatures = {}, std::vector<const char*> enabledExtensions = {}, bool useSwapChain = false);
+		VkDevice createLogicalDevice(void* pNext = nullptr, VkPhysicalDeviceFeatures enabledFeatures = {}, std::vector<const char*> enabledExtensions = {}, bool useSwapChain = false);
 
 		/**
 		* Check if an extension is supported by the (physical device)
@@ -137,6 +137,7 @@ Instantiate a helper object with all the info about the physicalDevice specified
 			return formatProps;
 		}
 
+		size_t pad_uniform_buffer_size(size_t originalSize);
 	};
 
 
@@ -153,9 +154,16 @@ Instantiate a helper object with all the info about the physicalDevice specified
 			std::vector<const char*> enabledExtensions = {},
 			bool useSwapChain = false
 		) {
-			this->device = vktPhysicalDevice->createLogicalDevice(enabledFeatures, enabledExtensions, useSwapChain);
+			VkPhysicalDeviceShaderDrawParametersFeatures shader_draw_parameters_features = {};
+			shader_draw_parameters_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES;
+			shader_draw_parameters_features.pNext = nullptr;
+			shader_draw_parameters_features.shaderDrawParameters = VK_TRUE;
+
+			this->device = vktPhysicalDevice->createLogicalDevice(&shader_draw_parameters_features, enabledFeatures, enabledExtensions, useSwapChain);
 			this->vktPhysicalDevice = vktPhysicalDevice;
 			this->pDeletionQueue = &deletionQueue;
+
+			deletionQueue.push_function([=]() { delete(this); });
 
 			// Get a graphics queue from the device
 			vkGetDeviceQueue(device, vktPhysicalDevice->queueFamilyIndices.graphicsFamily.value(), 0, &graphicsQueue);
@@ -174,11 +182,10 @@ Instantiate a helper object with all the info about the physicalDevice specified
 			allocatorInfo.instance = vktPhysicalDevice->instance;
 			vmaCreateAllocator(&allocatorInfo, &vmaAllocator);
 
-			deletionQueue.push_function([=]() { delete(this); });
+			deletionQueue.push_function([=]() { 	vmaDestroyAllocator(vmaAllocator);	});
 		}
 
 		~vktDevice() {
-			vmaDestroyAllocator(vmaAllocator);
 			vkDestroyDevice(device, nullptr);
 		}
 
@@ -196,10 +203,17 @@ Instantiate a helper object with all the info about the physicalDevice specified
 		VmaAllocator vmaAllocator = VK_NULL_HANDLE;
 
 		// create pipeline objects
-		VkShaderModule createShaderModule(char* spvPath);
+		VkShaderModule createShaderModule(const char* spvPath);
 		VkCommandPool createCommandPool(uint32_t queueFamilyIndex);
-		VkCommandBuffer vktDevice::createCommandBuffer(VkCommandPool dedicatedCommandPool = VK_NULL_HANDLE);
-		void vktDevice::restartCommandBuffer(VkCommandBuffer& previousCommandBuffer);
+		VkCommandBuffer createCommandBuffer(VkCommandPool dedicatedCommandPool = VK_NULL_HANDLE);
+		void restartCommandBuffer(VkCommandBuffer& previousCommandBuffer);
+
+		VkDescriptorSetLayout createDescriptorSetLayout(std::vector<VkDescriptorSetLayoutBinding> bindings);
+		VkDescriptorPool createDescriptorPool(std::vector<VkDescriptorPoolSize> sizes, int maxSets);
+		void allocateDescriptorSet(
+			VkDescriptorPool descriptorPool,
+			VkDescriptorSetLayout* pDescriptorSetLayout,
+			VkDescriptorSet* pDescriptorSet);
 
 		// wait and submit
 		void waitIdle() {
@@ -248,38 +262,6 @@ Instantiate a helper object with all the info about the physicalDevice specified
 				else if (obj.type() == typeid(VkSemaphore))
 					vkDestroySemaphore(device, std::any_cast<VkSemaphore>(obj), nullptr);
 			}
-		}
-
-		// allocated buffers
-		void allocateMesh(vkt::Mesh* mesh) {
-			//allocate vertex buffer
-			VkBufferCreateInfo bufferInfo = {};
-			bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-			//this is the total size, in bytes, of the buffer we are allocating
-			bufferInfo.size = mesh->vertices.size() * sizeof(vkt::Vertex);
-			//this buffer is going to be used as a Vertex Buffer
-			bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-
-			VmaAllocationCreateInfo vmaallocInfo = {};
-			vmaallocInfo.usage = VMA_MEMORY_USAGE_GPU_TO_CPU;
-
-			//allocate the buffer
-			VK_CHECK_RESULT(vmaCreateBuffer(vmaAllocator, &bufferInfo, &vmaallocInfo,
-				&(mesh->vertexBuffer.buffer),
-				&(mesh->vertexBuffer.allocation),
-				nullptr));
-
-			//copy vertex data
-			void* data;
-			vmaMapMemory(vmaAllocator, mesh->vertexBuffer.allocation, &data);
-
-			memcpy(data, mesh->vertices.data(), mesh->vertices.size() * sizeof(vkt::Vertex));
-
-			vmaUnmapMemory(vmaAllocator, mesh->vertexBuffer.allocation);
-
-			pDeletionQueue->push_function([=]() {
-				vmaDestroyBuffer(vmaAllocator, mesh->vertexBuffer.buffer, mesh->vertexBuffer.allocation);
-				});
 		}
 
 	};

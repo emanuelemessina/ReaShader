@@ -47,16 +47,16 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
     <_ProjectFileVersion>10.0.20506.1</_ProjectFileVersion>
-    <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(VST3BundleOutDir)\win-$(PlatformTarget)</OutDir>
-    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(TargetBuildDir)\intermediate</IntDir>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(VST3BundleOutDir)\win-$(PlatformTarget)\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(TargetBuildDir)\intermediate\</IntDir>
     <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">ReaShader</TargetName>
     <TargetExt Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">.vst3</TargetExt>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</LinkIncremental>
     <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateManifest>
     <LocalDebuggerCommand Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProgramW6432)/Steinberg/VST3PluginTestHost/VST3PluginTestHost.exe</LocalDebuggerCommand>
     <LocalDebuggerCommandArguments Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">--pluginfolder "$(OutDir)/"</LocalDebuggerCommandArguments>
-    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(VST3BundleOutDir)\win-$(PlatformTarget)</OutDir>
-    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(TargetBuildDir)\intermediate</IntDir>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(VST3BundleOutDir)\win-$(PlatformTarget)\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(TargetBuildDir)\intermediate\</IntDir>
     <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">ReaShader</TargetName>
     <TargetExt Condition="'$(Configuration)|$(Platform)'=='Release|x64'">.vst3</TargetExt>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkIncremental>
@@ -82,7 +82,7 @@
       <ExceptionHandling>Sync</ExceptionHandling>
       <FloatingPointModel>Fast</FloatingPointModel>
       <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <Optimization>Disabled</Optimization>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
@@ -237,7 +237,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <FloatingPointModel>Fast</FloatingPointModel>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <OmitFramePointers>true</OmitFramePointers>
       <Optimization>MaxSpeed</Optimization>
@@ -417,15 +417,16 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="..\source\others\rsprocessor.cpp" />
     <ClCompile Include="..\source\others\vktools\vktdevices.cpp" />
     <ClCompile Include="..\source\others\vktools\vktimages.cpp" />
+    <ClCompile Include="..\source\others\vktools\vktools.cpp" />
     <ClCompile Include="..\source\others\vktools\vktrendering.cpp" />
-    <ClCompile Include="..\source\others\vk\vktools.cpp" />
     <ClCompile Include="D:\Library\Coding\GitHub\_Reaper\vst-sdk-bundle\vst3-sdk\vst3sdk\public.sdk\source\main\dllmain.cpp" />
     <ClInclude Include="..\source\others\mptorpdata\mptorpdata.h" />
     <ClInclude Include="..\source\others\ruicontrollers\uimsgcontroller.h" />
     <ClInclude Include="..\source\others\vktools\vktdevices.h" />
     <ClInclude Include="..\source\others\vktools\vktimages.h" />
+    <ClInclude Include="..\source\others\vktools\vktools.h" />
     <ClInclude Include="..\source\others\vktools\vktrendering.h" />
-    <ClInclude Include="..\source\others\vk\vktools.h" />
+    <None Include="..\doc\vk_doc.md" />
     <None Include="..\doc\vst_documentation_em.md" />
     <None Include="..\README.md" />
     <None Include="..\source\shaders\frag.glsl" />

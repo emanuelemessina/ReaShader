@@ -11,7 +11,7 @@
 #include <optional>
 #include <fstream>
 #include <set>
-
+#include <unordered_map>
 #include <assert.h>
 #include <array>
 #include <deque>
@@ -20,6 +20,7 @@
 
 #include "vk_mem_alloc.h"
 
+#define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 #include "glm.hpp"
 #include "gtx/transform.hpp"
 
@@ -36,6 +37,18 @@ using namespace std;
 }
 
 namespace vkt {
+
+#ifdef NDEBUG
+	const bool enableVkValidationLayers = false;
+#else
+	const bool enableVkValidationLayers = true;
+#endif
+
+	// VALIDATION LAYERS
+
+	const std::vector<const char*> vkValidationLayers = {
+		"VK_LAYER_KHRONOS_validation"
+	};
 
 	struct vktInitProperties {
 		bool supportsBlit = false;
@@ -59,29 +72,25 @@ namespace vkt {
 		}
 	};
 
-	VkInstance createVkInstance(vktDeletionQueue& deletionQueue, char* applicationName, char* engineName);
+	VkInstance createVkInstance(vktDeletionQueue& deletionQueue, const char* applicationName, const char* engineName);
 
-	struct AllocatedBuffer {
-		VkBuffer buffer;
-		VmaAllocation allocation;
-	};
+	std::vector<char> readFile(const std::string& filename);
 
- std::vector<char> readFile(const std::string& filename) {
-		std::ifstream file(filename, std::ios::ate | std::ios::binary);
-
-		if (!file.is_open()) {
-			throw std::runtime_error("failed to open file!");
+	template <typename T>
+	struct searchable_map {
+		void add(std::string key, T obj) {
+			objs[key] = obj;
 		}
-
-		size_t fileSize = (size_t)file.tellg();
-		std::vector<char> buffer(fileSize);
-
-		file.seekg(0);
-		file.read(buffer.data(), fileSize);
-
-		file.close();
-
-		return buffer;
-	}
-
+		T* get(std::string key) {
+			auto it = objs.find(key);
+			if (it == objs.end()) {
+				return nullptr;
+			}
+			else {
+				return (T*)&(it->second);
+			}
+		}
+	private:
+		std::unordered_map<std::string, T> objs;
+	};
 }

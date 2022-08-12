@@ -1,8 +1,39 @@
-#include "vktrendering.h"
+#include "vktools/vktrendering.h"
 
 #include "tiny_obj_loader.h"
 
 namespace vkt {
+
+	void writeDescriptorSet(vktDevice* vktDevice, VkDescriptorSet descriptorSet, VkDescriptorType descriptorType, AllocatedBuffer aBuffer, size_t size, int offset, int dstBinding) {
+		//information about the buffer we want to point at in the descriptor
+		VkDescriptorBufferInfo binfo;
+		binfo.buffer = aBuffer.buffer;
+		binfo.offset = offset;
+		binfo.range = size;
+
+		VkWriteDescriptorSet setWrite = {};
+		setWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		setWrite.pNext = nullptr;
+
+		setWrite.dstBinding = dstBinding;
+		setWrite.dstSet = descriptorSet;
+
+		setWrite.descriptorCount = 1;
+		//and the type is uniform buffer
+		setWrite.descriptorType = descriptorType;
+		setWrite.pBufferInfo = &binfo;
+
+		vkUpdateDescriptorSets(vktDevice->device, 1, &setWrite, 0, nullptr);
+	}
+
+	VkDescriptorSetLayoutBinding createDescriptorSetLayoutBinding(int binding, VkDescriptorType type, VkShaderStageFlags stages) {
+		VkDescriptorSetLayoutBinding b = {};
+		b.binding = binding;
+		b.descriptorCount = 1;
+		b.descriptorType = type;
+		b.stageFlags = stages;
+		return b;
+	}
 
 	VertexInputDescription Vertex::get_vertex_description()
 	{
@@ -123,6 +154,43 @@ namespace vkt {
 			}
 		}
 
+		verticesToBuffer();
+
 		return true;
+	}
+
+	/**
+	Copy vertex data to allocated buffer.
+	Use this if manually setting the vertices (eg. not using load_from_obj).
+	*/
+	void Mesh::verticesToBuffer() {
+		//allocate vertex buffer
+		VkBufferCreateInfo bufferInfo = {};
+		bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		//this is the total size, in bytes, of the buffer we are allocating
+		bufferInfo.size = vertices.size() * sizeof(vkt::Vertex);
+		//this buffer is going to be used as a Vertex Buffer
+		bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+
+		VmaAllocationCreateInfo vmaallocInfo = {};
+		vmaallocInfo.usage = VMA_MEMORY_USAGE_GPU_TO_CPU;
+
+		//allocate the buffer
+		VK_CHECK_RESULT(vmaCreateBuffer(vktDevice->vmaAllocator, &bufferInfo, &vmaallocInfo,
+			&(vertexBuffer.buffer),
+			&(vertexBuffer.allocation),
+			nullptr));
+
+		//copy vertex data
+		void* data;
+		vmaMapMemory(vktDevice->vmaAllocator, vertexBuffer.allocation, &data);
+
+		memcpy(data, vertices.data(), vertices.size() * sizeof(vkt::Vertex));
+
+		vmaUnmapMemory(vktDevice->vmaAllocator, vertexBuffer.allocation);
+
+		vktDevice->pDeletionQueue->push_function([=]() {
+			vmaDestroyBuffer(vktDevice->vmaAllocator, vertexBuffer.buffer, vertexBuffer.allocation);
+			});
 	}
 }
