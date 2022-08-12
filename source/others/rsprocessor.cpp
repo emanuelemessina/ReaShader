@@ -152,6 +152,9 @@ namespace ReaShader {
 				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 0, 1, &rs->frameData.globalDescriptor, dynamicOffsets.size(), dynamicOffsets.data());
 
 				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 1, 1, &rs->frameData.objectDescriptor, 0, nullptr);
+
+				if (object.material->textureSet != VK_NULL_HANDLE)
+					vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 2, 1, &object.material->textureSet, 0, nullptr);
 			}
 
 			// set push constants
@@ -335,7 +338,7 @@ namespace ReaShader {
 
 		rs->vktDevice->restartCommandBuffer(rs->vkTransferCommandBuffer);
 
-		// retransition frametransfer to src copy optiman
+		// retransition frametransfer to src copy optimal
 
 		vkt::insertImageMemoryBarrier(
 			rs->vkTransferCommandBuffer,
@@ -836,13 +839,21 @@ namespace ReaShader {
 		meshes.add("suzanne", suzanne);
 		meshes.add("triangle", triangleMesh);
 
+		// textures
+
+		vkt::AllocatedImage* texture = new vkt::AllocatedImage(vktDevice);
+		texture->load_from_file("D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\resource\\images\\reashader text.png", VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+		texture->createImageView(VK_IMAGE_VIEW_TYPE_2D, texture->getFormat(), VK_IMAGE_ASPECT_COLOR_BIT);
+		textures.add("logo", texture);
+
 		// buffers
 
 		vkDescriptorPool = vktDevice->createDescriptorPool({
 			{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 5 },
 			{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 5 },
-			{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5 }
-			}, 2);
+			{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5 },
+			{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5 }
+			}, 5);
 
 		// set 0
 		vkGlobalSetLayout = vktDevice->createDescriptorSetLayout({
@@ -866,6 +877,11 @@ namespace ReaShader {
 		frameData.objectBuffer.createBuffer(vktDevice, sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 		vkt::writeDescriptorSet(vktDevice, frameData.objectDescriptor, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, frameData.objectBuffer, sizeof(GPUObjectData) * MAX_OBJECTS, 0, 0);
+
+		// set 3
+		vkTextureSetLayout = vktDevice->createDescriptorSetLayout({
+			vkt::createDescriptorSetLayoutBinding(0,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,VK_SHADER_STAGE_FRAGMENT_BIT) ,
+			});
 
 		// swap chain here (optional)
 
@@ -928,7 +944,12 @@ namespace ReaShader {
 		vkFramebuffer = createFramebuffer(vktDevice->device, vkColorAttachment->imageView, vkDepthAttachment->imageView, vkRenderPass);
 		deletionQueue.push_function([=]() { vkDestroyFramebuffer(vktDevice->device, vkFramebuffer, nullptr); });
 
-		vkt::Material material_opaque = createMaterialOpaque(vktDevice, vkRenderPass, { vkGlobalSetLayout , vkObjectSetLayout });
+		vkt::Material material_opaque = createMaterialOpaque(vktDevice, vkRenderPass, { vkGlobalSetLayout , vkObjectSetLayout, vkTextureSetLayout });
+
+		vktDevice->allocateDescriptorSet(vkDescriptorPool, &vkTextureSetLayout, &material_opaque.textureSet);
+		vkt::descriptorSetWriter(vktDevice, material_opaque.textureSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0)
+			.writeImage(*textures.get("logo"), vktDevice->createSampler(VK_FILTER_LINEAR), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
 		materials.add("opaque", material_opaque);
 
 		// render objects
@@ -951,9 +972,9 @@ namespace ReaShader {
 		vkDrawCommandBuffer = vktDevice->createCommandBuffer();
 		vkTransferCommandBuffer = vktDevice->createCommandBuffer(vktDevice->transferCommandPool);
 
-		vkInFlightFence = vktDevice->createFence(false, deletionQueue);
-		vkRenderFinishedSemaphore = vktDevice->createSemaphore(deletionQueue);
-		vkImageAvailableSemaphore = vktDevice->createSemaphore(deletionQueue);
+		vkInFlightFence = vktDevice->createFence(false);
+		vkRenderFinishedSemaphore = vktDevice->createSemaphore();
+		vkImageAvailableSemaphore = vktDevice->createSemaphore();
 
 		// check init properties
 

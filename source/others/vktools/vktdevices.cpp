@@ -213,7 +213,7 @@ namespace vkt {
 	Allocates new command buffer, then it begins.
 	@param dedicatedCommandPool if a dedicated command pool is not specified, the command buffer is created from the standard graphics pool.
 	*/
-	VkCommandBuffer vktDevice::createCommandBuffer(VkCommandPool dedicatedCommandPool) {
+	VkCommandBuffer vktDevice::createCommandBuffer(VkCommandPool dedicatedCommandPool, bool pushToDeletionQueue) {
 
 		VkCommandBuffer commandBuffer;
 		VkCommandPool commandPool = dedicatedCommandPool ? dedicatedCommandPool : this->graphicsCommandPool;
@@ -233,9 +233,10 @@ namespace vkt {
 
 		VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo));
 
-		pDeletionQueue->push_function([=]() {
+		if (pushToDeletionQueue)
+			pDeletionQueue->push_function([=]() {
 			vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
-			});
+				});
 
 		return commandBuffer;
 	}
