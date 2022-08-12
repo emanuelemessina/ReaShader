@@ -23,6 +23,7 @@
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 #include "glm.hpp"
 #include "gtx/transform.hpp"
+#include "vec2.hpp"
 
 using namespace std;
 

@@ -205,7 +205,7 @@ Instantiate a helper object with all the info about the physicalDevice specified
 		// create pipeline objects
 		VkShaderModule createShaderModule(const char* spvPath);
 		VkCommandPool createCommandPool(uint32_t queueFamilyIndex);
-		VkCommandBuffer createCommandBuffer(VkCommandPool dedicatedCommandPool = VK_NULL_HANDLE);
+		VkCommandBuffer createCommandBuffer(VkCommandPool dedicatedCommandPool = VK_NULL_HANDLE, bool pushToDeletionQueue = true);
 		void restartCommandBuffer(VkCommandBuffer& previousCommandBuffer);
 
 		VkDescriptorSetLayout createDescriptorSetLayout(std::vector<VkDescriptorSetLayoutBinding> bindings);
@@ -215,6 +215,24 @@ Instantiate a helper object with all the info about the physicalDevice specified
 			VkDescriptorSetLayout* pDescriptorSetLayout,
 			VkDescriptorSet* pDescriptorSet);
 
+		VkSampler createSampler(VkFilter filters, VkSamplerAddressMode samplerAddressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT) {
+			VkSamplerCreateInfo info = {};
+			info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+			info.pNext = nullptr;
+
+			info.magFilter = filters;
+			info.minFilter = filters;
+			info.addressModeU = samplerAddressMode;
+			info.addressModeV = samplerAddressMode;
+			info.addressModeW = samplerAddressMode;
+
+			VkSampler sampler;
+
+			VK_CHECK_RESULT(vkCreateSampler(device, &info, nullptr, &sampler));
+
+			return sampler;
+		}
+
 		// wait and submit
 		void waitIdle() {
 			vkDeviceWaitIdle(device);
@@ -222,35 +240,29 @@ Instantiate a helper object with all the info about the physicalDevice specified
 		void submitQueue(VkCommandBuffer commandBuffer, VkFence fence, VkSemaphore signalSemaphore, VkSemaphore waitSemaphore, VkQueue queue = VK_NULL_HANDLE);
 
 		// sync objects
-		VkFence createFence(bool signaled) {
+		VkFence createFence(bool signaled, bool pushToDeletionQueue = true) {
 			VkFenceCreateInfo fenceInfo{};
 			fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 			if (signaled)
 				fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 			VkFence fence;
 			VK_CHECK_RESULT(vkCreateFence(device, &fenceInfo, nullptr, &fence));
-			return fence;
-		}
-		VkFence createFence(bool signaled, vktDeletionQueue& deletionQueue) {
-			VkFence fence = createFence(signaled);
-			deletionQueue.push_function([=]() {
+			if (pushToDeletionQueue)
+				pDeletionQueue->push_function([=]() {
 				destroySyncObjects({ fence });
-				});
+					});
 			return fence;
 		}
 
-		VkSemaphore createSemaphore() {
+		VkSemaphore createSemaphore(bool pushToDeletionQueue = true) {
 			VkSemaphoreCreateInfo semaphoreInfo{};
 			semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 			VkSemaphore semaphore;
 			VK_CHECK_RESULT(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore));
-			return semaphore;
-		}
-		VkSemaphore createSemaphore(vktDeletionQueue& deletionQueue) {
-			VkSemaphore semaphore = createSemaphore();
-			deletionQueue.push_function([=]() {
+			if (pushToDeletionQueue)
+				pDeletionQueue->push_function([=]() {
 				destroySyncObjects({ semaphore });
-				});
+					});
 			return semaphore;
 		}
 

@@ -1,4 +1,9 @@
-#include "vktimages.h"
+//#include "vktimages.h"
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
+#include "vktrendering.h"
 
 namespace vkt {
 
@@ -96,6 +101,8 @@ namespace vkt {
 		createInfo.imageType = type;
 		createInfo.format = format;
 
+		this->format = format;
+
 		createInfo.mipLevels = 1;
 		createInfo.arrayLayers = 1;
 
@@ -137,7 +144,108 @@ namespace vkt {
 		colorImageView.image = image;
 		VK_CHECK_RESULT(vkCreateImageView(vktDevice->device, &colorImageView, nullptr, &imageView));
 	}
+	/**
+	Populates image from a file, no need to create image manually.
+	*/
+	bool AllocatedImage::load_from_file(const char* file, VkAccessFlags finalAccessMask, VkImageLayout finalImageLayout, VkPipelineStageFlags finalStageMask) {
 
+		// load image pixels from file
+
+		int texWidth, texHeight, texChannels;
+
+		stbi_uc* pixels = stbi_load(file, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+
+		if (!pixels) {
+			std::cout << "Failed to load texture file " << file << std::endl;
+			return false;
+		}
+
+		// put pixels in buffer
+
+		int buffSize = texWidth * texHeight * 4;
+		AllocatedBuffer srcBuff;
+		srcBuff.createBuffer(vktDevice, buffSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY, false);
+
+		void* data;
+		vmaMapMemory(vktDevice->vmaAllocator, srcBuff.allocation, &data);
+
+		memcpy(data, pixels, buffSize);
+
+		vmaUnmapMemory(vktDevice->vmaAllocator, srcBuff.allocation);
+
+		stbi_image_free(pixels);
+
+		// create dest image
+
+		createImage(
+			{ (unsigned)texWidth, (unsigned)texHeight },
+			VK_IMAGE_TYPE_2D,
+			VK_FORMAT_R8G8B8A8_SRGB,
+			VK_IMAGE_TILING_OPTIMAL,
+			VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+			VMA_MEMORY_USAGE_GPU_ONLY,
+			NULL, NULL
+		);
+
+		// layout transition to dst optimal
+
+		VkCommandBuffer cmd = vktDevice->createCommandBuffer(nullptr, false);
+
+		vkt::insertImageMemoryBarrier(
+			cmd,
+			image,
+			0,
+			VK_ACCESS_MEMORY_WRITE_BIT,
+			VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
+
+		// copy buffer to image
+
+		VkBufferImageCopy copyRegion = {};
+		copyRegion.bufferOffset = 0;
+		copyRegion.bufferRowLength = 0;
+		copyRegion.bufferImageHeight = 0;
+
+		copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		copyRegion.imageSubresource.mipLevel = 0;
+		copyRegion.imageSubresource.baseArrayLayer = 0;
+		copyRegion.imageSubresource.layerCount = 1;
+		copyRegion.imageExtent = { (unsigned)texWidth, (unsigned)texHeight, 1 };
+
+		vkCmdCopyBufferToImage(cmd, srcBuff.buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+
+		// retransition
+
+		vkt::insertImageMemoryBarrier(
+			cmd,
+			image,
+			0,
+			finalAccessMask,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			finalImageLayout,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			finalStageMask,
+			VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
+
+		// execute
+
+		VkFence fence = vktDevice->createFence(false, false);
+
+		vktDevice->submitQueue(cmd, fence, VK_NULL_HANDLE, VK_NULL_HANDLE);
+
+		vkWaitForFences(vktDevice->device, 1, &fence, VK_TRUE, UINT64_MAX);
+
+		// cleanup
+
+		srcBuff.destroy();
+		vktDevice->destroySyncObjects({ fence });
+		vkFreeCommandBuffers(vktDevice->device, vktDevice->graphicsCommandPool, 1, &cmd);
+
+		return true;
+	}
 
 	void insertImageMemoryBarrier(
 		VkCommandBuffer cmdbuffer,

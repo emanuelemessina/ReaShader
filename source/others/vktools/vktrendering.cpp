@@ -19,7 +19,6 @@ namespace vkt {
 		setWrite.dstSet = descriptorSet;
 
 		setWrite.descriptorCount = 1;
-		//and the type is uniform buffer
 		setWrite.descriptorType = descriptorType;
 		setWrite.pBufferInfo = &binfo;
 
@@ -68,9 +67,17 @@ namespace vkt {
 		colorAttribute.format = VK_FORMAT_R32G32B32_SFLOAT;
 		colorAttribute.offset = offsetof(Vertex, color);
 
+		//UV will be stored at Location 3
+		VkVertexInputAttributeDescription uvAttribute = {};
+		uvAttribute.binding = 0;
+		uvAttribute.location = 3;
+		uvAttribute.format = VK_FORMAT_R32G32_SFLOAT;
+		uvAttribute.offset = offsetof(Vertex, uv);
+
 		description.attributes.push_back(positionAttribute);
 		description.attributes.push_back(normalAttribute);
 		description.attributes.push_back(colorAttribute);
+		description.attributes.push_back(uvAttribute);
 
 		return description;
 	}
@@ -138,8 +145,11 @@ namespace vkt {
 
 					// Check if `texcoord_index` is zero or positive. negative = no texcoord data
 					if (idx.texcoord_index >= 0) {
-						tinyobj::real_t tx = attrib.texcoords[2 * size_t(idx.texcoord_index) + 0];
-						tinyobj::real_t ty = attrib.texcoords[2 * size_t(idx.texcoord_index) + 1];
+						tinyobj::real_t ux = attrib.texcoords[2 * size_t(idx.texcoord_index) + 0];
+						tinyobj::real_t uy = attrib.texcoords[2 * size_t(idx.texcoord_index) + 1];
+
+						new_vert.uv.x = ux;
+						new_vert.uv.y = 1 - uy;
 					}
 
 					//we are setting the vertex color as the vertex normal. This is just for display purposes

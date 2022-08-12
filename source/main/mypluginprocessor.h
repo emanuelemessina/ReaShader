@@ -123,7 +123,11 @@ namespace ReaShader {
 
 		VkDescriptorSetLayout vkObjectSetLayout;
 		VkDescriptorSetLayout vkGlobalSetLayout;
+		VkDescriptorSetLayout vkTextureSetLayout;
+
 		VkDescriptorPool vkDescriptorPool;
+
+		vkt::searchable_map<vkt::AllocatedImage*> textures;
 
 		struct FrameData {
 

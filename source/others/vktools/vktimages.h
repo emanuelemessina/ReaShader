@@ -36,7 +36,17 @@ namespace vkt {
 			VkMemoryPropertyFlags memoryProperties,
 			VmaAllocationCreateFlags vmaFlags = NULL);
 		void createImageView(VkImageViewType type, VkFormat format, VkImageAspectFlagBits aspectMask);
+		bool load_from_file(const char* file, VkAccessFlags finalAccessMask, VkImageLayout finalImageLayout, VkPipelineStageFlags finalStageMask);
 
+		/**
+		If no image was created yet, returns VK_FORMAT_UNDEFINED.
+		*/
+		VkFormat getFormat() {
+			return format;
+		}
+
+	private:
+		VkFormat format = VK_FORMAT_UNDEFINED;
 	};
 
 	/**
