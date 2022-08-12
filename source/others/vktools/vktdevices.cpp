@@ -1,4 +1,5 @@
-#include "vktdevices.h"
+#include "vktools/vktools.h"
+#include "vktools/vktdevices.h"
 
 namespace vkt {
 	// PICK PHYSICAL DEVICE
@@ -68,7 +69,7 @@ namespace vkt {
 
 	// CREATE LOGICAL DEVICE
 
-	VkDevice vktPhysicalDevice::createLogicalDevice(VkPhysicalDeviceFeatures enabledFeatures, std::vector<const char*> enabledExtensions, bool useSwapChain) {
+	VkDevice vktPhysicalDevice::createLogicalDevice(void* pNext, VkPhysicalDeviceFeatures enabledFeatures, std::vector<const char*> enabledExtensions, bool useSwapChain) {
 
 		// QUEUE FAMILIES
 
@@ -155,6 +156,8 @@ namespace vkt {
 			createInfo.enabledLayerCount = 0;
 		}
 
+		createInfo.pNext = pNext;
+
 		VkDevice device;
 
 		if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
@@ -166,7 +169,7 @@ namespace vkt {
 
 	// SHADER MODULES
 
-	VkShaderModule vktDevice::createShaderModule(char* spvPath) {
+	VkShaderModule vktDevice::createShaderModule(const char* spvPath) {
 		const std::vector<char> code = readFile(spvPath);
 
 		VkShaderModuleCreateInfo createInfo{};
@@ -198,7 +201,9 @@ namespace vkt {
 			throw std::runtime_error("failed to create command pool!");
 		}
 
-		pDeletionQueue->push_function([=]() { vkDestroyCommandPool(device, commandPool, nullptr); });
+		pDeletionQueue->push_function([=]() {
+			vkDestroyCommandPool(device, commandPool, nullptr);
+			});
 
 		return commandPool;
 	}
@@ -238,7 +243,7 @@ namespace vkt {
 	/**
 	Resets the previous command buffer provided.
 	Then it begins.
-*/
+	*/
 	void vktDevice::restartCommandBuffer(VkCommandBuffer& previousCommandBuffer) {
 
 		vkResetCommandBuffer(previousCommandBuffer, 0);
@@ -280,6 +285,103 @@ namespace vkt {
 		if (vkQueueSubmit(queue ? queue : graphicsQueue, 1, &submitInfo, fence) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit draw command buffer!");
 		}
+	}
+
+	// DESCRIPTOR SETS
+
+	void vktDevice::allocateDescriptorSet(
+		VkDescriptorPool descriptorPool,
+		VkDescriptorSetLayout* pDescriptorSetLayout,
+		VkDescriptorSet* pDescriptorSet) {
+		// TODO: generalize when needed
+		VkDescriptorSetAllocateInfo allocInfo = {};
+		allocInfo.pNext = nullptr;
+		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		//using the pool we just set
+		allocInfo.descriptorPool = descriptorPool;
+		//only 1 descriptor
+		allocInfo.descriptorSetCount = 1;
+		//using the global data layout
+		allocInfo.pSetLayouts = pDescriptorSetLayout;
+
+		VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, pDescriptorSet));
+	}
+
+	VkDescriptorSetLayout vktDevice::createDescriptorSetLayout(std::vector<VkDescriptorSetLayoutBinding> bindings) {
+
+		VkDescriptorSetLayoutCreateInfo setinfo = {};
+		setinfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		setinfo.pNext = nullptr;
+
+		setinfo.bindingCount = bindings.size();
+		//no flags
+		setinfo.flags = 0;
+		setinfo.pBindings = bindings.data();
+
+		VkDescriptorSetLayout dsl;
+
+		VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &setinfo, nullptr, &dsl));
+
+		// add descriptor set layout to deletion queues
+		pDeletionQueue->push_function([=]() {
+			vkDestroyDescriptorSetLayout(device, dsl, nullptr);
+			});
+
+		return dsl;
+	}
+
+	VkDescriptorPool vktDevice::createDescriptorPool(std::vector<VkDescriptorPoolSize> sizes, int maxSets) {
+		/*
+			// checks
+
+		auto checks = [&]() -> VkResult {
+			std::string msg = "";
+
+
+			if (maxSets > vktPhysicalDevice->deviceProperties.limits.maxBoundDescriptorSets)
+				msg = "maxSets > maxBoundDescriptorSets";
+
+
+			if (msg.empty())
+				return VK_SUCCESS;
+			else {
+				std::cout << "Fatal : \"" << msg << "\" in " << __FILE__ << " at line " << __LINE__ << "\n";
+				return VK_ERROR_INITIALIZATION_FAILED;
+			}
+		};
+
+		VK_CHECK_RESULT(checks());
+
+		*/
+
+		VkDescriptorPoolCreateInfo pool_info = {};
+		pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+		pool_info.flags = 0;
+		pool_info.maxSets = maxSets;
+		pool_info.poolSizeCount = (uint32_t)sizes.size();
+		pool_info.pPoolSizes = sizes.data();
+
+		VkDescriptorPool dp;
+
+		VK_CHECK_RESULT(vkCreateDescriptorPool(device, &pool_info, nullptr, &dp));
+
+		// add descriptor set layout to deletion queues
+		pDeletionQueue->push_function([=]() {
+			vkDestroyDescriptorPool(device, dp, nullptr);
+			});
+
+		return dp;
+	}
+
+	size_t vktPhysicalDevice::pad_uniform_buffer_size(size_t originalSize)
+	{
+		// Calculate required alignment based on minimum device offset alignment
+		size_t minUboAlignment = deviceProperties.limits.minUniformBufferOffsetAlignment;
+		size_t alignedSize = originalSize;
+		if (minUboAlignment > 0) {
+			alignedSize = (alignedSize + minUboAlignment - 1) & ~(minUboAlignment - 1);
+		}
+		return alignedSize;
 	}
 
 }

@@ -22,9 +22,6 @@
     <ClCompile Include="..\source\others\rsprocessor.cpp">
       <Filter>Source Files\others</Filter>
     </ClCompile>
-    <ClCompile Include="..\source\others\vk\vktools.cpp">
-      <Filter>Source Files\others\vktools</Filter>
-    </ClCompile>
     <ClCompile Include="..\source\others\vktools\vktdevices.cpp">
       <Filter>Source Files\others\vktools</Filter>
     </ClCompile>
@@ -32,6 +29,9 @@
       <Filter>Source Files\others\vktools</Filter>
     </ClCompile>
     <ClCompile Include="..\source\others\vktools\vktrendering.cpp">
+      <Filter>Source Files\others\vktools</Filter>
+    </ClCompile>
+    <ClCompile Include="..\source\others\vktools\vktools.cpp">
       <Filter>Source Files\others\vktools</Filter>
     </ClCompile>
   </ItemGroup>
@@ -57,9 +57,6 @@
     <ClInclude Include="..\source\others\ruicontrollers\uimsgcontroller.h">
       <Filter>Source Files\others\ruicontrollers</Filter>
     </ClInclude>
-    <ClInclude Include="..\source\others\vk\vktools.h">
-      <Filter>Source Files\others\vktools</Filter>
-    </ClInclude>
     <ClInclude Include="..\source\others\vktools\vktrendering.h">
       <Filter>Source Files\others\vktools</Filter>
     </ClInclude>
@@ -67,6 +64,9 @@
       <Filter>Source Files\others\vktools</Filter>
     </ClInclude>
     <ClInclude Include="..\source\others\vktools\vktimages.h">
+      <Filter>Source Files\others\vktools</Filter>
+    </ClInclude>
+    <ClInclude Include="..\source\others\vktools\vktools.h">
       <Filter>Source Files\others\vktools</Filter>
     </ClInclude>
   </ItemGroup>
@@ -85,6 +85,9 @@
     </None>
     <None Include="..\source\shaders\frag.glsl">
       <Filter>Source Files\shaders</Filter>
+    </None>
+    <None Include="..\doc\vk_doc.md">
+      <Filter>Repo Files</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>

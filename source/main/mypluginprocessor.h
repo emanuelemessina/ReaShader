@@ -16,7 +16,12 @@
 #include "pluginterfaces/vst/ivstmessage.h"
 
 #include <vulkan/vulkan.h>
-#include "vk/vktools.h"
+#include "vktools/vktools.h"
+#include "vktools/vktdevices.h"
+#include "vktools/vktimages.h"
+#include "vktools/vktrendering.h"
+
+#include <unordered_map>
 
 using namespace Steinberg;
 using namespace Vst;
@@ -96,7 +101,6 @@ namespace ReaShader {
 		vkt::vktInitProperties vktInitProperties{};
 
 		vkt::vktPhysicalDevice* vktPhysicalDevice;
-
 		vkt::vktDevice* vktDevice;
 
 		vkt::AllocatedImage* vkFrameTransfer;
@@ -104,12 +108,7 @@ namespace ReaShader {
 		vkt::AllocatedImage* vkDepthAttachment;
 
 		VkRenderPass vkRenderPass;
-		VkPipelineLayout vkPipelineLayout;
-		VkPipelineCache vkPipelineCache;
-		VkPipeline vkGraphicsPipeline;
-
 		VkFramebuffer vkFramebuffer;
-		VkCommandPool vkCommandPool;
 
 		VkCommandBuffer vkDrawCommandBuffer;
 		VkCommandBuffer vkTransferCommandBuffer;
@@ -118,8 +117,23 @@ namespace ReaShader {
 		VkSemaphore vkRenderFinishedSemaphore;
 		VkFence vkInFlightFence;
 
-		vkt::Mesh triangleMesh;
-		vkt::Mesh myMesh;
+		vkt::searchable_map<vkt::Mesh*> meshes;
+		vkt::searchable_map<vkt::Material> materials;
+		std::vector<vkt::RenderObject> renderObjects;
+
+		VkDescriptorSetLayout vkObjectSetLayout;
+		VkDescriptorSetLayout vkGlobalSetLayout;
+		VkDescriptorPool vkDescriptorPool;
+
+		struct FrameData {
+
+			vkt::AllocatedBuffer cameraBuffer;
+			vkt::AllocatedBuffer sceneBuffer;
+			vkt::AllocatedBuffer objectBuffer;
+
+			VkDescriptorSet globalDescriptor;
+			VkDescriptorSet objectDescriptor;
+		} frameData;
 	};
 
 } // namespace ReaShader

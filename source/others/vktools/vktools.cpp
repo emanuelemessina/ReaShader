@@ -13,17 +13,23 @@
 
 namespace vkt {
 
-	// VALIDATION LAYERS
+	std::vector<char> readFile(const std::string& filename) {
+		std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
-	const std::vector<const char*> vkValidationLayers = {
-		"VK_LAYER_KHRONOS_validation"
-	};
+		if (!file.is_open()) {
+			throw std::runtime_error("failed to open file!");
+		}
 
-#ifdef NDEBUG
-	const bool enableVkValidationLayers = false;
-#else
-	const bool enableVkValidationLayers = true;
-#endif
+		size_t fileSize = (size_t)file.tellg();
+		std::vector<char> buffer(fileSize);
+
+		file.seekg(0);
+		file.read(buffer.data(), fileSize);
+
+		file.close();
+
+		return buffer;
+	}
 
 	bool checkValidationLayerSupport() {
 		uint32_t layerCount;
@@ -52,7 +58,7 @@ namespace vkt {
 
 	// CREATE INSTANCE
 
-	VkInstance createVkInstance(vktDeletionQueue& deletionQueue, char* applicationName, char* engineName) {
+	VkInstance createVkInstance(vktDeletionQueue& deletionQueue, const char* applicationName, const char* engineName) {
 
 		if (enableVkValidationLayers && !checkValidationLayerSupport()) {
 			throw std::runtime_error("validation layers requested, but not available!");

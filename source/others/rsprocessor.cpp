@@ -1,7 +1,10 @@
 #include "mypluginprocessor.h"
 
+#include "vktools/vktools.h"
+
 #define PROJ_W 1280
 #define PROJ_H 720
+#define MAX_OBJECTS 100
 
 namespace ReaShader {
 
@@ -12,15 +15,30 @@ namespace ReaShader {
 		glm::mat4 render_matrix;
 	};
 
+	struct GPUCameraData {
+		glm::mat4 view;
+		glm::mat4 proj;
+		glm::mat4 viewproj;
+	};
+
+	struct GPUSceneData {
+		glm::vec4 fogColor; // w is for exponent
+		glm::vec4 fogDistances; //x for min, y for max, zw unused.
+		glm::vec4 ambientColor;
+		glm::vec4 sunlightDirection; //w for sun power
+		glm::vec4 sunlightColor;
+	};
+
+	struct GPUObjectData {
+		glm::mat4 modelMatrix;
+	};
+
 	void drawFrame(ReaShaderProcessor* rs, vkt::vktDevice* vktDevice,
 		VkRenderPass renderPass,
-		VkPipelineLayout pipelineLayout,
-		VkPipeline graphicsPipeline,
 		VkFramebuffer frameBuffer,
 		VkCommandBuffer& commandBuffer,
 		VkSemaphore& renderFinishedSemaphore,
 		VkFence& inFlightFence,
-		vkt::Mesh mesh,
 		double pushConstants[]
 	) {
 
@@ -51,55 +69,114 @@ namespace ReaShader {
 
 		vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-		//bind pipeline
+		// render objects
 
-		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
-
-		// dynamic states
-
-		VkViewport viewport{};
-		viewport.x = 0.0f;
-		viewport.y = 0.0f;
-		viewport.width = static_cast<float>(PROJ_W);
-		viewport.height = static_cast<float>(PROJ_H);
-		viewport.minDepth = 0.0f;
-		viewport.maxDepth = 1.0f;
-		vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-
-		VkRect2D scissor{};
-		scissor.offset = { 0, 0 };
-		scissor.extent.width = PROJ_W;
-		scissor.extent.height = PROJ_H;
-		vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-
-		// bind vertex buffers
-
-		VkDeviceSize offset = 0;
-		vkCmdBindVertexBuffers(commandBuffer, 0, 1, &mesh.vertexBuffer.buffer, &offset);
-
-		// set push constants
+		double frameNumber = pushConstants[0] * pushConstants[1]; // proj_time * frate
 
 		//camera position
-		glm::vec3 camPos = { 0.f,0.f,-2.f };
+		glm::vec3 camPos = { 0.f,-6.f,-10.f };
 		glm::mat4 view = glm::translate(glm::mat4(1.f), camPos);
 		//camera projection
 		glm::mat4 projection = glm::perspective(glm::radians(70.f), 1700.f / 900.f, 0.1f, 200.0f);
 		projection[1][1] *= -1;
-		//model rotation
-		double frameNumber = pushConstants[0] * pushConstants[1]; // proj_time * frate
+
+		//fill a GPU camera data struct
+		GPUCameraData camData;
+		camData.proj = projection;
+		camData.view = view;
+		camData.viewproj = projection * view;
+
+		GPUSceneData sceneData;
+		sceneData.ambientColor = { sin(pushConstants[0]),0,cos(pushConstants[0]),1 };
+
+
+		//and copy it to the buffer
+		int* data;
+		vmaMapMemory(vktDevice->vmaAllocator, rs->frameData.cameraBuffer.allocation, (void**)&data);
+
+		memcpy(data, &camData, sizeof(GPUCameraData));
+
+		vmaUnmapMemory(vktDevice->vmaAllocator, rs->frameData.cameraBuffer.allocation);
+
+
+		vmaMapMemory(vktDevice->vmaAllocator, rs->frameData.sceneBuffer.allocation, (void**)&data);
+
+		data += 0; // dynamic buffer offset
+
+		memcpy(data, &sceneData, sizeof(GPUSceneData));
+
+		vmaUnmapMemory(vktDevice->vmaAllocator, rs->frameData.sceneBuffer.allocation);
+
+
+		std::vector<uint32_t> dynamicOffsets = { 0 }; // offset for each binding to a dynamic descriptor, in order of binding registration
+
+
 		glm::mat4 model = glm::rotate(glm::mat4{ 1.0f }, (float)glm::radians(frameNumber * (float)pushConstants[2] * 5.f), glm::vec3(0, 1, 0));
-		//calculate final mesh matrix
-		glm::mat4 mesh_matrix = projection * view * model;
 
-		MeshPushConstants constants;
-		constants.render_matrix = mesh_matrix;
+		vmaMapMemory(vktDevice->vmaAllocator, rs->frameData.objectBuffer.allocation, (void**)&data);
 
-		//upload the matrix to the GPU via push constants
-		vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &constants);
+		GPUObjectData* objectSSBO = (GPUObjectData*)data;
 
-		// draw
+		vkt::Mesh* lastMesh = nullptr;
+		vkt::Material* lastMaterial = nullptr;
+		for (int i = 0; i < rs->renderObjects.size(); i++)
+		{
+			vkt::RenderObject& object = rs->renderObjects[i];
 
-		vkCmdDraw(commandBuffer, mesh.vertices.size(), 1, 0, 0);
+			// write storage buffers
+			objectSSBO[i].modelMatrix = object.transformMatrix * model;
+
+			//only bind the pipeline if it doesn't match with the already bound one
+			if (object.material != lastMaterial) {
+				// dynamic states
+
+				VkViewport viewport{};
+				viewport.x = 0.0f;
+				viewport.y = 0.0f;
+				viewport.width = static_cast<float>(PROJ_W);
+				viewport.height = static_cast<float>(PROJ_H);
+				viewport.minDepth = 0.0f;
+				viewport.maxDepth = 1.0f;
+				vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+				VkRect2D scissor{};
+				scissor.offset = { 0, 0 };
+				scissor.extent.width = PROJ_W;
+				scissor.extent.height = PROJ_H;
+				vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+				vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipeline);
+				lastMaterial = object.material;
+
+				//bind the descriptor set when changing pipeline
+				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 0, 1, &rs->frameData.globalDescriptor, dynamicOffsets.size(), dynamicOffsets.data());
+
+				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 1, 1, &rs->frameData.objectDescriptor, 0, nullptr);
+			}
+
+			// set push constants
+
+			//model rotation
+
+			MeshPushConstants constants;
+			constants.render_matrix = model * object.transformMatrix;
+
+			//upload the mesh to the GPU via push constants
+			vkCmdPushConstants(commandBuffer, object.material->pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &constants);
+
+			//only bind the mesh if it's a different one from last bind
+			if (object.mesh != lastMesh) {
+				//bind the mesh vertex buffer with offset 0
+				VkDeviceSize offset = 0;
+				vkCmdBindVertexBuffers(commandBuffer, 0, 1, &object.mesh->vertexBuffer.buffer, &offset);
+				lastMesh = object.mesh;
+			}
+			//we can now draw
+			vkCmdDraw(commandBuffer, object.mesh->vertices.size(), 1, 0, 0);
+		}
+
+		// unmap storage buffers
+		vmaUnmapMemory(vktDevice->vmaAllocator, rs->frameData.objectBuffer.allocation);
 
 		// end render pass
 
@@ -353,13 +430,10 @@ namespace ReaShader {
 
 			drawFrame(rsProcessor, rsProcessor->vktDevice,
 				rsProcessor->vkRenderPass,
-				rsProcessor->vkPipelineLayout,
-				rsProcessor->vkGraphicsPipeline,
 				rsProcessor->vkFramebuffer,
 				rsProcessor->vkDrawCommandBuffer,
 				rsProcessor->vkRenderFinishedSemaphore,
 				rsProcessor->vkInFlightFence,
-				rsProcessor->myMesh,
 				pushConstants
 			);
 
@@ -495,12 +569,14 @@ namespace ReaShader {
 
 	// GRAPHICS PIPELINE
 
-	VkPipeline createGraphicsPipeline(vkt::vktDevice* vktDevice, VkRenderPass& renderPass, VkPipelineLayout* pipelineLayout, VkPipelineCache* pipelineCache) {
+	vkt::Material createMaterialOpaque(vkt::vktDevice* vktDevice, VkRenderPass& renderPass, std::vector<VkDescriptorSetLayout> descriptorSetLayouts) {
 
 		VkShaderModule vertShaderModule = vktDevice->createShaderModule("D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\source\\shaders\\vert.spv");
 		VkShaderModule fragShaderModule = vktDevice->createShaderModule("D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\source\\shaders\\frag.spv");
 
 		// ---------
+
+		vkt::Material material;
 
 		// shader stages
 
@@ -644,18 +720,18 @@ namespace ReaShader {
 
 		VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
 		pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		pipelineLayoutInfo.setLayoutCount = 0; // Optional
-		pipelineLayoutInfo.pSetLayouts = nullptr; // Optional
+		pipelineLayoutInfo.setLayoutCount = descriptorSetLayouts.size();
+		pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
 		pipelineLayoutInfo.pushConstantRangeCount = 1;
 		pipelineLayoutInfo.pPushConstantRanges = &push_constant;
 
-		VK_CHECK_RESULT(vkCreatePipelineLayout(vktDevice->device, &pipelineLayoutInfo, nullptr, pipelineLayout));
+		VK_CHECK_RESULT(vkCreatePipelineLayout(vktDevice->device, &pipelineLayoutInfo, nullptr, &(material.pipelineLayout)));
 
 		// pipeline cache
 
 		VkPipelineCacheCreateInfo pipelineCacheCreateInfo = {};
 		pipelineCacheCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
-		VK_CHECK_RESULT(vkCreatePipelineCache(vktDevice->device, &pipelineCacheCreateInfo, nullptr, pipelineCache));
+		VK_CHECK_RESULT(vkCreatePipelineCache(vktDevice->device, &pipelineCacheCreateInfo, nullptr, &(material.pipelineCache)));
 
 		// pipeline
 
@@ -674,23 +750,27 @@ namespace ReaShader {
 		pipelineInfo.pColorBlendState = &colorBlending;
 		pipelineInfo.pDynamicState = &dynamicState;
 		// layout
-		pipelineInfo.layout = *pipelineLayout;
+		pipelineInfo.layout = material.pipelineLayout;
 		pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // Optional
 		pipelineInfo.basePipelineIndex = -1; // Optional
 		// renderpass
 		pipelineInfo.renderPass = renderPass;
 		//pipelineInfo.subpass = 0;
 
-		VkPipeline graphicsPipeline;
+		VK_CHECK_RESULT(vkCreateGraphicsPipelines(vktDevice->device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &(material.pipeline)));
 
-		VK_CHECK_RESULT(vkCreateGraphicsPipelines(vktDevice->device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline));
+		vktDevice->pDeletionQueue->push_function([=]() {
+			vkDestroyPipeline(vktDevice->device, material.pipeline, nullptr);
+			vkDestroyPipelineCache(vktDevice->device, material.pipelineCache, nullptr);
+			vkDestroyPipelineLayout(vktDevice->device, material.pipelineLayout, nullptr);
+			});
 
 		// ---------
 
 		vkDestroyShaderModule(vktDevice->device, fragShaderModule, nullptr);
 		vkDestroyShaderModule(vktDevice->device, vertShaderModule, nullptr);
 
-		return graphicsPipeline;
+		return material;
 	}
 
 	// FRAMEBUFFER
@@ -731,6 +811,8 @@ namespace ReaShader {
 		mesh->vertices[2].color = { 1.f, 0.f, 0.5f };
 
 		//we don't care about the vertex normals
+
+		mesh->verticesToBuffer();
 	}
 
 	void ReaShaderProcessor::initVulkan() {
@@ -745,17 +827,51 @@ namespace ReaShader {
 
 		// meshes
 
-		loadTriangle(&triangleMesh);
-		vktDevice->allocateMesh(&triangleMesh);
+		vkt::Mesh* triangleMesh = new vkt::Mesh(vktDevice);
+		loadTriangle(triangleMesh);
 
-		myMesh.load_from_obj("D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\resource\\meshes\\Suzanne.obj");
-		vktDevice->allocateMesh(&myMesh);
+		vkt::Mesh* suzanne = new vkt::Mesh(vktDevice);
+		suzanne->load_from_obj("D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\resource\\meshes\\Suzanne.obj");
+
+		meshes.add("suzanne", suzanne);
+		meshes.add("triangle", triangleMesh);
+
+		// buffers
+
+		vkDescriptorPool = vktDevice->createDescriptorPool({
+			{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 5 },
+			{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 5 },
+			{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5 }
+			}, 2);
+
+		// set 0
+		vkGlobalSetLayout = vktDevice->createDescriptorSetLayout({
+			vkt::createDescriptorSetLayoutBinding(0,VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,VK_SHADER_STAGE_VERTEX_BIT) ,
+			vkt::createDescriptorSetLayoutBinding(1,VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT),
+			});
+		vktDevice->allocateDescriptorSet(vkDescriptorPool, &vkGlobalSetLayout, &(frameData.globalDescriptor));
+
+		frameData.cameraBuffer.createBuffer(vktDevice, sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+		frameData.sceneBuffer.createBuffer(vktDevice, vktPhysicalDevice->pad_uniform_buffer_size(sizeof(GPUSceneData)), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+		vkt::writeDescriptorSet(vktDevice, frameData.globalDescriptor, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, frameData.cameraBuffer, sizeof(GPUCameraData), 0, 0);
+		vkt::writeDescriptorSet(vktDevice, frameData.globalDescriptor, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, frameData.sceneBuffer, sizeof(GPUSceneData), 0, 1);
+
+		// set 1
+		vkObjectSetLayout = vktDevice->createDescriptorSetLayout({
+			vkt::createDescriptorSetLayoutBinding(0,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,VK_SHADER_STAGE_VERTEX_BIT) ,
+			});
+		vktDevice->allocateDescriptorSet(vkDescriptorPool, &vkObjectSetLayout, &(frameData.objectDescriptor));
+
+		frameData.objectBuffer.createBuffer(vktDevice, sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+		vkt::writeDescriptorSet(vktDevice, frameData.objectDescriptor, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, frameData.objectBuffer, sizeof(GPUObjectData) * MAX_OBJECTS, 0, 0);
 
 		// swap chain here (optional)
 
 		// render target
 
-		vkColorAttachment = new vkt::AllocatedImage(deletionQueue, vktDevice);
+		vkColorAttachment = new vkt::AllocatedImage(vktDevice);
 
 		vkColorAttachment->createImage(
 			{ PROJ_W, PROJ_H },
@@ -775,7 +891,7 @@ namespace ReaShader {
 
 		// depth buffer
 
-		vkDepthAttachment = new vkt::AllocatedImage(deletionQueue, vktDevice);
+		vkDepthAttachment = new vkt::AllocatedImage(vktDevice);
 		vkDepthAttachment->createImage(
 			{ PROJ_W, PROJ_H },
 			VK_IMAGE_TYPE_2D,
@@ -793,7 +909,7 @@ namespace ReaShader {
 
 		// frame transfer
 
-		vkFrameTransfer = new vkt::AllocatedImage(deletionQueue, vktDevice);
+		vkFrameTransfer = new vkt::AllocatedImage(vktDevice);
 		vkFrameTransfer->createImage(
 			{ PROJ_W, PROJ_H },
 			VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
@@ -812,12 +928,25 @@ namespace ReaShader {
 		vkFramebuffer = createFramebuffer(vktDevice->device, vkColorAttachment->imageView, vkDepthAttachment->imageView, vkRenderPass);
 		deletionQueue.push_function([=]() { vkDestroyFramebuffer(vktDevice->device, vkFramebuffer, nullptr); });
 
-		vkGraphicsPipeline = createGraphicsPipeline(vktDevice, vkRenderPass, &vkPipelineLayout, &vkPipelineCache);
-		deletionQueue.push_function([=]() {
-			vkDestroyPipeline(vktDevice->device, vkGraphicsPipeline, nullptr);
-			vkDestroyPipelineCache(vktDevice->device, vkPipelineCache, nullptr);
-			vkDestroyPipelineLayout(vktDevice->device, this->vkPipelineLayout, nullptr);
-			});
+		vkt::Material material_opaque = createMaterialOpaque(vktDevice, vkRenderPass, { vkGlobalSetLayout , vkObjectSetLayout });
+		materials.add("opaque", material_opaque);
+
+		// render objects
+
+		vkt::RenderObject monkey;
+		monkey.mesh = *meshes.get("suzanne");
+		monkey.material = materials.get("opaque");
+		monkey.transformMatrix = glm::mat4{ 1.0f };
+
+		renderObjects.push_back(monkey);
+
+		vkt::RenderObject triangle;
+		triangle.mesh = *meshes.get("triangle");
+		triangle.material = materials.get("opaque");
+		glm::mat4 translation = glm::translate(glm::mat4{ 1.0 }, glm::vec3(5, 0, 5));
+		glm::mat4 scale = glm::scale(glm::mat4{ 1.0 }, glm::vec3(0.2, 0.2, 0.2));
+		triangle.transformMatrix = translation * scale;
+		renderObjects.push_back(triangle);
 
 		vkDrawCommandBuffer = vktDevice->createCommandBuffer();
 		vkTransferCommandBuffer = vktDevice->createCommandBuffer(vktDevice->transferCommandPool);
