@@ -1,3 +1,17 @@
 ﻿/.vs
+.vs/
 
 test
+
+# win
+
+*.dir/
+*.obj
+
+build/VST3
+build/vst3sdk/x64
+
+build/WIN_PDB64
+
+build/bin
+build/lib
