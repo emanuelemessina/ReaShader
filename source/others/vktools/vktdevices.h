@@ -16,7 +16,7 @@ namespace vkt {
 
 		static QueueFamilyIndices findQueueFamilies(VkPhysicalDevice physicalDevice) {
 
-			// Assign index to queue families that could be found
+			// get families
 
 			uint32_t queueFamilyCount = 0;
 			vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
@@ -26,19 +26,57 @@ namespace vkt {
 
 			physicalDevices::QueueFamilyIndices queueFamilyIndices;
 
-			// TODO: do not override, choose best family specialized in one thing
-			int i = 0;
-			for (const auto& queueFamily : queueFamilies) {
-				auto flags = queueFamily.queueFlags;
+			// get num of assignable queues (how many bits are set)
 
-				if (flags & VK_QUEUE_GRAPHICS_BIT)
+			std::vector<int> queueFamiliesBitMatches(queueFamilyCount);
+
+			for (int i = 0; i < queueFamilyCount; i++) {
+
+				auto flags = queueFamilies[i].queueFlags;
+
+				int* m = &queueFamiliesBitMatches[i];
+
+				if (flags & VK_QUEUE_GRAPHICS_BIT) (*m)++;
+				if (flags & VK_QUEUE_COMPUTE_BIT) (*m)++;
+				if (flags & VK_QUEUE_TRANSFER_BIT) (*m)++;
+
+			}
+
+			// sort found queuefamilies based on num matches (ascending)
+
+			std::vector<int> sortedIndices(queueFamilyCount);
+			std::iota(sortedIndices.begin(), sortedIndices.end(), 0);
+			std::sort(sortedIndices.begin(), sortedIndices.end(),
+				[&](int A, int B) -> bool {
+					return queueFamiliesBitMatches[A] < queueFamiliesBitMatches[B];
+				});
+
+			// loop thru sorted queues
+			// fewest matches first -> means that family is more specialized than one with more matches (generic family)
+			// once queue is assigned it's not assignable anymore and it's taken by that family
+			// sorting ensures that specialized families come first
+
+			bool
+				graphicsAssignable = true,
+				computeAssignable = true,
+				transferAssignable = true;
+
+			for (int i = 0; i < queueFamilyCount; i++) {
+
+				auto flags = queueFamilies[sortedIndices[i]].queueFlags;
+
+				if (flags & VK_QUEUE_GRAPHICS_BIT && graphicsAssignable) {
 					queueFamilyIndices.graphicsFamily = i;
-				if (flags & VK_QUEUE_COMPUTE_BIT)
+					graphicsAssignable = false;
+				}
+				if (flags & VK_QUEUE_COMPUTE_BIT && computeAssignable) {
 					queueFamilyIndices.computeFamily = i;
-				if (flags & VK_QUEUE_TRANSFER_BIT)
+					computeAssignable = false;
+				}
+				if (flags & VK_QUEUE_TRANSFER_BIT && transferAssignable) {
 					queueFamilyIndices.transferFamily = i;
-
-				i++;
+					transferAssignable = false;
+				}
 			}
 
 			return queueFamilyIndices;

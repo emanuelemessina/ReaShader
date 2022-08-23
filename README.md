@@ -53,15 +53,23 @@ The vkt namespace contains the custom vk tools to simplify the vulkan process.
 
 <br>
 
-#### Author
+### Author
     
     Emanuele Messina
+
+<br>
 
 #### Open source libraries
 
     WDL by Cockos
     Vulkan Memory Allocator by GPUOpen
 
-#### Third Party 
+#### Third Party
 
-    VST by Steinberg
+    VST by Steinberg Media Technologies GmbH
+    Vulkan by Khronos Group
+
+#### Thanks to
+    
+- Sascha Willems : [Github](https://github.com/SaschaWillems/Vulkan)
+- Victor Blanco : [Vulkan Guide](https://vkguide.dev/)

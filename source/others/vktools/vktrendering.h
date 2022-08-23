@@ -378,7 +378,7 @@ namespace vkt {
 					// Loop over vertices in the face.
 					for (size_t v = 0; v < fv; v++) {
 
-						Vertex new_vert; // vertex struct to copy data to
+						Vertex new_vert{}; // vertex struct to copy data to
 
 						// access to vertex
 						tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];

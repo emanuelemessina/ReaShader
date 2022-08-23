@@ -117,13 +117,14 @@ namespace ReaShader {
 
 		vkt::vectors::searchable_map<int, vkt::Mesh*> meshes;
 		vkt::vectors::searchable_map<int, vkt::Material> materials;
+		vkt::vectors::searchable_map<int, vkt::vktAllocatedImage*> textures;
+
 		std::vector<vkt::RenderObject> renderObjects;
 
 		vkt::vktDescriptorPool* vktDescriptorPool;
 
 		VkSampler vkSampler;
 
-		vkt::vectors::searchable_map<int, vkt::vktAllocatedImage*> textures;
 
 		struct FrameData {
 
