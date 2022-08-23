@@ -1,11 +1,12 @@
 .vs
+
 VST3
 WIN_PDB64
+
 bin
 lib
 
-build/vst3sdk/vstgui_support.dir
-build/vst3sdk/x64
-build/vst3sdk/public.sdk
+*.dir/
+vst3sdk/x64
 
 *.obj
