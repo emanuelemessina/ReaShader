@@ -1,12 +1,39 @@
 #include "mypluginprocessor.h"
 
-#include "vktools/vktools.h"
-
 #define PROJ_W 1280
 #define PROJ_H 720
 #define MAX_OBJECTS 100
 
 namespace ReaShader {
+
+	struct ids {
+
+		enum descriptorBindings {
+			gUb = 0,
+			gUbD,
+			oSb = 0,
+			tCis = 0
+		};
+
+		enum commandBuffers {
+			draw,
+			transfer,
+		};
+
+		enum meshes {
+			triangle,
+			suzanne
+		};
+
+		enum textures {
+			logo
+		};
+
+		enum materials {
+			opaque
+		};
+
+	} ids;
 
 	// DRAW
 
@@ -33,25 +60,21 @@ namespace ReaShader {
 		glm::mat4 modelMatrix;
 	};
 
-	void drawFrame(ReaShaderProcessor* rs, vkt::vktDevice* vktDevice,
-		VkRenderPass renderPass,
-		VkFramebuffer frameBuffer,
-		VkCommandBuffer& commandBuffer,
-		VkSemaphore& renderFinishedSemaphore,
-		VkFence& inFlightFence,
-		double pushConstants[]
-	) {
+	void drawFrame(ReaShaderProcessor* rs, double pushConstants[]) {
 
-		VkDevice device = vktDevice->device;
+		vkt::vktDevice* vktDevice = rs->vktDevice;
+		VkDevice device = rs->vktDevice->device;
+		vkt::vktCommandPool* commandPool = rs->vktDevice->getGraphicsCommandPool();
+		VkCommandBuffer commandBuffer = rs->vkDrawCommandBuffer;
 
 		// begin command buffer
-		vktDevice->restartCommandBuffer(commandBuffer);
+		commandPool->restartCommandBuffer(commandBuffer);
 
 		// begin render pass
 		VkRenderPassBeginInfo renderPassInfo{};
 		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-		renderPassInfo.renderPass = renderPass;
-		renderPassInfo.framebuffer = frameBuffer;
+		renderPassInfo.renderPass = rs->vkRenderPass;
+		renderPassInfo.framebuffer = rs->vkFramebuffer;
 		renderPassInfo.renderArea.offset = { 0, 0 };
 		renderPassInfo.renderArea.extent.width = PROJ_W;
 		renderPassInfo.renderArea.extent.height = PROJ_H;
@@ -92,20 +115,20 @@ namespace ReaShader {
 
 		//and copy it to the buffer
 		int* data;
-		vmaMapMemory(vktDevice->vmaAllocator, rs->frameData.cameraBuffer.allocation, (void**)&data);
+		vmaMapMemory(vktDevice->vmaAllocator, rs->frameData.cameraBuffer->getAllocation(), (void**)&data);
 
 		memcpy(data, &camData, sizeof(GPUCameraData));
 
-		vmaUnmapMemory(vktDevice->vmaAllocator, rs->frameData.cameraBuffer.allocation);
+		vmaUnmapMemory(vktDevice->vmaAllocator, rs->frameData.cameraBuffer->getAllocation());
 
 
-		vmaMapMemory(vktDevice->vmaAllocator, rs->frameData.sceneBuffer.allocation, (void**)&data);
+		vmaMapMemory(vktDevice->vmaAllocator, rs->frameData.sceneBuffer->getAllocation(), (void**)&data);
 
 		data += 0; // dynamic buffer offset
 
 		memcpy(data, &sceneData, sizeof(GPUSceneData));
 
-		vmaUnmapMemory(vktDevice->vmaAllocator, rs->frameData.sceneBuffer.allocation);
+		vmaUnmapMemory(vktDevice->vmaAllocator, rs->frameData.sceneBuffer->getAllocation());
 
 
 		std::vector<uint32_t> dynamicOffsets = { 0 }; // offset for each binding to a dynamic descriptor, in order of binding registration
@@ -113,7 +136,7 @@ namespace ReaShader {
 
 		glm::mat4 model = glm::rotate(glm::mat4{ 1.0f }, (float)glm::radians(frameNumber * (float)pushConstants[2] * 5.f), glm::vec3(0, 1, 0));
 
-		vmaMapMemory(vktDevice->vmaAllocator, rs->frameData.objectBuffer.allocation, (void**)&data);
+		vmaMapMemory(vktDevice->vmaAllocator, rs->frameData.objectBuffer->getAllocation(), (void**)&data);
 
 		GPUObjectData* objectSSBO = (GPUObjectData*)data;
 
@@ -149,12 +172,14 @@ namespace ReaShader {
 				lastMaterial = object.material;
 
 				//bind the descriptor set when changing pipeline
-				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 0, 1, &rs->frameData.globalDescriptor, dynamicOffsets.size(), dynamicOffsets.data());
+				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 0, 1, &rs->frameData.globalSet.set, dynamicOffsets.size(), dynamicOffsets.data());
 
-				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 1, 1, &rs->frameData.objectDescriptor, 0, nullptr);
+				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 1, 1, &rs->frameData.objectSet.set, 0, nullptr);
 
-				if (object.material->textureSet != VK_NULL_HANDLE)
-					vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 2, 1, &object.material->textureSet, 0, nullptr);
+				if (object.material->textureSet != VK_NULL_HANDLE) {
+					VkDescriptorSet textureSet = object.material->textureSet->set;
+					vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 2, 1, &textureSet, 0, nullptr);
+				}
 			}
 
 			// set push constants
@@ -171,15 +196,26 @@ namespace ReaShader {
 			if (object.mesh != lastMesh) {
 				//bind the mesh vertex buffer with offset 0
 				VkDeviceSize offset = 0;
-				vkCmdBindVertexBuffers(commandBuffer, 0, 1, &object.mesh->vertexBuffer.buffer, &offset);
+				VkBuffer vertexBuffer = object.mesh->getVertexBuffer()->getBuffer();
+				vkCmdBindVertexBuffers(commandBuffer, 0, 1, &(vertexBuffer), &offset);
+
+				//only bind index buffer if it's used
+				if (object.mesh->getIndexBuffer()->getBuffer())
+					vkCmdBindIndexBuffer(commandBuffer, object.mesh->getIndexBuffer()->getBuffer(), 0, VK_INDEX_TYPE_UINT32);
+
 				lastMesh = object.mesh;
 			}
+
 			//we can now draw
-			vkCmdDraw(commandBuffer, object.mesh->vertices.size(), 1, 0, 0);
+
+			if (object.mesh->getIndexBuffer()->getBuffer())
+				vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(object.mesh->getIndices().size()), 1, 0, 0, 0);
+			else
+				vkCmdDraw(commandBuffer, object.mesh->getVertices().size(), 1, 0, 0);
 		}
 
 		// unmap storage buffers
-		vmaUnmapMemory(vktDevice->vmaAllocator, rs->frameData.objectBuffer.allocation);
+		vmaUnmapMemory(vktDevice->vmaAllocator, rs->frameData.objectBuffer->getAllocation());
 
 		// end render pass
 
@@ -187,30 +223,26 @@ namespace ReaShader {
 
 		// submit ( end command buffer )
 
-		vktDevice->submitQueue(commandBuffer, VK_NULL_HANDLE, renderFinishedSemaphore, rs->vkImageAvailableSemaphore);
+		commandPool->submit(commandBuffer, VK_NULL_HANDLE, rs->vkRenderFinishedSemaphore, rs->vkImageAvailableSemaphore);
 	}
 
-	void transferFrame(vkt::vktDevice* vktDevice,
-		vkt::vktInitProperties vktInitProperties,
-		VkImage srcImage,
-		vkt::AllocatedImage* vkFrameTransfer,
-		int*& destBuffer,
-		VkCommandBuffer& commandBuffer,
-		VkSemaphore& renderFinishedSemaphore,
-		VkFence& inFlightFence
-	) {
+	void transferFrame(ReaShaderProcessor* rs, int*& destBuffer) {
 
 		// init command buffer
 
-		vkQueueWaitIdle(vktDevice->transferQueue);
+		vkt::vktDevice* vktDevice = rs->vktDevice;
+		VkCommandBuffer commandBuffer = rs->vkTransferCommandBuffer;
+		vkt::vktCommandPool* commandPool = vktDevice->getGraphicsCommandPool();
 
-		vktDevice->restartCommandBuffer(commandBuffer);
+		vkQueueWaitIdle(vktDevice->getGraphicsQueue()->get());
+
+		commandPool->restartCommandBuffer(commandBuffer);
 
 		// Transition destination image to transfer destination layout
 
-		vkt::insertImageMemoryBarrier(
+		vkt::commands::insertImageMemoryBarrier(
 			commandBuffer,
-			vkFrameTransfer->image,
+			rs->vktFrameTransfer->getImage(),
 			0,
 			VK_ACCESS_TRANSFER_WRITE_BIT,
 			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
@@ -224,7 +256,7 @@ namespace ReaShader {
 		// do the blit/copy
 
 		// If source and destination support blit we'll blit as this also does automatic format conversion (e.g. from BGR to RGB)
-		if (vktInitProperties.supportsBlit)
+		if (vktDevice->vktPhysicalDevice->supportsBlit())
 		{
 			// Define the region to blit (we will blit the whole swapchain image)
 			VkOffset3D blitSize;
@@ -242,8 +274,8 @@ namespace ReaShader {
 			// Issue the blit command
 			vkCmdBlitImage(
 				commandBuffer,
-				srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-				vkFrameTransfer->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				rs->vktColorAttachment->getImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+				rs->vktFrameTransfer->getImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 				1,
 				&imageBlitRegion,
 				VK_FILTER_NEAREST);
@@ -263,16 +295,16 @@ namespace ReaShader {
 			// Issue the copy command
 			vkCmdCopyImage(
 				commandBuffer,
-				srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-				vkFrameTransfer->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				rs->vktColorAttachment->getImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+				rs->vktFrameTransfer->getImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 				1,
 				&imageCopyRegion);
 		}
 
 		// Transition destination image to general layout, which is the required layout for mapping the image memory later on
-		vkt::insertImageMemoryBarrier(
+		vkt::commands::insertImageMemoryBarrier(
 			commandBuffer,
-			vkFrameTransfer->image,
+			rs->vktFrameTransfer->getImage(),
 			VK_ACCESS_TRANSFER_WRITE_BIT,
 			VK_ACCESS_MEMORY_READ_BIT,
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -283,35 +315,39 @@ namespace ReaShader {
 
 		// submit queue (wait for draw frame)
 
-		vktDevice->submitQueue(commandBuffer, inFlightFence, VK_NULL_HANDLE, renderFinishedSemaphore, vktDevice->transferQueue);
+		commandPool->submit(commandBuffer, rs->vkInFlightFence, VK_NULL_HANDLE, rs->vkRenderFinishedSemaphore);
 
 		// wait fence since now we are on cpu
 
-		vkWaitForFences(vktDevice->device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
-		vkResetFences(vktDevice->device, 1, &inFlightFence);
+		vkWaitForFences(vktDevice->device, 1, &rs->vkInFlightFence, VK_TRUE, UINT64_MAX);
+		vkResetFences(vktDevice->device, 1, &rs->vkInFlightFence);
 
 		// Get layout of the image (including row pitch)
 		VkImageSubresource subResource{};
 		subResource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		VkSubresourceLayout subResourceLayout;
 
-		vkGetImageSubresourceLayout(vktDevice->device, vkFrameTransfer->image, &subResource, &subResourceLayout);
+		vkGetImageSubresourceLayout(vktDevice->device, rs->vktFrameTransfer->getImage(), &subResource, &subResourceLayout);
 
 		// dest image is already mapped
-		memcpy((void*)destBuffer, (void*)((int)(vkFrameTransfer->allocationInfo).pMappedData + subResourceLayout.offset), sizeof(LICE_pixel) * PROJ_W * PROJ_H);
+		memcpy((void*)destBuffer, (void*)((int)(rs->vktFrameTransfer->getAllocationInfo()).pMappedData + subResourceLayout.offset), sizeof(LICE_pixel) * PROJ_W * PROJ_H);
 
 	}
 
 	// load vf bits to color attachment
 	void loadBitsToImage(ReaShaderProcessor* rs, int* srcBuffer) {
 
-		vkQueueWaitIdle(rs->vktDevice->transferQueue);
+		vkt::vktDevice* vktDevice = rs->vktDevice;
+		vkt::vktCommandPool* commandPool = vktDevice->getGraphicsCommandPool();
+		vkt::vktQueue* queue = vktDevice->getGraphicsQueue();
 
-		rs->vktDevice->restartCommandBuffer(rs->vkTransferCommandBuffer);
+		vkQueueWaitIdle(queue->get());
 
-		vkt::insertImageMemoryBarrier(
+		vktDevice->getGraphicsCommandPool()->restartCommandBuffer(rs->vkTransferCommandBuffer);
+
+		vkt::commands::insertImageMemoryBarrier(
 			rs->vkTransferCommandBuffer,
-			rs->vkFrameTransfer->image,
+			rs->vktFrameTransfer->getImage(),
 			0,
 			VK_ACCESS_MEMORY_WRITE_BIT,
 			VK_IMAGE_LAYOUT_UNDEFINED,
@@ -321,28 +357,28 @@ namespace ReaShader {
 			VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
 
 		// submit command, signal fence
-		rs->vktDevice->submitQueue(rs->vkTransferCommandBuffer, rs->vkInFlightFence, VK_NULL_HANDLE, VK_NULL_HANDLE, rs->vktDevice->transferQueue);
+		commandPool->submit(rs->vkTransferCommandBuffer, rs->vkInFlightFence, VK_NULL_HANDLE, VK_NULL_HANDLE);
 
 		// wait for it
-		vkWaitForFences(rs->vktDevice->device, 1, &rs->vkInFlightFence, VK_TRUE, UINT64_MAX);
-		vkResetFences(rs->vktDevice->device, 1, &rs->vkInFlightFence);
+		vkWaitForFences(vktDevice->device, 1, &rs->vkInFlightFence, VK_TRUE, UINT64_MAX);
+		vkResetFences(vktDevice->device, 1, &rs->vkInFlightFence);
 
 		// Get layout of the image (including row pitch)
 		VkImageSubresource subResource{};
 		subResource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		VkSubresourceLayout subResourceLayout;
-		vkGetImageSubresourceLayout(rs->vktDevice->device, rs->vkFrameTransfer->image, &subResource, &subResourceLayout);
+		vkGetImageSubresourceLayout(vktDevice->device, rs->vktFrameTransfer->getImage(), &subResource, &subResourceLayout);
 
 		// copy bits from src to framedest
-		memcpy((void*)((int)(rs->vkFrameTransfer->allocationInfo).pMappedData + subResourceLayout.offset), (void*)srcBuffer, sizeof(LICE_pixel) * PROJ_W * PROJ_H);
+		memcpy((void*)((int)(rs->vktFrameTransfer->getAllocationInfo()).pMappedData + subResourceLayout.offset), (void*)srcBuffer, sizeof(LICE_pixel) * PROJ_W * PROJ_H);
 
-		rs->vktDevice->restartCommandBuffer(rs->vkTransferCommandBuffer);
+		commandPool->restartCommandBuffer(rs->vkTransferCommandBuffer);
 
 		// retransition frametransfer to src copy optimal
 
-		vkt::insertImageMemoryBarrier(
+		vkt::commands::insertImageMemoryBarrier(
 			rs->vkTransferCommandBuffer,
-			rs->vkFrameTransfer->image,
+			rs->vktFrameTransfer->getImage(),
 			VK_ACCESS_TRANSFER_WRITE_BIT,
 			VK_ACCESS_MEMORY_READ_BIT,
 			VK_IMAGE_LAYOUT_GENERAL,
@@ -353,9 +389,9 @@ namespace ReaShader {
 
 		// color attachment goes dst optimal
 
-		vkt::insertImageMemoryBarrier(
+		vkt::commands::insertImageMemoryBarrier(
 			rs->vkTransferCommandBuffer,
-			rs->vkColorAttachment->image,
+			rs->vktColorAttachment->getImage(),
 			0,
 			VK_ACCESS_MEMORY_READ_BIT,
 			VK_IMAGE_LAYOUT_UNDEFINED,
@@ -377,12 +413,12 @@ namespace ReaShader {
 
 		vkCmdCopyImage(
 			rs->vkTransferCommandBuffer,
-			rs->vkFrameTransfer->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			rs->vkColorAttachment->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			rs->vktFrameTransfer->getImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			rs->vktColorAttachment->getImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			1,
 			&imageCopyRegion);
 
-		rs->vktDevice->submitQueue(rs->vkTransferCommandBuffer, VK_NULL_HANDLE, rs->vkImageAvailableSemaphore, VK_NULL_HANDLE, rs->vktDevice->transferQueue);
+		commandPool->submit(rs->vkTransferCommandBuffer, VK_NULL_HANDLE, rs->vkImageAvailableSemaphore, VK_NULL_HANDLE);
 	}
 
 	/* video */
@@ -431,23 +467,9 @@ namespace ReaShader {
 			float rotSpeed = parmlist[uVideoParam + 1];
 			double pushConstants[] = { project_time, frate, rotSpeed };
 
-			drawFrame(rsProcessor, rsProcessor->vktDevice,
-				rsProcessor->vkRenderPass,
-				rsProcessor->vkFramebuffer,
-				rsProcessor->vkDrawCommandBuffer,
-				rsProcessor->vkRenderFinishedSemaphore,
-				rsProcessor->vkInFlightFence,
-				pushConstants
-			);
+			drawFrame(rsProcessor, pushConstants);
 
-			transferFrame(rsProcessor->vktDevice,
-				rsProcessor->vktInitProperties,
-				rsProcessor->vkColorAttachment->image,
-				rsProcessor->vkFrameTransfer,
-				bits,
-				rsProcessor->vkTransferCommandBuffer,
-				rsProcessor->vkRenderFinishedSemaphore,
-				rsProcessor->vkInFlightFence);
+			transferFrame(rsProcessor, bits);
 
 			//  parmlist[0] is wet, [1] is parameter
 		}
@@ -468,7 +490,7 @@ namespace ReaShader {
 
 		// queue families
 
-		vkt::QueueFamilyIndices indices = vkt::findQueueFamilies(device);
+		vkt::physicalDevices::QueueFamilyIndices indices = vkt::physicalDevices::findQueueFamilies(device);
 
 		// final condition
 
@@ -480,9 +502,9 @@ namespace ReaShader {
 
 	// RENDER PASS
 
-	VkRenderPass createRenderPass(VkDevice device) {
+	VkRenderPass createRenderPass(vkt::vktDevice* vktDevice) {
 
-		// color
+		vkt::pipeline::renderPassBuilder renderPassBuilder(vktDevice);
 
 		VkAttachmentDescription colorAttachment{};
 		colorAttachment.format = VK_FORMAT_B8G8R8A8_UNORM;
@@ -493,12 +515,6 @@ namespace ReaShader {
 		colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		colorAttachment.initialLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 		colorAttachment.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL; // transition from dst to src optimal layout after render finished
-
-		VkAttachmentReference colorAttachmentRef{};
-		colorAttachmentRef.attachment = 0;
-		colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-		// depth
 
 		VkAttachmentDescription depth_attachment = {};
 		depth_attachment.flags = 0;
@@ -511,22 +527,29 @@ namespace ReaShader {
 		depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-		VkAttachmentReference depth_attachment_ref = {};
-		depth_attachment_ref.attachment = 1;
-		depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		enum attachmentTags {
+			colorAttTag,
+			depthAttTag
+		};
 
-		// subpass
+		enum subpassTags {
+			mainSubpass
+		};
 
-		VkSubpassDescription subpass{};
-		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-		subpass.colorAttachmentCount = 1;
-		subpass.pColorAttachments = &colorAttachmentRef;
-		subpass.pDepthStencilAttachment = &depth_attachment_ref;
+		renderPassBuilder
+			.addAttachment(std::move(colorAttachment), colorAttTag)
+			.addAttachment(std::move(depth_attachment), depthAttTag);
+
+		renderPassBuilder
+			.initSubpass(VK_PIPELINE_BIND_POINT_GRAPHICS, mainSubpass)
+			.addColorAttachmentRef(colorAttTag, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+			.setDepthStencilRef(depthAttTag)
+			.endSubpass();
 
 		// Use subpass dependencies for layout transitions
 		VkSubpassDependency colorDependencyInit{};
 		colorDependencyInit.srcSubpass = VK_SUBPASS_EXTERNAL;
-		colorDependencyInit.dstSubpass = 0;
+		colorDependencyInit.dstSubpass = mainSubpass;
 		colorDependencyInit.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
 		colorDependencyInit.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 		colorDependencyInit.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
@@ -535,14 +558,14 @@ namespace ReaShader {
 
 		VkSubpassDependency depthDependency{};
 		depthDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-		depthDependency.dstSubpass = 0;
+		depthDependency.dstSubpass = mainSubpass;
 		depthDependency.srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
 		depthDependency.srcAccessMask = 0;
 		depthDependency.dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
 		depthDependency.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
 		VkSubpassDependency colorDependencyFinal{};
-		colorDependencyFinal.srcSubpass = 0;
+		colorDependencyFinal.srcSubpass = mainSubpass;
 		colorDependencyFinal.dstSubpass = VK_SUBPASS_EXTERNAL;
 		colorDependencyFinal.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 		colorDependencyFinal.dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
@@ -550,22 +573,12 @@ namespace ReaShader {
 		colorDependencyFinal.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
 		colorDependencyFinal.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
-		std::vector<VkSubpassDependency> dependencies = { colorDependencyInit, depthDependency, colorDependencyFinal };
+		renderPassBuilder
+			.addSubpassDependency(std::move(colorDependencyInit))
+			.addSubpassDependency(std::move(depthDependency))
+			.addSubpassDependency(std::move(colorDependencyFinal));
 
-		std::vector<VkAttachmentDescription> attachments = { colorAttachment, depth_attachment };
-
-		VkRenderPassCreateInfo renderPassInfo{};
-		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		renderPassInfo.attachmentCount = attachments.size();
-		renderPassInfo.pAttachments = attachments.data();
-		renderPassInfo.subpassCount = 1;
-		renderPassInfo.pSubpasses = &subpass;
-		renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
-		renderPassInfo.pDependencies = dependencies.data();
-
-		VkRenderPass renderPass;
-
-		VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass));
+		VkRenderPass renderPass = renderPassBuilder.build();
 
 		return renderPass;
 	}
@@ -574,8 +587,8 @@ namespace ReaShader {
 
 	vkt::Material createMaterialOpaque(vkt::vktDevice* vktDevice, VkRenderPass& renderPass, std::vector<VkDescriptorSetLayout> descriptorSetLayouts) {
 
-		VkShaderModule vertShaderModule = vktDevice->createShaderModule("D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\source\\shaders\\vert.spv");
-		VkShaderModule fragShaderModule = vktDevice->createShaderModule("D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\source\\shaders\\frag.spv");
+		VkShaderModule vertShaderModule = vkt::pipeline::createShaderModule(vktDevice, "D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\source\\shaders\\vert.spv");
+		VkShaderModule fragShaderModule = vkt::pipeline::createShaderModule(vktDevice, "D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\source\\shaders\\frag.spv");
 
 		// ---------
 
@@ -760,7 +773,7 @@ namespace ReaShader {
 		pipelineInfo.renderPass = renderPass;
 		//pipelineInfo.subpass = 0;
 
-		VK_CHECK_RESULT(vkCreateGraphicsPipelines(vktDevice->device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &(material.pipeline)));
+		VK_CHECK_RESULT(vkCreateGraphicsPipelines(vktDevice->device, material.pipelineCache, 1, &pipelineInfo, nullptr, &(material.pipeline)));
 
 		vktDevice->pDeletionQueue->push_function([=]() {
 			vkDestroyPipeline(vktDevice->device, material.pipeline, nullptr);
@@ -776,120 +789,120 @@ namespace ReaShader {
 		return material;
 	}
 
-	// FRAMEBUFFER
-
-	VkFramebuffer createFramebuffer(VkDevice device, VkImageView colorView, VkImageView depthView, VkRenderPass renderPass) {
-		std::vector<VkImageView> attachments = { colorView, depthView };
-
-		VkFramebufferCreateInfo framebufferInfo{};
-		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		framebufferInfo.renderPass = renderPass;
-		framebufferInfo.attachmentCount = attachments.size();
-		framebufferInfo.pAttachments = attachments.data();
-		framebufferInfo.width = PROJ_W;
-		framebufferInfo.height = PROJ_H;
-		framebufferInfo.layers = 1;
-
-		VkFramebuffer frameBuffer;
-
-		VK_CHECK_RESULT(vkCreateFramebuffer(device, &framebufferInfo, nullptr, &frameBuffer));
-
-		return frameBuffer;
-	}
-
 	// MESH
 
 	void loadTriangle(vkt::Mesh* mesh) {
 		//make the array 3 vertices long
-		mesh->vertices.resize(3);
+		std::vector<vkt::Vertex> vertices(3);
 
 		//vertex positions
-		mesh->vertices[0].position = { 1.f, 1.f, 0.0f };
-		mesh->vertices[1].position = { -1.f, 1.f, 0.0f };
-		mesh->vertices[2].position = { 0.f,-1.f, 0.0f };
+		vertices[0].position = { 1.f, 1.f, 0.0f };
+		vertices[1].position = { -1.f, 1.f, 0.0f };
+		vertices[2].position = { 0.f,-1.f, 0.0f };
 
-		//vertex colors, all green
-		mesh->vertices[0].color = { 0.f, 1.f, 0.0f }; //pure green
-		mesh->vertices[1].color = { .5f, 1.f, 0.0f };
-		mesh->vertices[2].color = { 1.f, 0.f, 0.5f };
+
+		vertices[0].color = { 0.f, 1.f, 0.0f };
+		vertices[1].color = { .5f, 1.f, 0.0f };
+		vertices[2].color = { 1.f, 0.f, 0.5f };
 
 		//we don't care about the vertex normals
 
-		mesh->verticesToBuffer();
+		mesh->setVertices(std::move(vertices));
 	}
 
 	void ReaShaderProcessor::initVulkan() {
 
 		// instance , device
+		{
+			myVkInstance = vkt::createVkInstance(vktDeletionQueue, "ReaShader Effect", "No Engine");
 
-		myVkInstance = vkt::createVkInstance(deletionQueue, "ReaShader Effect", "No Engine");
+			std::vector<VkPhysicalDevice> vkSuitablePhysicalDevices = vkt::physicalDevices().enumerate(myVkInstance).removeUnsuitable(&isPhysicalDeviceSuitable).get();
 
-		vktPhysicalDevice = new vkt::vktPhysicalDevice(deletionQueue, myVkInstance, vkt::pickSuitablePhysicalDevice(myVkInstance, &isPhysicalDeviceSuitable));
+			vktPhysicalDevice = new vkt::vktPhysicalDevice(vktDeletionQueue, myVkInstance, vkSuitablePhysicalDevices[0]); // choose the first suitable
 
-		vktDevice = new vkt::vktDevice(deletionQueue, vktPhysicalDevice);
+			vktDevice = new vkt::vktDevice(vktDeletionQueue, vktPhysicalDevice);
+		}
 
 		// meshes
 
-		vkt::Mesh* triangleMesh = new vkt::Mesh(vktDevice);
-		loadTriangle(triangleMesh);
+		{
+			vkt::Mesh* triangleMesh = new vkt::Mesh(vktDevice);
+			loadTriangle(triangleMesh);
+			meshes.add(ids::meshes::triangle, triangleMesh);
 
-		vkt::Mesh* suzanne = new vkt::Mesh(vktDevice);
-		suzanne->load_from_obj("D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\resource\\meshes\\Suzanne.obj");
-
-		meshes.add("suzanne", suzanne);
-		meshes.add("triangle", triangleMesh);
+			vkt::Mesh* suzanne = new vkt::Mesh(vktDevice);
+			suzanne->load_from_obj("D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\resource\\meshes\\Suzanne.obj");
+			meshes.add(ids::meshes::suzanne, suzanne);
+		}
 
 		// textures
 
-		vkt::AllocatedImage* texture = new vkt::AllocatedImage(vktDevice);
-		texture->load_from_file("D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\resource\\images\\reashader text.png", VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-		texture->createImageView(VK_IMAGE_VIEW_TYPE_2D, texture->getFormat(), VK_IMAGE_ASPECT_COLOR_BIT);
-		textures.add("logo", texture);
+		{
+			vkt::vktAllocatedImage* texture = new vkt::vktAllocatedImage(vktDevice);
+			texture->createImage("D:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader\\resource\\images\\reashader text.png", VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+			texture->createImageView(VK_IMAGE_VIEW_TYPE_2D, texture->getFormat(), VK_IMAGE_ASPECT_COLOR_BIT);
+			textures.add(ids::textures::logo, texture);
+
+			vkSampler = vkt::textures::createSampler(vktDevice, VK_FILTER_LINEAR);
+		}
 
 		// buffers
 
-		vkDescriptorPool = vktDevice->createDescriptorPool({
-			{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 5 },
-			{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 5 },
-			{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5 },
-			{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5 }
+		vktDescriptorPool = new vkt::vktDescriptorPool(vktDevice,
+			{
+				{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 5 },
+				{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 5 },
+				{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5 },
+				{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5 }
 			}, 5);
 
 		// set 0
-		vkGlobalSetLayout = vktDevice->createDescriptorSetLayout({
-			vkt::createDescriptorSetLayoutBinding(0,VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,VK_SHADER_STAGE_VERTEX_BIT) ,
-			vkt::createDescriptorSetLayoutBinding(1,VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT),
-			});
-		vktDevice->allocateDescriptorSet(vkDescriptorPool, &vkGlobalSetLayout, &(frameData.globalDescriptor));
-
-		frameData.cameraBuffer.createBuffer(vktDevice, sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-		frameData.sceneBuffer.createBuffer(vktDevice, vktPhysicalDevice->pad_uniform_buffer_size(sizeof(GPUSceneData)), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-
-		vkt::writeDescriptorSet(vktDevice, frameData.globalDescriptor, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, frameData.cameraBuffer, sizeof(GPUCameraData), 0, 0);
-		vkt::writeDescriptorSet(vktDevice, frameData.globalDescriptor, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, frameData.sceneBuffer, sizeof(GPUSceneData), 0, 1);
-
+		frameData.globalSet = vkt::descriptorSetLayoutBuilder(vktDevice)
+			.bind(ids::descriptorBindings::gUb, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT)
+			.bind(ids::descriptorBindings::gUbD, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
+			.build();
 		// set 1
-		vkObjectSetLayout = vktDevice->createDescriptorSetLayout({
-			vkt::createDescriptorSetLayoutBinding(0,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,VK_SHADER_STAGE_VERTEX_BIT) ,
-			});
-		vktDevice->allocateDescriptorSet(vkDescriptorPool, &vkObjectSetLayout, &(frameData.objectDescriptor));
-
-		frameData.objectBuffer.createBuffer(vktDevice, sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-
-		vkt::writeDescriptorSet(vktDevice, frameData.objectDescriptor, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, frameData.objectBuffer, sizeof(GPUObjectData) * MAX_OBJECTS, 0, 0);
-
+		frameData.objectSet = vkt::descriptorSetLayoutBuilder(vktDevice)
+			.bind(ids::descriptorBindings::oSb, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT)
+			.build();
 		// set 3
-		vkTextureSetLayout = vktDevice->createDescriptorSetLayout({
-			vkt::createDescriptorSetLayoutBinding(0,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,VK_SHADER_STAGE_FRAGMENT_BIT) ,
-			});
+		frameData.textureSet = vkt::descriptorSetLayoutBuilder(vktDevice)
+			.bind(ids::descriptorBindings::tCis, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)
+			.build();
+
+		vktDescriptorPool->allocateDescriptorSets({ frameData.globalSet, frameData.objectSet, frameData.textureSet });
+
+		frameData.cameraBuffer = new vkt::vktAllocatedBuffer(vktDevice);
+		frameData.cameraBuffer->allocate(sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+		frameData.sceneBuffer = new vkt::vktAllocatedBuffer(vktDevice);
+		frameData.sceneBuffer->allocate(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+		frameData.objectBuffer = new vkt::vktAllocatedBuffer(vktDevice);
+		frameData.objectBuffer->allocate(sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+		vkt::descriptorSetWriter(vktDevice)
+			.selectDescriptorSet(frameData.globalSet)
+			.selectBinding(ids::descriptorBindings::gUb)
+			.registerWriteBuffer(frameData.cameraBuffer, sizeof(GPUCameraData), 0)
+			.selectBinding(ids::descriptorBindings::gUbD)
+			.registerWriteBuffer(frameData.sceneBuffer, sizeof(GPUSceneData), 0)
+
+			.selectDescriptorSet(frameData.objectSet)
+			.selectBinding(ids::descriptorBindings::oSb)
+			.registerWriteBuffer(frameData.objectBuffer, sizeof(GPUObjectData) * MAX_OBJECTS, 0)
+
+			.selectDescriptorSet(frameData.textureSet)
+			.selectBinding(ids::descriptorBindings::tCis)
+			.registerWriteImage(*textures.get(ids::textures::logo), vkSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+			.writeRegistered();
 
 		// swap chain here (optional)
 
 		// render target
 
-		vkColorAttachment = new vkt::AllocatedImage(vktDevice);
-
-		vkColorAttachment->createImage(
+		vktColorAttachment = new vkt::vktAllocatedImage(vktDevice);
+		vktColorAttachment->createImage(
 			{ PROJ_W, PROJ_H },
 			VK_IMAGE_TYPE_2D,
 			VK_FORMAT_B8G8R8A8_UNORM,
@@ -898,8 +911,7 @@ namespace ReaShader {
 			VMA_MEMORY_USAGE_GPU_ONLY,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 		);
-
-		vkColorAttachment->createImageView(
+		vktColorAttachment->createImageView(
 			VK_IMAGE_VIEW_TYPE_2D,
 			VK_FORMAT_B8G8R8A8_UNORM,
 			VK_IMAGE_ASPECT_COLOR_BIT
@@ -907,8 +919,8 @@ namespace ReaShader {
 
 		// depth buffer
 
-		vkDepthAttachment = new vkt::AllocatedImage(vktDevice);
-		vkDepthAttachment->createImage(
+		vktDepthAttachment = new vkt::vktAllocatedImage(vktDevice);
+		vktDepthAttachment->createImage(
 			{ PROJ_W, PROJ_H },
 			VK_IMAGE_TYPE_2D,
 			VK_FORMAT_D32_SFLOAT,
@@ -917,7 +929,7 @@ namespace ReaShader {
 			VMA_MEMORY_USAGE_GPU_ONLY,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 		);
-		vkDepthAttachment->createImageView(
+		vktDepthAttachment->createImageView(
 			VK_IMAGE_VIEW_TYPE_2D,
 			VK_FORMAT_D32_SFLOAT,
 			VK_IMAGE_ASPECT_DEPTH_BIT
@@ -925,8 +937,8 @@ namespace ReaShader {
 
 		// frame transfer
 
-		vkFrameTransfer = new vkt::AllocatedImage(vktDevice);
-		vkFrameTransfer->createImage(
+		vktFrameTransfer = new vkt::vktAllocatedImage(vktDevice);
+		vktFrameTransfer->createImage(
 			{ PROJ_W, PROJ_H },
 			VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
 			VK_IMAGE_TILING_LINEAR,
@@ -938,59 +950,62 @@ namespace ReaShader {
 
 		// pipeline
 
-		vkRenderPass = createRenderPass(vktDevice->device);
-		deletionQueue.push_function([=]() { vkDestroyRenderPass(vktDevice->device, vkRenderPass, nullptr); });
+		vkRenderPass = createRenderPass(vktDevice);
+		vkFramebuffer = vkt::pipeline::createFramebuffer(vktDevice, vkRenderPass, { PROJ_W,PROJ_H }, { vktColorAttachment, vktDepthAttachment });
 
-		vkFramebuffer = createFramebuffer(vktDevice->device, vkColorAttachment->imageView, vkDepthAttachment->imageView, vkRenderPass);
-		deletionQueue.push_function([=]() { vkDestroyFramebuffer(vktDevice->device, vkFramebuffer, nullptr); });
+		// Materials
 
-		vkt::Material material_opaque = createMaterialOpaque(vktDevice, vkRenderPass, { vkGlobalSetLayout , vkObjectSetLayout, vkTextureSetLayout });
-
-		vktDevice->allocateDescriptorSet(vkDescriptorPool, &vkTextureSetLayout, &material_opaque.textureSet);
-		vkt::descriptorSetWriter(vktDevice, material_opaque.textureSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0)
-			.writeImage(*textures.get("logo"), vktDevice->createSampler(VK_FILTER_LINEAR), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
-		materials.add("opaque", material_opaque);
+		{
+			vkt::Material material_opaque = createMaterialOpaque(vktDevice, vkRenderPass, { frameData.globalSet.layout , frameData.objectSet.layout , frameData.textureSet.layout });
+			material_opaque.textureSet = &frameData.textureSet;
+			materials.add(ids::materials::opaque, std::move(material_opaque));
+		}
 
 		// render objects
 
-		vkt::RenderObject monkey;
-		monkey.mesh = *meshes.get("suzanne");
-		monkey.material = materials.get("opaque");
-		monkey.transformMatrix = glm::mat4{ 1.0f };
+		{
+			vkt::RenderObject monkey;
+			monkey.mesh = *meshes.get(ids::meshes::suzanne);
+			monkey.material = materials.get(ids::materials::opaque);
+			monkey.transformMatrix = glm::mat4{ 1.0f };
 
-		renderObjects.push_back(monkey);
+			renderObjects.push_back(std::move(monkey));
 
-		vkt::RenderObject triangle;
-		triangle.mesh = *meshes.get("triangle");
-		triangle.material = materials.get("opaque");
-		glm::mat4 translation = glm::translate(glm::mat4{ 1.0 }, glm::vec3(5, 0, 5));
-		glm::mat4 scale = glm::scale(glm::mat4{ 1.0 }, glm::vec3(0.2, 0.2, 0.2));
-		triangle.transformMatrix = translation * scale;
-		renderObjects.push_back(triangle);
+			vkt::RenderObject triangle;
+			triangle.mesh = *meshes.get(ids::meshes::triangle);
+			triangle.material = materials.get(ids::materials::opaque);
+			glm::mat4 translation = glm::translate(glm::mat4{ 1.0 }, glm::vec3(5, 0, 5));
+			glm::mat4 scale = glm::scale(glm::mat4{ 1.0 }, glm::vec3(0.2, 0.2, 0.2));
+			triangle.transformMatrix = translation * scale;
+			renderObjects.push_back(std::move(triangle));
+		}
 
-		vkDrawCommandBuffer = vktDevice->createCommandBuffer();
-		vkTransferCommandBuffer = vktDevice->createCommandBuffer(vktDevice->transferCommandPool);
+		// command buffers
+		{
+			vktDevice->getGraphicsCommandPool()
+				->createCommandBuffer(ids::commandBuffers::draw)
+				->createCommandBuffer(ids::commandBuffers::transfer);
 
-		vkInFlightFence = vktDevice->createFence(false);
-		vkRenderFinishedSemaphore = vktDevice->createSemaphore();
-		vkImageAvailableSemaphore = vktDevice->createSemaphore();
+			vkDrawCommandBuffer = vktDevice->getGraphicsCommandPool()->get(ids::commandBuffers::draw);
+			vkTransferCommandBuffer = vktDevice->getGraphicsCommandPool()->get(ids::commandBuffers::transfer);
+		}
+
+		vkInFlightFence = vkt::syncObjects::createFence(vktDevice, false);
+		vkRenderFinishedSemaphore = vkt::syncObjects::createSemaphore(vktDevice);
+		vkImageAvailableSemaphore = vkt::syncObjects::createSemaphore(vktDevice);
 
 		// check init properties
 
 		// Check blit support for source and destination
-		if (!(vktDevice->vktPhysicalDevice->getFormatProperties(VK_FORMAT_R8G8B8A8_UNORM).linearTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT))
+		if (!vktPhysicalDevice->supportsBlit())
 		{
 			std::cerr << "Device does not support blitting to linear tiled images, using copy instead of blit!" << std::endl;
-		}
-		else {
-			vktInitProperties.supportsBlit = true;
 		}
 	}
 
 	void ReaShaderProcessor::cleanupVulkan() {
 		vktDevice->waitIdle();
-		deletionQueue.flush();
+		vktDeletionQueue.flush();
 	}
 }
 

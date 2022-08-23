@@ -11,12 +11,14 @@
 #include <optional>
 #include <fstream>
 #include <set>
+#include <map>
 #include <unordered_map>
 #include <assert.h>
 #include <array>
 #include <deque>
 #include <functional>
 #include <any>
+#include <concepts>
 
 #include "vk_mem_alloc.h"
 
@@ -24,6 +26,9 @@
 #include "glm.hpp"
 #include "gtx/transform.hpp"
 #include "vec2.hpp"
+
+#define GLM_ENABLE_EXPERIMENTAL
+#include <gtx/hash.hpp>
 
 using namespace std;
 
@@ -51,10 +56,6 @@ namespace vkt {
 		"VK_LAYER_KHRONOS_validation"
 	};
 
-	struct vktInitProperties {
-		bool supportsBlit = false;
-	};
-
 	struct vktDeletionQueue
 	{
 		std::deque<std::function<void()>> deletors;
@@ -75,23 +76,115 @@ namespace vkt {
 
 	VkInstance createVkInstance(vktDeletionQueue& deletionQueue, const char* applicationName, const char* engineName);
 
-	std::vector<char> readFile(const std::string& filename);
+	namespace io {
+		std::vector<char> readFile(const std::string& filename);
+	}
 
-	template <typename T>
-	struct searchable_map {
-		void add(std::string key, T obj) {
-			objs[key] = obj;
-		}
-		T* get(std::string key) {
-			auto it = objs.find(key);
-			if (it == objs.end()) {
-				return nullptr;
+	namespace vectors {
+
+		template <typename K>
+		/**
+		Checks wheters the type is hashable
+		*/
+		concept Key = requires(K key) {
+			{std::hash<K>(key)} -> std::same_as<size_t>;
+		};
+
+		template <typename Key, typename T>
+		struct searchable_map {
+
+			using map = std::unordered_map<Key, T>;
+
+			void add(Key key, T obj) {
+				objs[key] = obj;
 			}
-			else {
-				return (T*)&(it->second);
+			T* get(Key key) {
+				auto it = objs.find(key);
+				if (it == objs.end()) {
+					return nullptr;
+				}
+				else {
+					return (T*)&(it->second);
+				}
 			}
+			/**
+			Returns the internal unordered map.
+			*/
+			map get() { return objs; }
+
+		private:
+			map objs;
+		};
+
+		template <typename S, typename T>
+		/**
+		Returns a vector containing the member (copied), specified at offset, for each struct.
+		*/
+		inline std::vector<T> extract_member_copy_vector(const std::vector<std::reference_wrapper<S>>& structs, size_t offset) {
+			std::vector<T> ms(structs.size());
+			for (int i = 0; i < structs.size(); i++) {
+				S iRef = structs[i].get();
+				ms[i] = *(T*)((int)&iRef + offset);
+			}
+			return ms;
 		}
-	private:
-		std::unordered_map<std::string, T> objs;
+		template <typename S, typename T>
+		/**
+		Returns a vector containing a reference wrapper to member, specified at offset, for each struct.
+		*/
+		inline std::vector<std::reference_wrapper<T>> extract_member_ref_vector(const std::vector<S>& structs, size_t offset) {
+			std::vector<std::reference_wrapper<T>> ms(structs.size());
+			for (int i = 0; i < structs.size(); i++) {
+				S iRef = structs[i];
+				ms[i] = *(T*)((int)&iRef + offset);
+			}
+			return ms;
+		}
+
+		template <typename S, typename T>
+		/**
+		Returns a vector containing a pointer to member, specified at offset, for each struct.
+		*/
+		inline std::vector<T*> extract_member_ptr_vector(const std::vector<S>& structs, size_t offset) {
+			std::vector<T*> ms(structs.size());
+			for (int i = 0; i < structs.size(); i++) {
+				S iRef = structs[i];
+				ms[i] = (T*)((int)&iRef + offset);
+			}
+			return ms;
+		}
+
+		template <typename T, typename Lambda>
+		/**
+		Returns reference to first item found satisfying the predicate condition.
+		*/
+		inline T& findRef(std::vector<T>& vector, Lambda predicate) {
+			auto pos = std::find_if(vector.cbegin(), vector.cend(), predicate);
+			return vector[std::distance(vector.cbegin(), pos)];
+		}
+		template <typename T>
+		/**
+		Returns index of item in vector
+		*/
+		inline int findPos(std::vector<T>& vector, T item) {
+			auto pos = std::find(vector.cbegin(), vector.cend(), item);
+			return std::distance(vector.cbegin(), pos);
+		}
+
+	}
+
+	template <typename B>
+	/**
+	 * Remember to disable copy constructor!!
+	 * @param B is the type to be built
+	 */
+	class IBuilder {
+	public:
+		/**
+		 * The build function returns the type to be built.
+		 */
+		virtual B build() = 0;
 	};
 }
+
+
