@@ -22,15 +22,6 @@
     <ClCompile Include="..\source\others\rsprocessor.cpp">
       <Filter>Source Files\others</Filter>
     </ClCompile>
-    <ClCompile Include="..\source\others\vktools\vktdevices.cpp">
-      <Filter>Source Files\others\vktools</Filter>
-    </ClCompile>
-    <ClCompile Include="..\source\others\vktools\vktimages.cpp">
-      <Filter>Source Files\others\vktools</Filter>
-    </ClCompile>
-    <ClCompile Include="..\source\others\vktools\vktrendering.cpp">
-      <Filter>Source Files\others\vktools</Filter>
-    </ClCompile>
     <ClCompile Include="..\source\others\vktools\vktools.cpp">
       <Filter>Source Files\others\vktools</Filter>
     </ClCompile>
@@ -67,6 +58,18 @@
       <Filter>Source Files\others\vktools</Filter>
     </ClInclude>
     <ClInclude Include="..\source\others\vktools\vktools.h">
+      <Filter>Source Files\others\vktools</Filter>
+    </ClInclude>
+    <ClInclude Include="..\source\others\vktools\vktsync.h">
+      <Filter>Source Files\others\vktools</Filter>
+    </ClInclude>
+    <ClInclude Include="..\source\others\vktools\vktcommandqueue.h">
+      <Filter>Source Files\others\vktools</Filter>
+    </ClInclude>
+    <ClInclude Include="..\source\others\vktools\vktdescriptors.h">
+      <Filter>Source Files\others\vktools</Filter>
+    </ClInclude>
+    <ClInclude Include="..\source\others\vktools\vktbuffers.h">
       <Filter>Source Files\others\vktools</Filter>
     </ClInclude>
   </ItemGroup>

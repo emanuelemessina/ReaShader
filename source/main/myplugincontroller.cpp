@@ -98,7 +98,7 @@ namespace ReaShader {
 
 		for (int uParamId = 0; uParamId < uNumParams; uParamId++) {
 			float savedParam = 0.f;
-			if (streamer.readFloat((float)savedParam) == false)
+			if (streamer.readFloat((float&)savedParam) == false)
 				return kResultFalse;
 			// in the processor: rParams.at(uParamId) = savedParam;
 			setParamNormalized(uParamId, savedParam);

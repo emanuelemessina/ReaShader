@@ -1,23 +1,88 @@
 #pragma once
 
 #include "vktools/vktools.h"
+#include "vktcommandqueue.h"
 
 namespace vkt {
-	struct QueueFamilyIndices {
-		std::optional<uint32_t> graphicsFamily;
-		std::optional<uint32_t> transferFamily;
-		std::optional<uint32_t> computeFamily;
+
+	class physicalDevices {
+	public:
+
+		struct QueueFamilyIndices {
+			std::optional<uint32_t> graphicsFamily;
+			std::optional<uint32_t> transferFamily;
+			std::optional<uint32_t> computeFamily;
+		};
+
+		static QueueFamilyIndices findQueueFamilies(VkPhysicalDevice physicalDevice) {
+
+			// Assign index to queue families that could be found
+
+			uint32_t queueFamilyCount = 0;
+			vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
+
+			std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+			vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilies.data());
+
+			physicalDevices::QueueFamilyIndices queueFamilyIndices;
+
+			// TODO: do not override, choose best family specialized in one thing
+			int i = 0;
+			for (const auto& queueFamily : queueFamilies) {
+				auto flags = queueFamily.queueFlags;
+
+				if (flags & VK_QUEUE_GRAPHICS_BIT)
+					queueFamilyIndices.graphicsFamily = i;
+				if (flags & VK_QUEUE_COMPUTE_BIT)
+					queueFamilyIndices.computeFamily = i;
+				if (flags & VK_QUEUE_TRANSFER_BIT)
+					queueFamilyIndices.transferFamily = i;
+
+				i++;
+			}
+
+			return queueFamilyIndices;
+		}
+
+		physicalDevices& enumerate(VkInstance instance) {
+			uint32_t deviceCount = 0;
+			vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+
+			if (deviceCount == 0) {
+				throw std::runtime_error("failed to find GPUs with Vulkan support!");
+			}
+
+			m_physicalDevices.resize(deviceCount);
+
+			vkEnumeratePhysicalDevices(instance, &deviceCount, m_physicalDevices.data());
+
+			return *this;
+		}
+
+		physicalDevices& removeUnsuitable(bool (*isDeviceSuitable)(VkPhysicalDevice)) {
+			m_physicalDevices.erase(
+				std::remove_if(
+					m_physicalDevices.begin(), m_physicalDevices.end(),
+					[&](const VkPhysicalDevice pD) {
+						return !isDeviceSuitable(pD);
+					}
+				), m_physicalDevices.end()
+						);
+
+			if (m_physicalDevices.empty()) {
+				throw std::runtime_error("failed to find a suitable GPU!");
+			}
+
+			return *this;
+		}
+
+		std::vector<VkPhysicalDevice> get() {
+			return m_physicalDevices;
+		}
+
+	private:
+		std::vector<VkPhysicalDevice> m_physicalDevices{};
 	};
-
-	std::vector<VkPhysicalDevice> enumeratePhysicalDevices(VkInstance& instance);
-	/**
-	Pass a boolean callback to tell if the device is suitable, the first suitable is returned.
-	@param instance
-	@param isDeviceSuitable bool callback
-	*/
-	VkPhysicalDevice pickSuitablePhysicalDevice(VkInstance& instance, bool (*isDeviceSuitable)(VkPhysicalDevice));
-
-	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
 
 	/**
 Instantiate a helper object with all the info about the physicalDevice specified, so you don't have to query for properties each time, they're already here upon construction.
@@ -25,12 +90,13 @@ Instantiate a helper object with all the info about the physicalDevice specified
 	class vktPhysicalDevice {
 	public:
 
-		vktPhysicalDevice(vktDeletionQueue& deletionQueue, VkInstance instance, VkPhysicalDevice physicalDevice) {
+		vktPhysicalDevice(
+			vktDeletionQueue& deletionQueue,
+			VkInstance instance,
+			VkPhysicalDevice physicalDevice)
+			: physicalDevice(physicalDevice), instance(instance) {
 
-			this->physicalDevice = physicalDevice;
-			this->instance = instance;
-
-			queueFamilyIndices = findQueueFamilies(physicalDevice);
+			queueFamilyIndices = physicalDevices::findQueueFamilies(physicalDevice);
 
 			vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
 			vkGetPhysicalDeviceFeatures(physicalDevice, &deviceFeatures);
@@ -46,7 +112,7 @@ Instantiate a helper object with all the info about the physicalDevice specified
 				std::vector<VkExtensionProperties> extensions(extCount);
 				if (vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extCount, &extensions.front()) == VK_SUCCESS)
 				{
-					for (auto ext : extensions)
+					for (const auto& ext : extensions)
 					{
 						supportedExtensions.push_back(ext.extensionName);
 					}
@@ -61,7 +127,7 @@ Instantiate a helper object with all the info about the physicalDevice specified
 
 		VkPhysicalDevice physicalDevice;
 
-		QueueFamilyIndices queueFamilyIndices;
+		physicalDevices::QueueFamilyIndices queueFamilyIndices;
 
 		VkPhysicalDeviceProperties deviceProperties;
 		VkPhysicalDeviceFeatures deviceFeatures;
@@ -115,11 +181,6 @@ Instantiate a helper object with all the info about the physicalDevice specified
 		}
 
 		/**
-		Returns a VkDevice (logical device) created from this physical device.
-		*/
-		VkDevice createLogicalDevice(void* pNext = nullptr, VkPhysicalDeviceFeatures enabledFeatures = {}, std::vector<const char*> enabledExtensions = {}, bool useSwapChain = false);
-
-		/**
 		* Check if an extension is supported by the (physical device)
 		*
 		* @param extension Name of the extension to check
@@ -133,13 +194,23 @@ Instantiate a helper object with all the info about the physicalDevice specified
 
 		VkFormatProperties getFormatProperties(VkFormat format) {
 			VkFormatProperties formatProps;
-			vkGetPhysicalDeviceFormatProperties(physicalDevice, VK_FORMAT_R8G8B8A8_UNORM, &formatProps);
+			vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &formatProps);
 			return formatProps;
 		}
 
-		size_t pad_uniform_buffer_size(size_t originalSize);
-	};
+		bool supportsBlit() {
 
+			static std::optional<bool> supportsBlit;
+
+			if (supportsBlit.has_value())
+				return supportsBlit.value();
+
+			// Check blit support for source and destination
+			supportsBlit = (getFormatProperties(VK_FORMAT_R8G8B8A8_UNORM).linearTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT);
+
+			return supportsBlit.value();
+		}
+	};
 
 	/**
 	Instantiate a logical VkDevice from the vktPhysicalDevice and options provided.
@@ -153,28 +224,145 @@ Instantiate a helper object with all the info about the physicalDevice specified
 			VkPhysicalDeviceFeatures enabledFeatures = {},
 			std::vector<const char*> enabledExtensions = {},
 			bool useSwapChain = false
-		) {
+		) : vktPhysicalDevice(vktPhysicalDevice), pDeletionQueue(&deletionQueue) {
+
+			deletionQueue.push_function([=]() { delete(this); });
+
 			VkPhysicalDeviceShaderDrawParametersFeatures shader_draw_parameters_features = {};
 			shader_draw_parameters_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES;
 			shader_draw_parameters_features.pNext = nullptr;
 			shader_draw_parameters_features.shaderDrawParameters = VK_TRUE;
 
-			this->device = vktPhysicalDevice->createLogicalDevice(&shader_draw_parameters_features, enabledFeatures, enabledExtensions, useSwapChain);
-			this->vktPhysicalDevice = vktPhysicalDevice;
-			this->pDeletionQueue = &deletionQueue;
+			createLogicalDevice(&shader_draw_parameters_features, enabledFeatures, enabledExtensions, useSwapChain);
 
-			deletionQueue.push_function([=]() { delete(this); });
+			graphicsQueue = new vktQueue(deletionQueue, device, vktPhysicalDevice->queueFamilyIndices.graphicsFamily.value());
+			transferQueue = new vktQueue(deletionQueue, device, vktPhysicalDevice->queueFamilyIndices.transferFamily.value());
 
-			// Get a graphics queue from the device
-			vkGetDeviceQueue(device, vktPhysicalDevice->queueFamilyIndices.graphicsFamily.value(), 0, &graphicsQueue);
-			// get transfer queue
-			vkGetDeviceQueue(device, vktPhysicalDevice->queueFamilyIndices.transferFamily.value(), 0, &transferQueue);
+			graphicsCommandPool = new vktCommandPool(deletionQueue, graphicsQueue);
+			transferCommandPool = new vktCommandPool(deletionQueue, transferQueue);
 
-			// create a command pool in the graphics queue
-			graphicsCommandPool = createCommandPool(vktPhysicalDevice->queueFamilyIndices.graphicsFamily.value());
-			// create transfer command pool
-			transferCommandPool = createCommandPool(vktPhysicalDevice->queueFamilyIndices.transferFamily.value());
+			createMemoryAllocator();
+		}
 
+		~vktDevice() {
+		}
+
+		vktPhysicalDevice* vktPhysicalDevice;
+		VkDevice device = VK_NULL_HANDLE;
+
+		vktDeletionQueue* pDeletionQueue;
+
+		VmaAllocator vmaAllocator = VK_NULL_HANDLE;
+
+		// wait and submit
+		void waitIdle() {
+			vkDeviceWaitIdle(device);
+		}
+
+		vktCommandPool* getGraphicsCommandPool() { return graphicsCommandPool; }
+		vktCommandPool* getTransferCommandPool() { return transferCommandPool; }
+
+		vktQueue* getGraphicsQueue() { return graphicsQueue; }
+		vktQueue* getTransferQueue() { return transferQueue; }
+
+	private:
+		void createLogicalDevice(void* pNext, VkPhysicalDeviceFeatures enabledFeatures, std::vector<const char*> enabledExtensions, bool useSwapChain) {
+
+			// QUEUE FAMILIES
+
+			// dedicated queues support
+			std::vector<VkDeviceQueueCreateInfo> queueCreateInfos{};
+
+			float queuePriority = 1.0f;
+
+			VkDeviceQueueCreateInfo queueInfo{};
+
+			// graphics queue
+			queueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+			queueInfo.queueFamilyIndex = vktPhysicalDevice->queueFamilyIndices.graphicsFamily.value();
+			queueInfo.queueCount = 1;
+			queueInfo.pQueuePriorities = &queuePriority;
+			queueCreateInfos.push_back(queueInfo);
+
+			// generally the device is suitable if it has at least the graphics queue, but here we check for dedicated queues
+
+			// transfer queue
+			if (vktPhysicalDevice->queueFamilyIndices.transferFamily.has_value() &&
+				vktPhysicalDevice->queueFamilyIndices.transferFamily.value() != vktPhysicalDevice->queueFamilyIndices.graphicsFamily.value()) {
+				queueInfo = {};
+				queueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+				queueInfo.queueFamilyIndex = vktPhysicalDevice->queueFamilyIndices.transferFamily.value();
+				queueInfo.queueCount = 1;
+				queueInfo.pQueuePriorities = &queuePriority;
+				queueCreateInfos.push_back(queueInfo);
+			}
+			else {
+				vktPhysicalDevice->queueFamilyIndices.transferFamily = vktPhysicalDevice->queueFamilyIndices.graphicsFamily.value();
+			}
+
+			// compute queue
+			if (vktPhysicalDevice->queueFamilyIndices.computeFamily.has_value() &&
+				vktPhysicalDevice->queueFamilyIndices.computeFamily.value() != vktPhysicalDevice->queueFamilyIndices.graphicsFamily.value()
+				&& vktPhysicalDevice->queueFamilyIndices.computeFamily.value() != vktPhysicalDevice->queueFamilyIndices.transferFamily.value()
+				) {
+				queueInfo = {};
+				queueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+				queueInfo.queueFamilyIndex = vktPhysicalDevice->queueFamilyIndices.computeFamily.value();
+				queueInfo.queueCount = 1;
+				queueInfo.pQueuePriorities = &queuePriority;
+				queueCreateInfos.push_back(queueInfo);
+			}
+			else {
+				vktPhysicalDevice->queueFamilyIndices.computeFamily = vktPhysicalDevice->queueFamilyIndices.graphicsFamily.value();
+			}
+
+			VkDeviceCreateInfo createInfo{};
+			createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+			createInfo.pQueueCreateInfos = queueCreateInfos.data();
+			createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
+			createInfo.pEnabledFeatures = &enabledFeatures;
+
+			// DEVICE EXTENSIONS
+
+			std::vector<const char*> deviceExtensions(enabledExtensions);
+
+			if (useSwapChain)
+			{
+				// If the device will be used for presenting to a display via a swapchain we need to request the swapchain extension
+				deviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+			}
+
+			if (deviceExtensions.size() > 0)
+			{
+				for (const char* enabledExtension : deviceExtensions)
+				{
+					if (!vktPhysicalDevice->extensionSupported(enabledExtension)) {
+						std::cerr << "Enabled device extension \"" << enabledExtension << "\" is not present at device level\n";
+					}
+				}
+
+				createInfo.enabledExtensionCount = (uint32_t)deviceExtensions.size();
+				createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+			}
+
+			if (enableVkValidationLayers) {
+				createInfo.enabledLayerCount = static_cast<uint32_t>(vkValidationLayers.size());
+				createInfo.ppEnabledLayerNames = vkValidationLayers.data();
+			}
+			else {
+				createInfo.enabledLayerCount = 0;
+			}
+
+			createInfo.pNext = pNext;
+
+			if (vkCreateDevice(vktPhysicalDevice->physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
+				throw std::runtime_error("failed to create logical device!");
+			}
+
+			pDeletionQueue->push_function([=]() { vkDestroyDevice(device, nullptr); });
+
+		}
+		void createMemoryAllocator() {
 			// create memory allocator
 			VmaAllocatorCreateInfo allocatorInfo = {};
 			allocatorInfo.physicalDevice = vktPhysicalDevice->physicalDevice;
@@ -182,99 +370,13 @@ Instantiate a helper object with all the info about the physicalDevice specified
 			allocatorInfo.instance = vktPhysicalDevice->instance;
 			vmaCreateAllocator(&allocatorInfo, &vmaAllocator);
 
-			deletionQueue.push_function([=]() { 	vmaDestroyAllocator(vmaAllocator);	});
+			pDeletionQueue->push_function([=]() { vmaDestroyAllocator(vmaAllocator);	});
 		}
 
-		~vktDevice() {
-			vkDestroyDevice(device, nullptr);
-		}
+		vktCommandPool* graphicsCommandPool;
+		vktCommandPool* transferCommandPool;
 
-		vktPhysicalDevice* vktPhysicalDevice;
-		VkDevice device;
-
-		vktDeletionQueue* pDeletionQueue;
-
-		VkQueue graphicsQueue = VK_NULL_HANDLE;
-		VkQueue transferQueue = VK_NULL_HANDLE;
-
-		VkCommandPool graphicsCommandPool = VK_NULL_HANDLE;
-		VkCommandPool transferCommandPool = VK_NULL_HANDLE;
-
-		VmaAllocator vmaAllocator = VK_NULL_HANDLE;
-
-		// create pipeline objects
-		VkShaderModule createShaderModule(const char* spvPath);
-		VkCommandPool createCommandPool(uint32_t queueFamilyIndex);
-		VkCommandBuffer createCommandBuffer(VkCommandPool dedicatedCommandPool = VK_NULL_HANDLE, bool pushToDeletionQueue = true);
-		void restartCommandBuffer(VkCommandBuffer& previousCommandBuffer);
-
-		VkDescriptorSetLayout createDescriptorSetLayout(std::vector<VkDescriptorSetLayoutBinding> bindings);
-		VkDescriptorPool createDescriptorPool(std::vector<VkDescriptorPoolSize> sizes, int maxSets);
-		void allocateDescriptorSet(
-			VkDescriptorPool descriptorPool,
-			VkDescriptorSetLayout* pDescriptorSetLayout,
-			VkDescriptorSet* pDescriptorSet);
-
-		VkSampler createSampler(VkFilter filters, VkSamplerAddressMode samplerAddressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT) {
-			VkSamplerCreateInfo info = {};
-			info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-			info.pNext = nullptr;
-
-			info.magFilter = filters;
-			info.minFilter = filters;
-			info.addressModeU = samplerAddressMode;
-			info.addressModeV = samplerAddressMode;
-			info.addressModeW = samplerAddressMode;
-
-			VkSampler sampler;
-
-			VK_CHECK_RESULT(vkCreateSampler(device, &info, nullptr, &sampler));
-
-			return sampler;
-		}
-
-		// wait and submit
-		void waitIdle() {
-			vkDeviceWaitIdle(device);
-		}
-		void submitQueue(VkCommandBuffer commandBuffer, VkFence fence, VkSemaphore signalSemaphore, VkSemaphore waitSemaphore, VkQueue queue = VK_NULL_HANDLE);
-
-		// sync objects
-		VkFence createFence(bool signaled, bool pushToDeletionQueue = true) {
-			VkFenceCreateInfo fenceInfo{};
-			fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-			if (signaled)
-				fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-			VkFence fence;
-			VK_CHECK_RESULT(vkCreateFence(device, &fenceInfo, nullptr, &fence));
-			if (pushToDeletionQueue)
-				pDeletionQueue->push_function([=]() {
-				destroySyncObjects({ fence });
-					});
-			return fence;
-		}
-
-		VkSemaphore createSemaphore(bool pushToDeletionQueue = true) {
-			VkSemaphoreCreateInfo semaphoreInfo{};
-			semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-			VkSemaphore semaphore;
-			VK_CHECK_RESULT(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore));
-			if (pushToDeletionQueue)
-				pDeletionQueue->push_function([=]() {
-				destroySyncObjects({ semaphore });
-					});
-			return semaphore;
-		}
-
-		void destroySyncObjects(std::vector<std::any> objs) {
-			for (auto obj : objs)
-			{
-				if (obj.type() == typeid(VkFence))
-					vkDestroyFence(device, std::any_cast<VkFence>(obj), nullptr);
-				else if (obj.type() == typeid(VkSemaphore))
-					vkDestroySemaphore(device, std::any_cast<VkSemaphore>(obj), nullptr);
-			}
-		}
-
+		vktQueue* graphicsQueue;
+		vktQueue* transferQueue;
 	};
 }

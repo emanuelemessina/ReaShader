@@ -7,7 +7,6 @@
 #include "public.sdk/source/vst/vstaudioeffect.h"
 
 #include "myplugincids.h"
-#include <map>
 
 #include "video_processor.h"
 
@@ -18,10 +17,10 @@
 #include <vulkan/vulkan.h>
 #include "vktools/vktools.h"
 #include "vktools/vktdevices.h"
+#include "vktools/vktsync.h"
 #include "vktools/vktimages.h"
 #include "vktools/vktrendering.h"
-
-#include <unordered_map>
+#include "vktools/vktdescriptors.h"
 
 using namespace Steinberg;
 using namespace Vst;
@@ -97,15 +96,14 @@ namespace ReaShader {
 		void cleanupVulkan();
 
 		VkInstance myVkInstance;
-		vkt::vktDeletionQueue deletionQueue;
-		vkt::vktInitProperties vktInitProperties{};
+		vkt::vktDeletionQueue vktDeletionQueue;
 
 		vkt::vktPhysicalDevice* vktPhysicalDevice;
 		vkt::vktDevice* vktDevice;
 
-		vkt::AllocatedImage* vkFrameTransfer;
-		vkt::AllocatedImage* vkColorAttachment;
-		vkt::AllocatedImage* vkDepthAttachment;
+		vkt::vktAllocatedImage* vktFrameTransfer;
+		vkt::vktAllocatedImage* vktColorAttachment;
+		vkt::vktAllocatedImage* vktDepthAttachment;
 
 		VkRenderPass vkRenderPass;
 		VkFramebuffer vkFramebuffer;
@@ -117,26 +115,26 @@ namespace ReaShader {
 		VkSemaphore vkRenderFinishedSemaphore;
 		VkFence vkInFlightFence;
 
-		vkt::searchable_map<vkt::Mesh*> meshes;
-		vkt::searchable_map<vkt::Material> materials;
+		vkt::vectors::searchable_map<int, vkt::Mesh*> meshes;
+		vkt::vectors::searchable_map<int, vkt::Material> materials;
 		std::vector<vkt::RenderObject> renderObjects;
 
-		VkDescriptorSetLayout vkObjectSetLayout;
-		VkDescriptorSetLayout vkGlobalSetLayout;
-		VkDescriptorSetLayout vkTextureSetLayout;
+		vkt::vktDescriptorPool* vktDescriptorPool;
 
-		VkDescriptorPool vkDescriptorPool;
+		VkSampler vkSampler;
 
-		vkt::searchable_map<vkt::AllocatedImage*> textures;
+		vkt::vectors::searchable_map<int, vkt::vktAllocatedImage*> textures;
 
 		struct FrameData {
 
-			vkt::AllocatedBuffer cameraBuffer;
-			vkt::AllocatedBuffer sceneBuffer;
-			vkt::AllocatedBuffer objectBuffer;
+			vkt::vktAllocatedBuffer* cameraBuffer;
+			vkt::vktAllocatedBuffer* sceneBuffer;
+			vkt::vktAllocatedBuffer* objectBuffer;
 
-			VkDescriptorSet globalDescriptor;
-			VkDescriptorSet objectDescriptor;
+			vkt::vktDescriptorSet globalSet;
+			vkt::vktDescriptorSet objectSet;
+			vkt::vktDescriptorSet textureSet;
+
 		} frameData;
 	};
 
