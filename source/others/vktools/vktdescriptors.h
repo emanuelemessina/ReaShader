@@ -7,8 +7,8 @@
 namespace vkt {
 
 	struct vktDescriptorSet {
-		VkDescriptorSet set;
-		VkDescriptorSetLayout layout;
+		VkDescriptorSet set{ VK_NULL_HANDLE };
+		VkDescriptorSetLayout layout{ VK_NULL_HANDLE };
 		std::vector<VkDescriptorSetLayoutBinding> bindings;
 	};
 
@@ -149,7 +149,7 @@ namespace vkt {
 		}
 
 		descriptorSetWriter registerWriteBuffer(vktAllocatedBuffer* aBuffer, size_t size, VkDeviceSize offset) {
-			VkDescriptorBufferInfo binfo;
+			VkDescriptorBufferInfo binfo{};
 			binfo.buffer = aBuffer->getBuffer();
 			binfo.offset = offset;
 			binfo.range = size;
@@ -164,7 +164,7 @@ namespace vkt {
 		}
 		descriptorSetWriter registerWriteImage(vktAllocatedImage* aImage, VkSampler sampler, VkImageLayout imageLayout) {
 
-			VkDescriptorImageInfo iInfo;
+			VkDescriptorImageInfo iInfo{};
 			iInfo.sampler = sampler;
 			iInfo.imageView = aImage->getImageView();
 			iInfo.imageLayout = imageLayout;
@@ -183,8 +183,8 @@ namespace vkt {
 
 	private:
 		std::vector<VkWriteDescriptorSet> setWrites = {};
-		vktDescriptorSet currentDescSet;
-		VkWriteDescriptorSet currentSetWrite;
+		vktDescriptorSet currentDescSet{ VK_NULL_HANDLE };
+		VkWriteDescriptorSet currentSetWrite{};
 		std::vector<VkDescriptorBufferInfo> bufferInfos{};
 		std::vector<VkDescriptorImageInfo> imageInfos{};
 

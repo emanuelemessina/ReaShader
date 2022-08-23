@@ -19,6 +19,7 @@
 #include <functional>
 #include <any>
 #include <concepts>
+#include <numeric>
 
 #include "vk_mem_alloc.h"
 
@@ -29,8 +30,6 @@
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <gtx/hash.hpp>
-
-using namespace std;
 
 #define VK_CHECK_RESULT(f)																				\
 {																										\
@@ -187,4 +186,6 @@ namespace vkt {
 	};
 }
 
+/* COMPILER WARNING CODES*/
 
+#define w_ptr_m_null 6011

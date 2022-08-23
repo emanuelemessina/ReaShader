@@ -1,5 +1,14 @@
 #include "mypluginprocessor.h"
 
+/* lice */
+#pragma warning(push)
+#pragma warning(disable: 26451)
+
+#include "lice/lice.h"
+
+#pragma warning(pop)
+/* ---- */
+
 #define PROJ_W 1280
 #define PROJ_H 720
 #define MAX_OBJECTS 100
@@ -82,7 +91,7 @@ namespace ReaShader {
 		VkClearValue clearColor = { {{ 0.0f, 0.0f, 0.0f, 0.0f }} }; // transparent
 
 		//clear depth at 1
-		VkClearValue depthClear;
+		VkClearValue depthClear{};
 		depthClear.depthStencil.depth = 1.f;
 
 		std::vector<VkClearValue> clearValues = { clearColor, depthClear };
@@ -104,17 +113,17 @@ namespace ReaShader {
 		projection[1][1] *= -1;
 
 		//fill a GPU camera data struct
-		GPUCameraData camData;
+		GPUCameraData camData{};
 		camData.proj = projection;
 		camData.view = view;
 		camData.viewproj = projection * view;
 
-		GPUSceneData sceneData;
+		GPUSceneData sceneData{};
 		sceneData.ambientColor = { sin(pushConstants[0]),0,cos(pushConstants[0]),1 };
 
 
 		//and copy it to the buffer
-		int* data;
+		int* data{ nullptr };
 		vmaMapMemory(vktDevice->vmaAllocator, rs->frameData.cameraBuffer->getAllocation(), (void**)&data);
 
 		memcpy(data, &camData, sizeof(GPUCameraData));
@@ -185,11 +194,11 @@ namespace ReaShader {
 			// set push constants
 
 			//model rotation
-
-			MeshPushConstants constants;
+			MeshPushConstants constants{};
 			constants.render_matrix = model * object.transformMatrix;
 
 			//upload the mesh to the GPU via push constants
+#pragma warning(suppress: w_ptr_m_null) // assert material is not nullptr
 			vkCmdPushConstants(commandBuffer, object.material->pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &constants);
 
 			//only bind the mesh if it's a different one from last bind
@@ -259,7 +268,7 @@ namespace ReaShader {
 		if (vktDevice->vktPhysicalDevice->supportsBlit())
 		{
 			// Define the region to blit (we will blit the whole swapchain image)
-			VkOffset3D blitSize;
+			VkOffset3D blitSize{};
 			blitSize.x = PROJ_W;
 			blitSize.y = PROJ_H;
 			blitSize.z = 1;
@@ -592,7 +601,7 @@ namespace ReaShader {
 
 		// ---------
 
-		vkt::Material material;
+		vkt::Material material{};
 
 		// shader stages
 
@@ -727,7 +736,7 @@ namespace ReaShader {
 
 		// push constants
 
-		VkPushConstantRange push_constant;
+		VkPushConstantRange push_constant{};
 		push_constant.offset = 0;
 		push_constant.size = sizeof(MeshPushConstants);
 		push_constant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
@@ -964,14 +973,14 @@ namespace ReaShader {
 		// render objects
 
 		{
-			vkt::RenderObject monkey;
+			vkt::RenderObject monkey{};
 			monkey.mesh = *meshes.get(ids::meshes::suzanne);
 			monkey.material = materials.get(ids::materials::opaque);
 			monkey.transformMatrix = glm::mat4{ 1.0f };
 
 			renderObjects.push_back(std::move(monkey));
 
-			vkt::RenderObject triangle;
+			vkt::RenderObject triangle{};
 			triangle.mesh = *meshes.get(ids::meshes::triangle);
 			triangle.material = materials.get(ids::materials::opaque);
 			glm::mat4 translation = glm::translate(glm::mat4{ 1.0 }, glm::vec3(5, 0, 5));
