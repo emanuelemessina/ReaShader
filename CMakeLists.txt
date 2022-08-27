@@ -1,83 +1,218 @@
 cmake_minimum_required(VERSION 3.14.0)
 
-set(vst3sdk_SOURCE_DIR D:/Library/Coding/GitHub/_Reaper/vst-sdk-bundle/vst3-sdk/vst3sdk)
-if(NOT vst3sdk_SOURCE_DIR)
-    message(FATAL_ERROR "Path to VST3 SDK is empty!")
+##############################################################################
+#                                                                            #
+#                                 GLOBALS                                    #
+#                                                                            # 
+##############################################################################
+
+# SET VST-3-SDK PATH
+
+set(RS_VST3_SDK_DIR "" CACHE PATH "Path to vst3 sdk")
+
+if(NOT EXISTS ${RS_VST3_SDK_DIR})
+    message(FATAL_ERROR "Invalid path to vst3 sdk!")
 endif()
 
-project(ReaShader
+# SET REAPER PATH (for debugging)
+
+set(RS_REAPER_PATH "S:\\_AUDIO\\Reaper\\reaper.exe" CACHE FILEPATH "Path to reaper executable")
+
+if(NOT EXISTS ${RS_REAPER_PATH})
+    message(WARNING "Reaper executable not found.")
+endif()
+
+# SET VERSION NUMBER
+
+# set project name
+set(PROJECT_NAME ReaShader) # do not change !
+
+project(${PROJECT_NAME}
     # This is your plug-in version number. Change it here only.
     # Version number symbols usable in C++ can be found in
     # source/version.h and ${PROJECT_BINARY_DIR}/projectversion.h.
     VERSION 1.0.0.0 
-    DESCRIPTION "ReaShader VST 3 Plug-in"
+    DESCRIPTION "${PROJECT_NAME} VST 3 Plug-in"
 )
+
+# ADDITIIONAL INCLUDE DIRECTORIES (absolute or relative to this root)
+
+if(DEFINED $ENV{VK_SDK_PATH}) # env var
+    message(FATAL_ERROR "Vulkan SDK is not installed!")
+endif()
+
+set(RS_GLM_PATH "$ENV{VK_SDK_PATH}/../glm" CACHE FILEPATH "GLM library include path")
+set(RS_VMA_PATH "$ENV{VK_SDK_PATH}/../VulkanMemoryAllocator" CACHE FILEPATH "Vulkan Memory Allocator library path (contains include and build)")
+set(RS_TOL_PATH "$ENV{VK_SDK_PATH}/../tiny_obj_loader" CACHE FILEPATH "Tiny Obj Loader library include path")
+set(RS_STB_PATH "$ENV{VK_SDK_PATH}/../stb" CACHE FILEPATH "STB library include path")
+
+include_directories (
+    "$ENV{VK_SDK_PATH}/include"
+    "external/reaper-sdk/sdk"
+    "external/reaper-sdk/WDL"
+    "external/cwalk"
+    "source/vst3"
+    "source/reashader"
+    ${RS_GLM_PATH}
+    "${RS_VMA_PATH}/include"
+    ${RS_TOL_PATH}
+    ${RS_STB_PATH}
+)
+
+# C++ STANDARD
+
+set(CPP_ISO 20)
+
+# PREPROCESSOR DEFINITIONS
+
+add_compile_definitions(
+    _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING # codecvt silence deprecation warning
+)
+
+# SOURCES
+
+file(GLOB_RECURSE SOURCE_FILES
+     "source/*.h"
+     "source/*.cpp"
+
+     "source/*.glsl"
+     
+     "doc/*.md"
+
+     "external/reaper-sdk/WDL/lice/lice.cpp"
+     "external/cwalk/cwalk.c"
+)
+
+##############################################################################
+#
+#                               STEINBERG
+#
+##############################################################################
+
+# BOOTSTRAPPING VST PLUGIN (sets internal targets and variables)
+
+# set vst3 sdk directory
+
+set(vst3sdk_SOURCE_DIR "${RS_VST3_SDK_DIR}")
+
+if(NOT vst3sdk_SOURCE_DIR)
+    message(FATAL_ERROR "Path to VST3 SDK is empty!")
+endif()
 
 set(SMTG_VSTGUI_ROOT "${vst3sdk_SOURCE_DIR}")
 
 add_subdirectory(${vst3sdk_SOURCE_DIR} ${PROJECT_BINARY_DIR}/vst3sdk)
 smtg_enable_vst3_sdk()
 
-smtg_add_vst3plugin(ReaShader
-    source/main/version.h
-    source/main/myplugincids.h
-    source/main/mypluginprocessor.h
-    source/main/mypluginprocessor.cpp
-    source/main/myplugincontroller.h
-    source/main/myplugincontroller.cpp
-    source/main/mypluginentry.cpp
+# bind source files (calls add_library and creates sources_list)
+
+smtg_add_vst3plugin(${PROJECT_NAME}
+    ${SOURCE_FILES}
 )
 
 #- VSTGUI Wanted ----
 if(SMTG_ADD_VSTGUI)
-    target_sources(ReaShader
+    target_sources(${PROJECT_NAME}
         PRIVATE
             resource/myplugineditor.uidesc
     )
-    target_link_libraries(ReaShader
+    target_link_libraries(${PROJECT_NAME}
         PRIVATE
             vstgui_support
     )
-    smtg_target_add_plugin_resources(ReaShader
+    smtg_target_add_plugin_resources(${PROJECT_NAME}
         RESOURCES
             "resource/myplugineditor.uidesc"
     )
 endif(SMTG_ADD_VSTGUI)
 # -------------------
 
-smtg_target_add_plugin_snapshots (ReaShader
+smtg_target_add_plugin_snapshots (${PROJECT_NAME}
     RESOURCES
         resource/E0F1D00DC00B511782AD083BE3690071_snapshot.png
         resource/E0F1D00DC00B511782AD083BE3690071_snapshot_2.0x.png
 )
 
-target_link_libraries(ReaShader
+target_link_libraries(${PROJECT_NAME}
     PRIVATE
         sdk
 )
 
-smtg_target_configure_version_file(ReaShader)
+smtg_target_configure_version_file(${PROJECT_NAME})
+
+##############################################################################
+#
+#                   CUSTOM DELAYED (waited for target creation)
+#
+##############################################################################
+
+# set c++ version
+set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD ${CPP_ISO})
+
+# ADDITIONAL LIBRARY INCLUDES (needs to be PRIVATE otherwise conflict with SMTG)
+
+target_link_directories(${PROJECT_NAME} PRIVATE
+    "$ENV{VK_SDK_PATH}/Lib"
+    "${RS_VMA_PATH}/build/src/Debug"
+    "${RS_VMA_PATH}/build/src/Release"
+)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE 
+    opengl32.lib 
+    vulkan-1.lib
+    debug VulkanMemoryAllocatord.lib
+    optimized VulkanMemoryAllocator.lib
+)
+
+# file groups (IDE)
+
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES ${SOURCE_FILES})
+
+##############################################################################
+#
+#                           PLATFORM SPECIFIC
+#
+##############################################################################
+
+# CONFIGURE MAC
 
 if(SMTG_MAC)
     set(CMAKE_OSX_DEPLOYMENT_TARGET 10.12)
-    smtg_target_set_bundle(ReaShader
+    smtg_target_set_bundle(${PROJECT_NAME}
         BUNDLE_IDENTIFIER gvng.reashader
         COMPANY_NAME "Emanuele Messina"
     )
-    smtg_target_set_debug_executable(ReaShader
-        "/Applications/VST3PluginTestHost.app"
-        "--pluginfolder;$(BUILT_PRODUCTS_DIR)"
+    smtg_target_set_debug_executable(${PROJECT_NAME}
+        ${RS_REAPER_PATH}
     )
+
+# CONFIGURE WIN
+
 elseif(SMTG_WIN)
-    target_sources(ReaShader PRIVATE 
+
+    # resource file
+    target_sources(${PROJECT_NAME} PRIVATE 
         resource/win32resource.rc
     )
-    if(MSVC)
-        set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ReaShader)
 
-        smtg_target_set_debug_executable(ReaShader
-            "$(ProgramW6432)/Steinberg/VST3PluginTestHost/VST3PluginTestHost.exe"
-            "--pluginfolder \"$(OutDir)/\""
+    # VISUAL STUDIO SPECIFIC
+
+    if(MSVC)
+
+        # startup project
+        set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${PROJECT_NAME}) 
+
+        smtg_target_set_debug_executable(${PROJECT_NAME}
+            ${RS_REAPER_PATH}
         )
+       
     endif()
+
+# CONFIGURE LINUX
+
+elseif(SMTG_LINUX)
+
+    
+
 endif(SMTG_MAC)
+

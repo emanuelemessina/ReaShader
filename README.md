@@ -8,17 +8,56 @@ _a VST Video Processor for Reaper_
 
 <br>
 
-Directory structure
+### VST3 SDK
 
-```
-+ reashader
-+ vst-sdk-bundle
-```
-
-Clone the vst-sdk-bundle repo next to reashader repo.
 <br>
-The repo contains the fixed libraries/sdk to make the vst work.
 
+Clone the [vst-sdk-bundle](https://github.com/emanuelemessina/vst-sdk-bundle), it contains a copy of the vst3 sdk.
+
+<br>
+
+### VULKAN SDK
+
+<br>
+
+Donwload [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/) and install (preferably in the default location).
+
+<br>
+
+### Other libraries
+
+<br>
+
+The following libraries are required.
+Can be placed them next to the `x.x.x.x` folder inside the Vulkan install location as CMake has the include paths defaulted to there.
+
+- GLM
+- Tiny Obj Loader
+- STB
+- Vulkan Memory Allocator
+
+<br>
+
+## Build
+
+<br>
+
+### CMake
+
+<br>
+
+Run CMake with build generation directory `/build/<os>` folder.
+<br>
+- For Windows: `<os>` is `win` , Compiler is **Visual Studio**
+- For Mac: `<os>` is `mac` , Compiler is **Xcode**
+
+<br>
+
+### sln-make (_Visual Studio_)
+
+<br>
+
+Use [sln-make](http://github.com/emanuelemessina/sln-make) to apply Visual Studio settings.
 
 <br>
 
@@ -26,22 +65,11 @@ The repo contains the fixed libraries/sdk to make the vst work.
 
 <br>
 
-
-
-## vkt
-
-The vkt namespace contains the custom vk tools to simplify the vulkan process.
-<br>
-- All vkt classes push their destructors to the deletion queue provided upon construction so do not delete them manually.
-
-- All `Vk` objects are initialized with `VK_NULL_HANDLE`
+## Development
 
 <br>
 
-### headers flow
-
-`vktools -> vktcommandqueue -> vktdevices -> vktsync , vktbuffers -> vktimages -> vktdescriptors -> vktrendering`
-
+See [Development](doc/Development.md).
 
 <br>
 
@@ -54,22 +82,39 @@ The vkt namespace contains the custom vk tools to simplify the vulkan process.
 <br>
 
 ### Author
-    
+
+<br>
+
     Emanuele Messina
 
 <br>
 
 #### Open source libraries
 
-    WDL by Cockos
-    Vulkan Memory Allocator by GPUOpen
+<br>
+
+- WDL by Cockos
+- Vulkan Memory Allocator by GPUOpen
+- GLM
+- STB
+- Tiny Obj Loader
+- cwalk
+
+<br>
 
 #### Third Party
 
-    VST by Steinberg Media Technologies GmbH
-    Vulkan by Khronos Group
+<br>
+
+- VST by Steinberg Media Technologies GmbH
+- Vulkan by Khronos Group
+- Reaper SDK by Cockos
+
+<br>
 
 #### Thanks to
-    
+
+<br>
+
 - Sascha Willems : [Github](https://github.com/SaschaWillems/Vulkan)
 - Victor Blanco : [Vulkan Guide](https://vkguide.dev/)
