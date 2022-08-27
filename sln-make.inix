@@ -1,0 +1,73 @@
+; mandatory root variables
+
+projectName=ReaShader
+slnDir= build\win
+
+; the rest is optional
+; when setting string parameters use macros (like $(Configuration)) to differentiate debug/release usage, as the same string is set for all configurations
+
+[debug]
+
+attach=true
+flavor=local
+
+[general]
+
+; use trailing slashes for directory paths not to get warnings from visual studio
+
+outDir=$(VST3BundleOutDir)\win-$(PlatformTarget)\
+;intDir=$(TargetBuildDir)\intermediate\
+
+[macros]
+
+; automaticall adds ProjectRootDir to this file location
+
+TargetBuildDir = $(MSBuildProjectDirectory)\VST3\$(Configuration)\$(PlatformTarget)
+VST3BundleOutDir = $(TargetBuildDir)\$(ProjectName).vst3
+ScriptsDir = $(ProjectRootDir)\scripts\win
+AssetsOutDir = $(VST3BundleOutDir)\Resources\assets
+
+<pre-link> ; pre link batch script block
+
+    setlocal
+
+    :: convert macros to env vars
+
+    set vst3_resources_out_dir=$(VST3BundleOutDir)\Resources
+    set project_root_dir=$(ProjectRootDir)
+    set assets_out_dir=$(AssetsOutDir)
+
+    :: run pre link script
+
+    powershell $(ScriptsDir)\pre-link.ps1
+
+    endlocal
+
+</pre-link>
+
+<post-build> ; post build batch script block
+
+    setlocal
+
+    :: convert macros to env vars
+
+    set vst3_resources_out_dir=$(VST3ResourcesOutDir)
+    set project_root_dir=$(ProjectRootDir)
+    set assets_out_dir=$(AssetsOutDir)
+    set msbuild_project_dir=$(MSBuildProjectDirectory)
+    set target_path=$(TargetPath)
+    set vst3_bundle_out_dir=$(VST3BundleOutDir)
+
+    :: run post-build script
+
+    powershell $(ScriptsDir)\post-build.ps1 -skipValidator
+
+    endlocal
+
+</post-build>
+
+<custom-build> ; custom build tool command for CMakeLists.txt
+
+    powershell sln-make -projectRootDir $(ProjectRootDir)
+
+</custom-build>
