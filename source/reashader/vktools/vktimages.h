@@ -123,14 +123,20 @@ namespace vkt {
 	class vktAllocatedImage {
 	public:
 		/**
-		@param pushToDeletionQueue If true, the destructor is appended to the queue automatically.
+		@param pushToDeviceDeletionQueue If true, the destructor is appended to the queue automatically.
 		*/
-		vktAllocatedImage(vktDevice* vktDevice, bool pushToDeletionQueue = true)
-			: pushToDeletionQueue(pushToDeletionQueue), vktDevice(vktDevice) {
-			if (pushToDeletionQueue)
+		vktAllocatedImage(vktDevice* vktDevice, bool pushToDeviceDeletionQueue = true)
+			: pushToDeletionQueue(pushToDeviceDeletionQueue), vktDevice(vktDevice) {
+			if (pushToDeviceDeletionQueue)
 				vktDevice->pDeletionQueue->push_function([=]() {
 				destroy();
 					});
+		}
+		vktAllocatedImage(vktDevice* vktDevice, vktDeletionQueue* pCustomDeletionQueue)
+			: vktDevice(vktDevice) {
+			pCustomDeletionQueue->push_function([=]() {
+				destroy();
+				});
 		}
 
 		/**

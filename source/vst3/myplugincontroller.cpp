@@ -11,6 +11,13 @@
 #include <stdio.h>
 #include <chrono>
 
+#include "tools/paths.h"
+
+#include "rsui/rseditor.h"
+#include "vstgui/uidescription/uiattributes.h"
+#include "vstgui/uidescription/uiviewcreator.h"
+#include "vstgui/uidescription/detail/uiviewcreatorattributes.h"
+
 using namespace Steinberg;
 
 namespace ReaShader {
@@ -131,7 +138,18 @@ namespace ReaShader {
 		if (FIDStringsEqual(name, Vst::ViewType::kEditor))
 		{
 			// create your editor here and return a IPlugView ptr of it
-			auto* view = new VSTGUI::VST3Editor(this, "view", "myplugineditor.uidesc");
+			auto* view = new RSEditor(this, "view", "myplugineditor.uidesc");
+
+			auto description = view->getUIDescription();
+
+			std::string viewName = "myview";
+			auto* debugAttr = new VSTGUI::UIAttributes();
+			debugAttr->setAttribute(VSTGUI::UIViewCreator::kAttrClass, "CViewContainer");
+			debugAttr->setAttribute("size", "300, 300");
+
+			description->addNewTemplate(viewName.c_str(), debugAttr);
+
+			//view->exchangeView("myview");
 
 			return view;
 		}

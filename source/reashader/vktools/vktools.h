@@ -7,7 +7,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <cstdlib>
-
+#include <string>
 #include <optional>
 #include <fstream>
 #include <set>
@@ -37,8 +37,14 @@
 	VkResult res = (f);																					\
 	if (res != VK_SUCCESS)																				\
 	{																									\
-		std::cout << "Fatal : \"" << res << "\" in " << __FILE__ << " at line " << __LINE__ << "\n"; \
-		throw std::runtime_error("exception!");																		\
+		std::string msg = "Fatal : \""; \
+		msg += res; \
+		msg += "\" in "; \
+		msg += __FILE__; \
+		msg += " at line "; \
+		msg += std::to_string(__LINE__) ; \
+		std::cout << msg << std::endl ; \
+		throw std::runtime_error(msg);															\
 	}																									\
 }
 

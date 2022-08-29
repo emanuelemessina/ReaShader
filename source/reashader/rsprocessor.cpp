@@ -9,8 +9,6 @@
 #pragma warning(pop)
 /* ---- */
 
-#define PROJ_W 1280
-#define PROJ_H 720
 #define MAX_OBJECTS 100
 
 #include "tools/paths.h"
@@ -24,6 +22,26 @@
 #define IMAGES_DIR tools::paths::join({ASSETS_DIR, "images"})
 
 namespace ReaShader {
+
+	// reutilized voids
+
+	void createRenderTargets(ReaShaderProcessor*);
+	void checkFrameSize(int& w, int& h, ReaShaderProcessor* rs, void (*listener)(ReaShaderProcessor*)) {
+		// assume if width changed all aspec ratio changed, come on...
+		if (w != rs->FRAME_W) {
+			// update frame size
+			rs->FRAME_W = w;
+			rs->FRAME_H = h;
+			// call listener
+			listener(rs);
+		}
+	}
+	void frameSizeChangeListener(ReaShaderProcessor* rs) {
+		// wait, flush, recreate
+		rs->vktDevice->getGraphicsQueue()->waitIdle();
+		rs->vktFrameResizedDeletionQueue.flush();
+		createRenderTargets(rs);
+	}
 
 	struct ids {
 
@@ -86,6 +104,8 @@ namespace ReaShader {
 		vkt::vktCommandPool* commandPool = rs->vktDevice->getGraphicsCommandPool();
 		VkCommandBuffer commandBuffer = rs->vkDrawCommandBuffer;
 
+		VkExtent2D extent{ rs->FRAME_W, rs->FRAME_H };
+
 		// begin command buffer
 		commandPool->restartCommandBuffer(commandBuffer);
 
@@ -95,8 +115,7 @@ namespace ReaShader {
 		renderPassInfo.renderPass = rs->vkRenderPass;
 		renderPassInfo.framebuffer = rs->vkFramebuffer;
 		renderPassInfo.renderArea.offset = { 0, 0 };
-		renderPassInfo.renderArea.extent.width = PROJ_W;
-		renderPassInfo.renderArea.extent.height = PROJ_H;
+		renderPassInfo.renderArea.extent = extent;
 
 		VkClearValue clearColor = { {{ 0.0f, 0.0f, 0.0f, 0.0f }} }; // transparent
 
@@ -175,16 +194,15 @@ namespace ReaShader {
 				VkViewport viewport{};
 				viewport.x = 0.0f;
 				viewport.y = 0.0f;
-				viewport.width = static_cast<float>(PROJ_W);
-				viewport.height = static_cast<float>(PROJ_H);
+				viewport.width = static_cast<float>(extent.width);
+				viewport.height = static_cast<float>(extent.height);
 				viewport.minDepth = 0.0f;
 				viewport.maxDepth = 1.0f;
 				vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 
 				VkRect2D scissor{};
 				scissor.offset = { 0, 0 };
-				scissor.extent.width = PROJ_W;
-				scissor.extent.height = PROJ_H;
+				scissor.extent = extent;
 				vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
 				vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipeline);
@@ -252,6 +270,8 @@ namespace ReaShader {
 		vkt::vktDevice* vktDevice = rs->vktDevice;
 		VkCommandBuffer commandBuffer = rs->vkTransferCommandBuffer;
 		vkt::vktCommandPool* commandPool = vktDevice->getGraphicsCommandPool();
+		auto& FRAME_W = rs->FRAME_W;
+		auto& FRAME_H = rs->FRAME_H;
 
 		vkQueueWaitIdle(vktDevice->getGraphicsQueue()->get());
 
@@ -279,8 +299,8 @@ namespace ReaShader {
 		{
 			// Define the region to blit (we will blit the whole swapchain image)
 			VkOffset3D blitSize{};
-			blitSize.x = PROJ_W;
-			blitSize.y = PROJ_H;
+			blitSize.x = FRAME_W;
+			blitSize.y = FRAME_H;
 			blitSize.z = 1;
 			VkImageBlit imageBlitRegion{};
 			imageBlitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -307,8 +327,7 @@ namespace ReaShader {
 			imageCopyRegion.srcSubresource.layerCount = 1;
 			imageCopyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			imageCopyRegion.dstSubresource.layerCount = 1;
-			imageCopyRegion.extent.width = PROJ_W;
-			imageCopyRegion.extent.height = PROJ_H;
+			imageCopyRegion.extent = { FRAME_W, FRAME_H };
 			imageCopyRegion.extent.depth = 1;
 
 			// Issue the copy command
@@ -349,7 +368,7 @@ namespace ReaShader {
 		vkGetImageSubresourceLayout(vktDevice->device, rs->vktFrameTransfer->getImage(), &subResource, &subResourceLayout);
 
 		// dest image is already mapped
-		memcpy((void*)destBuffer, (void*)(reinterpret_cast<uintptr_t>((rs->vktFrameTransfer->getAllocationInfo()).pMappedData) + subResourceLayout.offset), sizeof(LICE_pixel) * PROJ_W * PROJ_H);
+		memcpy((void*)destBuffer, (void*)(reinterpret_cast<uintptr_t>((rs->vktFrameTransfer->getAllocationInfo()).pMappedData) + subResourceLayout.offset), sizeof(LICE_pixel) * FRAME_W * FRAME_H);
 
 	}
 
@@ -359,6 +378,9 @@ namespace ReaShader {
 		vkt::vktDevice* vktDevice = rs->vktDevice;
 		vkt::vktCommandPool* commandPool = vktDevice->getGraphicsCommandPool();
 		vkt::vktQueue* queue = vktDevice->getGraphicsQueue();
+
+		auto& FRAME_W = rs->FRAME_W;
+		auto& FRAME_H = rs->FRAME_H;
 
 		vkQueueWaitIdle(queue->get());
 
@@ -389,7 +411,7 @@ namespace ReaShader {
 		vkGetImageSubresourceLayout(vktDevice->device, rs->vktFrameTransfer->getImage(), &subResource, &subResourceLayout);
 
 		// copy bits from src to framedest
-		memcpy((void*)(reinterpret_cast<uintptr_t>((rs->vktFrameTransfer->getAllocationInfo()).pMappedData) + subResourceLayout.offset), (void*)srcBuffer, sizeof(LICE_pixel) * PROJ_W * PROJ_H);
+		memcpy((void*)(reinterpret_cast<uintptr_t>((rs->vktFrameTransfer->getAllocationInfo()).pMappedData) + subResourceLayout.offset), (void*)srcBuffer, sizeof(LICE_pixel) * FRAME_W * FRAME_H);
 
 		commandPool->restartCommandBuffer(rs->vkTransferCommandBuffer);
 
@@ -426,8 +448,8 @@ namespace ReaShader {
 		imageCopyRegion.srcSubresource.layerCount = 1;
 		imageCopyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		imageCopyRegion.dstSubresource.layerCount = 1;
-		imageCopyRegion.extent.width = PROJ_W;
-		imageCopyRegion.extent.height = PROJ_H;
+		imageCopyRegion.extent.width = FRAME_W;
+		imageCopyRegion.extent.height = FRAME_H;
 		imageCopyRegion.extent.depth = 1;
 
 		vkCmdCopyImage(
@@ -460,6 +482,8 @@ namespace ReaShader {
 
 	IVideoFrame* processVideoFrame(IREAPERVideoProcessor* vproc, const double* parmlist, int nparms, double project_time, double frate, int force_format)
 	{
+		//  parmlist[0] is wet, [1] is parameter
+
 		IVideoFrame* vf = vproc->renderInputVideoFrame(0, 'RGBA');
 
 		if (vf)
@@ -474,6 +498,8 @@ namespace ReaShader {
 
 			RSData* rsData = (RSData*)vproc->userdata;
 			ReaShaderProcessor* rsProcessor = (ReaShaderProcessor*)rsData->get(1);
+
+			checkFrameSize(w, h, rsProcessor, frameSizeChangeListener);
 
 			/*for (int y = 0; y < parmlist[uVideoParam + 1] * h; y++) {
 				for (int x = 0; x < w; x++) {
@@ -490,8 +516,8 @@ namespace ReaShader {
 
 			transferFrame(rsProcessor, bits);
 
-			//  parmlist[0] is wet, [1] is parameter
 		}
+
 		return vf;
 	}
 
@@ -833,13 +859,13 @@ namespace ReaShader {
 
 		// instance , device
 		{
-			myVkInstance = vkt::createVkInstance(vktDeletionQueue, "ReaShader Effect", "No Engine");
+			myVkInstance = vkt::createVkInstance(vktMainDeletionQueue, "ReaShader Effect", "No Engine");
 
 			std::vector<VkPhysicalDevice> vkSuitablePhysicalDevices = vkt::physicalDevices().enumerate(myVkInstance).removeUnsuitable(&isPhysicalDeviceSuitable).get();
 
-			vktPhysicalDevice = new vkt::vktPhysicalDevice(vktDeletionQueue, myVkInstance, vkSuitablePhysicalDevices[0]); // choose the first suitable
+			vktPhysicalDevice = new vkt::vktPhysicalDevice(vktMainDeletionQueue, myVkInstance, vkSuitablePhysicalDevices[0]); // choose the first suitable
 
-			vktDevice = new vkt::vktDevice(vktDeletionQueue, vktPhysicalDevice);
+			vktDevice = new vkt::vktDevice(vktMainDeletionQueue, vktPhysicalDevice);
 		}
 
 		// meshes
@@ -866,7 +892,7 @@ namespace ReaShader {
 			vkSampler = vkt::textures::createSampler(vktDevice, VK_FILTER_LINEAR);
 		}
 
-		// buffers
+		// buffers/descriptors
 
 		vktDescriptorPool = new vkt::vktDescriptorPool(vktDevice,
 			{
@@ -917,61 +943,10 @@ namespace ReaShader {
 			.registerWriteImage(*textures.get(ids::textures::logo), vkSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
 			.writeRegistered();
 
-		// swap chain here (optional)
-
-		// render target
-
-		vktColorAttachment = new vkt::vktAllocatedImage(vktDevice);
-		vktColorAttachment->createImage(
-			{ PROJ_W, PROJ_H },
-			VK_IMAGE_TYPE_2D,
-			VK_FORMAT_B8G8R8A8_UNORM,
-			VK_IMAGE_TILING_OPTIMAL,
-			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-			VMA_MEMORY_USAGE_GPU_ONLY,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-		);
-		vktColorAttachment->createImageView(
-			VK_IMAGE_VIEW_TYPE_2D,
-			VK_FORMAT_B8G8R8A8_UNORM,
-			VK_IMAGE_ASPECT_COLOR_BIT
-		);
-
-		// depth buffer
-
-		vktDepthAttachment = new vkt::vktAllocatedImage(vktDevice);
-		vktDepthAttachment->createImage(
-			{ PROJ_W, PROJ_H },
-			VK_IMAGE_TYPE_2D,
-			VK_FORMAT_D32_SFLOAT,
-			VK_IMAGE_TILING_OPTIMAL,
-			VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
-			VMA_MEMORY_USAGE_GPU_ONLY,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-		);
-		vktDepthAttachment->createImageView(
-			VK_IMAGE_VIEW_TYPE_2D,
-			VK_FORMAT_D32_SFLOAT,
-			VK_IMAGE_ASPECT_DEPTH_BIT
-		);
-
-		// frame transfer
-
-		vktFrameTransfer = new vkt::vktAllocatedImage(vktDevice);
-		vktFrameTransfer->createImage(
-			{ PROJ_W, PROJ_H },
-			VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
-			VK_IMAGE_TILING_LINEAR,
-			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, // both src and dst for copy cmds
-			VMA_MEMORY_USAGE_GPU_TO_CPU,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-			VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT
-		);
-
 		// pipeline
 
+		// renderpass
 		vkRenderPass = createRenderPass(vktDevice);
-		vkFramebuffer = vkt::pipeline::createFramebuffer(vktDevice, vkRenderPass, { PROJ_W,PROJ_H }, { vktColorAttachment, vktDepthAttachment });
 
 		// Materials
 
@@ -1021,9 +996,81 @@ namespace ReaShader {
 		}
 	}
 
+	void createRenderTargets(ReaShaderProcessor* rs) {
+
+		auto& vktDevice = rs->vktDevice;
+		auto& FRAME_W = rs->FRAME_W;
+		auto& FRAME_H = rs->FRAME_H;
+		auto frameResizedDeletionQueue = &rs->vktFrameResizedDeletionQueue;
+
+		// render target
+
+		auto& vktColorAttachment = rs->vktColorAttachment;
+
+		vktColorAttachment = new vkt::vktAllocatedImage(vktDevice, frameResizedDeletionQueue);
+		vktColorAttachment->createImage(
+			{ FRAME_W, FRAME_H },
+			VK_IMAGE_TYPE_2D,
+			VK_FORMAT_B8G8R8A8_UNORM,
+			VK_IMAGE_TILING_OPTIMAL,
+			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+			VMA_MEMORY_USAGE_GPU_ONLY,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+		);
+		vktColorAttachment->createImageView(
+			VK_IMAGE_VIEW_TYPE_2D,
+			VK_FORMAT_B8G8R8A8_UNORM,
+			VK_IMAGE_ASPECT_COLOR_BIT
+		);
+
+		// depth buffer
+
+		auto& vktDepthAttachment = rs->vktDepthAttachment;
+
+		vktDepthAttachment = new vkt::vktAllocatedImage(vktDevice, frameResizedDeletionQueue);
+		vktDepthAttachment->createImage(
+			{ FRAME_W, FRAME_H },
+			VK_IMAGE_TYPE_2D,
+			VK_FORMAT_D32_SFLOAT,
+			VK_IMAGE_TILING_OPTIMAL,
+			VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
+			VMA_MEMORY_USAGE_GPU_ONLY,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+		);
+		vktDepthAttachment->createImageView(
+			VK_IMAGE_VIEW_TYPE_2D,
+			VK_FORMAT_D32_SFLOAT,
+			VK_IMAGE_ASPECT_DEPTH_BIT
+		);
+
+		// frame transfer
+
+		auto& vktFrameTransfer = rs->vktFrameTransfer;
+
+		vktFrameTransfer = new vkt::vktAllocatedImage(vktDevice, frameResizedDeletionQueue);
+		vktFrameTransfer->createImage(
+			{ FRAME_W, FRAME_H },
+			VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
+			VK_IMAGE_TILING_LINEAR,
+			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, // both src and dst for copy cmds
+			VMA_MEMORY_USAGE_GPU_TO_CPU,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT
+		);
+
+		// framebuffer
+
+		auto& vkRenderPass = rs->vkRenderPass;
+		auto& vkFramebuffer = rs->vkFramebuffer;
+
+		vkFramebuffer = vkt::pipeline::createFramebuffer(vktDevice, frameResizedDeletionQueue, vkRenderPass, { FRAME_W,FRAME_H }, { vktColorAttachment, vktDepthAttachment });
+
+	}
+
 	void ReaShaderProcessor::cleanupVulkan() {
 		vktDevice->waitIdle();
-		vktDeletionQueue.flush();
+		vktFrameResizedDeletionQueue.flush();
+		vktMainDeletionQueue.flush();
 	}
 }
 

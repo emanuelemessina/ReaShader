@@ -34,6 +34,11 @@ namespace ReaShader {
 	IVideoFrame* processVideoFrame(IREAPERVideoProcessor* vproc, const double* parmlist, int nparms, double project_time, double frate, int force_format);
 	bool getVideoParam(IREAPERVideoProcessor* vproc, int idx, double* valueOut);
 
+	// reaper api functions
+
+	// type 0=OK,1=OKCANCEL,2=ABORTRETRYIGNORE,3=YESNOCANCEL,4=YESNO,5=RETRYCANCEL : ret 1=OK,2=CANCEL,3=ABORT,4=RETRY,5=IGNORE,6=YES,7=NO
+	static int (*ShowMessageBox)(const char* msg, const char* title, int type);
+
 	//------------------------------------------------------------------------
 	//  ReaShaderProcessor
 	//------------------------------------------------------------------------
@@ -49,9 +54,9 @@ namespace ReaShader {
 			return (Steinberg::Vst::IAudioProcessor*)new ReaShaderProcessor;
 		}
 
-		//--- ---------------------------------------------------------------------
+		//------------------------------------------------------------------------
 		// AudioEffect overrides:
-		//--- ---------------------------------------------------------------------
+		//------------------------------------------------------------------------
 		/** Called at first after constructor */
 		Steinberg::tresult PLUGIN_API initialize(Steinberg::FUnknown* context) SMTG_OVERRIDE;
 
@@ -76,16 +81,20 @@ namespace ReaShader {
 
 		//------------------------------------------------------------------------
 
-		friend class ReaShaderController;
-		friend IVideoFrame* processVideoFrame(IREAPERVideoProcessor* vproc, const double* parmlist, int nparms, double project_time, double frate, int force_format);
-
 		/** We want to receive message. */
 		Steinberg::tresult PLUGIN_API notify(Vst::IMessage* message) SMTG_OVERRIDE;
 		/** Test of a communication channel between controller and component */
 		tresult receiveText(const char* text) SMTG_OVERRIDE;
 
-		FUnknown* context;
+		//------------------------------------------------------------------------
+		// VIDEO 
+		//------------------------------------------------------------------------
+
+		friend class ReaShaderController;
+		friend IVideoFrame* processVideoFrame(IREAPERVideoProcessor* vproc, const double* parmlist, int nparms, double project_time, double frate, int force_format);
 		IREAPERVideoProcessor* m_videoproc;
+
+		FUnknown* context;
 
 		rParamsMap rParams;
 		RSData* m_data;
@@ -96,10 +105,13 @@ namespace ReaShader {
 		void cleanupVulkan();
 
 		VkInstance myVkInstance;
-		vkt::vktDeletionQueue vktDeletionQueue;
+		vkt::vktDeletionQueue vktMainDeletionQueue{};
+		vkt::vktDeletionQueue vktFrameResizedDeletionQueue{};
 
 		vkt::vktPhysicalDevice* vktPhysicalDevice;
 		vkt::vktDevice* vktDevice;
+
+		uint32_t FRAME_W{ 0 }, FRAME_H{ 0 };
 
 		vkt::vktAllocatedImage* vktFrameTransfer;
 		vkt::vktAllocatedImage* vktColorAttachment;
@@ -124,7 +136,6 @@ namespace ReaShader {
 		vkt::vktDescriptorPool* vktDescriptorPool;
 
 		VkSampler vkSampler;
-
 
 		struct FrameData {
 
