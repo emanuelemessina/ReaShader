@@ -27,11 +27,29 @@ endif()
 # set project name
 set(PROJECT_NAME ReaShader) # do not change !
 
+# include cmake-git-versioning
+
+# check git
+find_package(Git)
+if(Git_FOUND)
+    message("Git found: ${GIT_EXECUTABLE}")
+else()
+    message(FATAL_ERROR "Git not found!")
+endif()
+
+set(RS_CGV_PATH CACHE PATH "GLM library include path")
+
+if(NOT EXISTS ${RS_CGV_PATH})
+    message(FATAL_ERROR "Invalid path to cmake-git-versioning!")
+endif()
+
+include("${RS_CGV_PATH}/cmake-git-versioning.cmake")
+
 project(${PROJECT_NAME}
     # This is your plug-in version number. Change it here only.
     # Version number symbols usable in C++ can be found in
     # source/version.h and ${PROJECT_BINARY_DIR}/projectversion.h.
-    VERSION 1.0.0.0 
+    VERSION ${PROJECT_VERSION_CMAKE} 
     DESCRIPTION "${PROJECT_NAME} VST 3 Plug-in"
 )
 
@@ -41,10 +59,10 @@ if(DEFINED $ENV{VK_SDK_PATH}) # env var
     message(FATAL_ERROR "Vulkan SDK is not installed!")
 endif()
 
-set(RS_GLM_PATH "$ENV{VK_SDK_PATH}/../glm" CACHE FILEPATH "GLM library include path")
-set(RS_VMA_PATH "$ENV{VK_SDK_PATH}/../VulkanMemoryAllocator" CACHE FILEPATH "Vulkan Memory Allocator library path (contains include and build)")
-set(RS_TOL_PATH "$ENV{VK_SDK_PATH}/../tiny_obj_loader" CACHE FILEPATH "Tiny Obj Loader library include path")
-set(RS_STB_PATH "$ENV{VK_SDK_PATH}/../stb" CACHE FILEPATH "STB library include path")
+set(RS_GLM_PATH "$ENV{VK_SDK_PATH}/../glm" CACHE PATH "GLM library include path")
+set(RS_VMA_PATH "$ENV{VK_SDK_PATH}/../VulkanMemoryAllocator" CACHE PATH "Vulkan Memory Allocator library path (contains include and build)")
+set(RS_TOL_PATH "$ENV{VK_SDK_PATH}/../tiny_obj_loader" CACHE PATH "Tiny Obj Loader library include path")
+set(RS_STB_PATH "$ENV{VK_SDK_PATH}/../stb" CACHE PATH "STB library include path")
 
 include_directories (
     "$ENV{VK_SDK_PATH}/include"
@@ -190,10 +208,10 @@ if(SMTG_MAC)
 
 elseif(SMTG_WIN)
 
-    # resource file
-    target_sources(${PROJECT_NAME} PRIVATE 
-        resource/win32resource.rc
-    )
+    # windows only resource file
+    #target_sources(${PROJECT_NAME} PRIVATE 
+    #    resource/win32resource.rc
+    #)
 
     # VISUAL STUDIO SPECIFIC
 

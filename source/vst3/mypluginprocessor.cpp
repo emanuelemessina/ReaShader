@@ -112,7 +112,7 @@ namespace ReaShader {
 			initVulkan();
 		}
 		catch (const std::exception& e) {
-			std::cerr << e.what() << std::endl;
+			ShowMessageBox((std::string("Exception: ") + e.what()).c_str(), "ReaShader crashed...", 0);
 			return kResultFalse;
 		}
 
@@ -129,7 +129,7 @@ namespace ReaShader {
 			cleanupVulkan();
 		}
 		catch (const std::exception& e) {
-			std::cerr << e.what() << std::endl;
+			ShowMessageBox((std::string("Exception: ") + e.what()).c_str(), "ReaShader crashed...", 0);
 			return kResultFalse;
 		}
 
@@ -149,7 +149,11 @@ namespace ReaShader {
 			// query reaper interface
 			IReaperHostApplication* reaperApp{ nullptr };
 			if (context->queryInterface(IReaperHostApplication_iid, (void**)&reaperApp) == kResultOk) {
-				// get api function
+
+				// get show message box
+				*(int**)&ShowMessageBox = (int*)reaperApp->getReaperApi("ShowMessageBox");
+
+				// get create video processor
 				IREAPERVideoProcessor* (*video_CreateVideoProcessor)(void* fxctx, int version) { nullptr };
 				//vst2.4: *(void**)&video_CreateVideoProcessor = (void*)audioMaster(&cEffect, 0xdeadbeef, 0xdeadf00d, 0, "video_CreateVideoProcessor", 0.0f);
 				*(void**)&video_CreateVideoProcessor = (void*)reaperApp->getReaperApi("video_CreateVideoProcessor");

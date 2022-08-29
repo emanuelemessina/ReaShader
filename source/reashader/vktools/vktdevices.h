@@ -292,9 +292,8 @@ Instantiate a helper object with all the info about the physicalDevice specified
 
 		VmaAllocator vmaAllocator = VK_NULL_HANDLE;
 
-		// wait and submit
 		void waitIdle() {
-			vkDeviceWaitIdle(device);
+			VK_CHECK_RESULT(vkDeviceWaitIdle(device));
 		}
 
 		vktCommandPool* getGraphicsCommandPool() { return graphicsCommandPool; }

@@ -1,265 +1,265 @@
 {
-	"vstgui-ui-description": {
-		"version": "1",
-		"bitmaps": {
-			"background": {
-				"path": "background"
-			},
-			"fader-body": {
-				"path": "fader_body"
-			},
-			"fader-handle": {
-				"path": "fader_handle"
-			},
-			"reashader text": {
-				"path": "logo"
-			}
-		},
-		"fonts": {},
-		"colors": {},
-		"control-tags": {
-			"Gain": "0",
-			"VideoParam": "1"
-		},
-		"custom": {
-			"FocusDrawing": {},
-			"VST3Editor": {
-				"Path": "myplugineditor.uidesc"
-			},
-			"UIGridController": {
-				"Grids": "1x 1,5x 5,10x 10,12x 12,15x 15"
-			},
-			"UIEditController": {
-				"EditViewScale": "1",
-				"EditorSize": "0, 0, 1092, 776",
-				"SplitViewSize_0_0": "0.7640000000000000124344978758017532527447",
-				"SplitViewSize_0_1": "0.2093333333333333434733702915764297358692",
-				"SplitViewSize_1_0": "0.4719999999999999751310042483964934945107",
-				"SplitViewSize_1_1": "0.5173333333333333117209917872969526797533",
-				"SplitViewSize_2_0": "0.5659340659340659218656810480752028524876",
-				"SplitViewSize_2_1": "0.4294871794871794601355929899000329896808",
-				"TabSwitchValue": "0",
-				"UI Theme": "Dark",
-				"Version": "1",
-				"WriteRCFile": "true"
-			},
-			"UITemplateController": {
-				"SelectedTemplate": "view"
-			},
-			"UIAttributesController": {},
-			"UIViewCreatorDataSource": {
-				"SelectedRow": "10"
-			},
-			"UIBitmapsDataSource": {
-				"SelectedRow": "3"
-			},
-			"UITagsDataSource": {
-				"SelectedRow": "-1"
-			}
-		},
-		"templates": {
-			"view": {
-				"attributes": {
-					"background-color": "~ BlackCColor",
-					"background-color-draw-style": "filled and stroked",
-					"bitmap": "background",
-					"class": "CViewContainer",
-					"mouse-enabled": "true",
-					"opacity": "1",
-					"origin": "0, 0",
-					"size": "626, 417",
-					"transparent": "false",
-					"uidesc-label": "main",
-					"wants-focus": "false"
-				},
-				"children": {
-					"CView": {
-						"attributes": {
-							"bitmap": "reashader text",
-							"class": "CView",
-							"mouse-enabled": "true",
-							"opacity": "1",
-							"origin": "180, 40",
-							"size": "263, 90",
-							"transparent": "false",
-							"uidesc-label": "logo",
-							"wants-focus": "false"
-						}
-					},
-					"CViewContainer": {
-						"attributes": {
-							"background-color": "~ BlackCColor",
-							"background-color-draw-style": "filled and stroked",
-							"class": "CViewContainer",
-							"mouse-enabled": "true",
-							"opacity": "1",
-							"origin": "100, 190",
-							"size": "310, 40",
-							"transparent": "true",
-							"uidesc-label": "gain view",
-							"wants-focus": "false"
-						},
-						"children": {
-							"CSlider": {
-								"attributes": {
-									"bitmap": "fader-body",
-									"bitmap-offset": "0, 0",
-									"class": "CSlider",
-									"control-tag": "Gain",
-									"default-value": "0.5",
-									"draw-back": "false",
-									"draw-back-color": "~ BlackCColor",
-									"draw-frame": "false",
-									"draw-frame-color": "~ GreyCColor",
-									"draw-value": "false",
-									"draw-value-color": "~ WhiteCColor",
-									"draw-value-from-center": "false",
-									"draw-value-inverted": "false",
-									"frame-width": "1",
-									"handle-bitmap": "fader-handle",
-									"handle-offset": "0, 0",
-									"max-value": "1",
-									"min-value": "0",
-									"mode": "use global",
-									"mouse-enabled": "true",
-									"opacity": "1",
-									"orientation": "horizontal",
-									"origin": "130, 10",
-									"reverse-orientation": "false",
-									"size": "180, 20",
-									"transparent": "false",
-									"wants-focus": "true",
-									"wheel-inc-value": "0.1",
-									"zoom-factor": "10"
-								}
-							},
-							"CTextLabel": {
-								"attributes": {
-									"back-color": "~ BlackCColor",
-									"background-offset": "0, 0",
-									"class": "CTextLabel",
-									"default-value": "0.5",
-									"font": "~ NormalFont",
-									"font-antialias": "true",
-									"font-color": "~ WhiteCColor",
-									"frame-color": "~ BlackCColor",
-									"frame-width": "1",
-									"max-value": "1",
-									"min-value": "0",
-									"mouse-enabled": "true",
-									"opacity": "1",
-									"origin": "10, 10",
-									"round-rect-radius": "6",
-									"shadow-color": "~ RedCColor",
-									"size": "100, 20",
-									"style-3D-in": "false",
-									"style-3D-out": "false",
-									"style-no-draw": "false",
-									"style-no-frame": "false",
-									"style-no-text": "false",
-									"style-round-rect": "false",
-									"style-shadow-text": "false",
-									"text-alignment": "center",
-									"text-inset": "0, 0",
-									"text-rotation": "0",
-									"text-shadow-offset": "1, 1",
-									"title": "Audio Gain",
-									"transparent": "true",
-									"value-precision": "2",
-									"wants-focus": "false",
-									"wheel-inc-value": "0.1"
-								}
-							}
-						}
-					},
-					"CViewContainer": {
-						"attributes": {
-							"background-color": "~ BlackCColor",
-							"background-color-draw-style": "filled and stroked",
-							"class": "CViewContainer",
-							"mouse-enabled": "true",
-							"opacity": "1",
-							"origin": "100, 240",
-							"size": "310, 40",
-							"transparent": "true",
-							"uidesc-label": "video param view",
-							"wants-focus": "false"
-						},
-						"children": {
-							"CSlider": {
-								"attributes": {
-									"bitmap": "fader-body",
-									"bitmap-offset": "0, 0",
-									"class": "CSlider",
-									"control-tag": "VideoParam",
-									"default-value": "0.5",
-									"draw-back": "false",
-									"draw-back-color": "~ BlackCColor",
-									"draw-frame": "false",
-									"draw-frame-color": "~ GreyCColor",
-									"draw-value": "false",
-									"draw-value-color": "~ WhiteCColor",
-									"draw-value-from-center": "false",
-									"draw-value-inverted": "false",
-									"frame-width": "1",
-									"handle-bitmap": "fader-handle",
-									"handle-offset": "0, 0",
-									"max-value": "1",
-									"min-value": "0",
-									"mode": "use global",
-									"mouse-enabled": "true",
-									"opacity": "1",
-									"orientation": "horizontal",
-									"origin": "130, 10",
-									"reverse-orientation": "false",
-									"size": "180, 20",
-									"transparent": "false",
-									"wants-focus": "true",
-									"wheel-inc-value": "0.1",
-									"zoom-factor": "10"
-								}
-							},
-							"CTextLabel": {
-								"attributes": {
-									"back-color": "~ BlackCColor",
-									"background-offset": "0, 0",
-									"class": "CTextLabel",
-									"default-value": "0.5",
-									"font": "~ NormalFont",
-									"font-antialias": "true",
-									"font-color": "~ WhiteCColor",
-									"frame-color": "~ BlackCColor",
-									"frame-width": "1",
-									"max-value": "1",
-									"min-value": "0",
-									"mouse-enabled": "true",
-									"opacity": "1",
-									"origin": "10, 10",
-									"round-rect-radius": "6",
-									"shadow-color": "~ RedCColor",
-									"size": "100, 20",
-									"style-3D-in": "false",
-									"style-3D-out": "false",
-									"style-no-draw": "false",
-									"style-no-frame": "false",
-									"style-no-text": "false",
-									"style-round-rect": "false",
-									"style-shadow-text": "false",
-									"text-alignment": "center",
-									"text-inset": "0, 0",
-									"text-rotation": "0",
-									"text-shadow-offset": "1, 1",
-									"title": "Video Param",
-									"transparent": "true",
-									"value-precision": "2",
-									"wants-focus": "false",
-									"wheel-inc-value": "0.1"
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
+  "vstgui-ui-description": {
+    "version": "1",
+    "bitmaps": {
+      "background": {
+        "path": "assets/images/background.png"
+      },
+      "fader-body": {
+        "path": "assets/images/fader-body.png"
+      },
+      "fader-handle": {
+        "path": "assets/images/fader-handle.png"
+      },
+      "reashader text": {
+        "path": "assets/images/reashader text.png"
+      }
+    },
+    "fonts": {},
+    "colors": {},
+    "control-tags": {
+      "Gain": "0",
+      "VideoParam": "1"
+    },
+    "custom": {
+      "FocusDrawing": {},
+      "VST3Editor": {
+        "Path": "myplugineditor.uidesc"
+      },
+      "UIGridController": {
+        "Grids": "1x 1,5x 5,10x 10,12x 12,15x 15"
+      },
+      "UIEditController": {
+        "EditViewScale": "1",
+        "EditorSize": "0, 0, 1092, 776",
+        "SplitViewSize_0_0": "0.7640000000000000124344978758017532527447",
+        "SplitViewSize_0_1": "0.2093333333333333434733702915764297358692",
+        "SplitViewSize_1_0": "0.4719999999999999751310042483964934945107",
+        "SplitViewSize_1_1": "0.5173333333333333117209917872969526797533",
+        "SplitViewSize_2_0": "0.5659340659340659218656810480752028524876",
+        "SplitViewSize_2_1": "0.4294871794871794601355929899000329896808",
+        "TabSwitchValue": "0",
+        "UI Theme": "Dark",
+        "Version": "1",
+        "WriteRCFile": "true"
+      },
+      "UITemplateController": {
+        "SelectedTemplate": "view"
+      },
+      "UIAttributesController": {},
+      "UIViewCreatorDataSource": {
+        "SelectedRow": "10"
+      },
+      "UIBitmapsDataSource": {
+        "SelectedRow": "3"
+      },
+      "UITagsDataSource": {
+        "SelectedRow": "-1"
+      }
+    },
+    "templates": {
+      "view": {
+        "attributes": {
+          "background-color": "~ BlackCColor",
+          "background-color-draw-style": "filled and stroked",
+          "bitmap": "background",
+          "class": "CViewContainer",
+          "mouse-enabled": "true",
+          "opacity": "1",
+          "origin": "0, 0",
+          "size": "626, 417",
+          "transparent": "false",
+          "uidesc-label": "main",
+          "wants-focus": "false"
+        },
+        "children": {
+          "CView": {
+            "attributes": {
+              "bitmap": "reashader text",
+              "class": "CView",
+              "mouse-enabled": "true",
+              "opacity": "1",
+              "origin": "180, 40",
+              "size": "263, 90",
+              "transparent": "false",
+              "uidesc-label": "logo",
+              "wants-focus": "false"
+            }
+          },
+          "CViewContainer": {
+            "attributes": {
+              "background-color": "~ BlackCColor",
+              "background-color-draw-style": "filled and stroked",
+              "class": "CViewContainer",
+              "mouse-enabled": "true",
+              "opacity": "1",
+              "origin": "100, 190",
+              "size": "310, 40",
+              "transparent": "true",
+              "uidesc-label": "gain view",
+              "wants-focus": "false"
+            },
+            "children": {
+              "CSlider": {
+                "attributes": {
+                  "bitmap": "fader-body",
+                  "bitmap-offset": "0, 0",
+                  "class": "CSlider",
+                  "control-tag": "Gain",
+                  "default-value": "0.5",
+                  "draw-back": "false",
+                  "draw-back-color": "~ BlackCColor",
+                  "draw-frame": "false",
+                  "draw-frame-color": "~ GreyCColor",
+                  "draw-value": "false",
+                  "draw-value-color": "~ WhiteCColor",
+                  "draw-value-from-center": "false",
+                  "draw-value-inverted": "false",
+                  "frame-width": "1",
+                  "handle-bitmap": "fader-handle",
+                  "handle-offset": "0, 0",
+                  "max-value": "1",
+                  "min-value": "0",
+                  "mode": "use global",
+                  "mouse-enabled": "true",
+                  "opacity": "1",
+                  "orientation": "horizontal",
+                  "origin": "130, 10",
+                  "reverse-orientation": "false",
+                  "size": "180, 20",
+                  "transparent": "false",
+                  "wants-focus": "true",
+                  "wheel-inc-value": "0.1",
+                  "zoom-factor": "10"
+                }
+              },
+              "CTextLabel": {
+                "attributes": {
+                  "back-color": "~ BlackCColor",
+                  "background-offset": "0, 0",
+                  "class": "CTextLabel",
+                  "default-value": "0.5",
+                  "font": "~ NormalFont",
+                  "font-antialias": "true",
+                  "font-color": "~ WhiteCColor",
+                  "frame-color": "~ BlackCColor",
+                  "frame-width": "1",
+                  "max-value": "1",
+                  "min-value": "0",
+                  "mouse-enabled": "true",
+                  "opacity": "1",
+                  "origin": "10, 10",
+                  "round-rect-radius": "6",
+                  "shadow-color": "~ RedCColor",
+                  "size": "100, 20",
+                  "style-3D-in": "false",
+                  "style-3D-out": "false",
+                  "style-no-draw": "false",
+                  "style-no-frame": "false",
+                  "style-no-text": "false",
+                  "style-round-rect": "false",
+                  "style-shadow-text": "false",
+                  "text-alignment": "center",
+                  "text-inset": "0, 0",
+                  "text-rotation": "0",
+                  "text-shadow-offset": "1, 1",
+                  "title": "Audio Gain",
+                  "transparent": "true",
+                  "value-precision": "2",
+                  "wants-focus": "false",
+                  "wheel-inc-value": "0.1"
+                }
+              }
+            }
+          },
+          "CViewContainer": {
+            "attributes": {
+              "background-color": "~ BlackCColor",
+              "background-color-draw-style": "filled and stroked",
+              "class": "CViewContainer",
+              "mouse-enabled": "true",
+              "opacity": "1",
+              "origin": "100, 240",
+              "size": "310, 40",
+              "transparent": "true",
+              "uidesc-label": "video param view",
+              "wants-focus": "false"
+            },
+            "children": {
+              "CSlider": {
+                "attributes": {
+                  "bitmap": "fader-body",
+                  "bitmap-offset": "0, 0",
+                  "class": "CSlider",
+                  "control-tag": "VideoParam",
+                  "default-value": "0.5",
+                  "draw-back": "false",
+                  "draw-back-color": "~ BlackCColor",
+                  "draw-frame": "false",
+                  "draw-frame-color": "~ GreyCColor",
+                  "draw-value": "false",
+                  "draw-value-color": "~ WhiteCColor",
+                  "draw-value-from-center": "false",
+                  "draw-value-inverted": "false",
+                  "frame-width": "1",
+                  "handle-bitmap": "fader-handle",
+                  "handle-offset": "0, 0",
+                  "max-value": "1",
+                  "min-value": "0",
+                  "mode": "use global",
+                  "mouse-enabled": "true",
+                  "opacity": "1",
+                  "orientation": "horizontal",
+                  "origin": "130, 10",
+                  "reverse-orientation": "false",
+                  "size": "180, 20",
+                  "transparent": "false",
+                  "wants-focus": "true",
+                  "wheel-inc-value": "0.1",
+                  "zoom-factor": "10"
+                }
+              },
+              "CTextLabel": {
+                "attributes": {
+                  "back-color": "~ BlackCColor",
+                  "background-offset": "0, 0",
+                  "class": "CTextLabel",
+                  "default-value": "0.5",
+                  "font": "~ NormalFont",
+                  "font-antialias": "true",
+                  "font-color": "~ WhiteCColor",
+                  "frame-color": "~ BlackCColor",
+                  "frame-width": "1",
+                  "max-value": "1",
+                  "min-value": "0",
+                  "mouse-enabled": "true",
+                  "opacity": "1",
+                  "origin": "10, 10",
+                  "round-rect-radius": "6",
+                  "shadow-color": "~ RedCColor",
+                  "size": "100, 20",
+                  "style-3D-in": "false",
+                  "style-3D-out": "false",
+                  "style-no-draw": "false",
+                  "style-no-frame": "false",
+                  "style-no-text": "false",
+                  "style-round-rect": "false",
+                  "style-shadow-text": "false",
+                  "text-alignment": "center",
+                  "text-inset": "0, 0",
+                  "text-rotation": "0",
+                  "text-shadow-offset": "1, 1",
+                  "title": "Video Param",
+                  "transparent": "true",
+                  "value-precision": "2",
+                  "wants-focus": "false",
+                  "wheel-inc-value": "0.1"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 }

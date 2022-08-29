@@ -205,10 +205,10 @@ if(SMTG_MAC)
 
 elseif(SMTG_WIN)
 
-    # resource file
-    target_sources(${PROJECT_NAME} PRIVATE 
-        resource/win32resource.rc
-    )
+    # windows only resource file
+    #target_sources(${PROJECT_NAME} PRIVATE 
+    #    resource/win32resource.rc
+    #)
 
     # VISUAL STUDIO SPECIFIC
 
@@ -268,16 +268,7 @@ Define useful macros in a custom property sheet.
 The most important one is `VST3BundleOutDir` : path to `myplugin.vst3` bundle folder.
 \
 \
-In fact the generated folder will follow this structure:
-```
-- myplugin.vst3
-	- Resources
-		- Snapshots
-        myplugineditor.uidesc
-	- win-x64 (can be whatever)
-		myplugin.vst3
-	moduleinfo.json
-```
+In fact the generated folder will follow [this output folder structure](#output-folder-structure).
 
 <br>
 
@@ -485,8 +476,23 @@ These are the files that contains the actual VST plugin code.
 
 - `myplugincontroller.cpp`: communication with the DAW, handling parameters and the UI.
 - `mypluginprocessor.cpp`: processing and persistence.
-- `win32resource.rc`: resources file.
 - `myplugincids.h`: various ids (the parameter ids enum can be put here). 
+
+<br>
+
+### <p id="#output-folder-structure">Output folder structure</p> 
+
+<br>
+
+```
+- myplugin.vst3
+	- Resources
+		- Snapshots
+        myplugineditor.uidesc
+	- win-x64 (name it whatever, but must be in this level)
+		myplugin.vst3
+	moduleinfo.json
+```
 
 <br>
 
@@ -494,7 +500,7 @@ These are the files that contains the actual VST plugin code.
 
 <br>
 
-## <span style="color:lightgreen">Parameters</span>
+## Parameters
 
 <br>
 
@@ -840,3 +846,20 @@ That's why in the bitmap constructor 1/4 of the vf roswpan should be used, effec
 ---
 
 <br>
+
+## VSTGUI
+
+<br>
+
+### Resources
+
+<br>
+
+On Windows only, the resources can be referenced from a `.rc` file that must be linked to the solution with a CMake directive.
+\
+However in UNIX systems the resources are not embedded and must be present in the `Resources` output folder, so you might as well go with this universal method.
+\
+If you use the `.rc` file, the resources are accessed by their ID, and that tag will not exist in the UNIX build.
+\
+\
+Instead, ditch the `.rc` file and place the resources in the `Resources` directory, then either using the `CView(UIDescription)` constructor or the VSTEditor `.uidesc` file, reference resource files with their relative path from the `Resources` folder.

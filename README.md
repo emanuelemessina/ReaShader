@@ -1,6 +1,6 @@
 # ReaShader
 
-_a VST Video Processor for Reaper_
+_THE Video Processor VST for Reaper_
 
 <br>
 
@@ -31,10 +31,11 @@ Donwload [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/) and install (preferabl
 The following libraries are required.
 Can be placed them next to the `x.x.x.x` folder inside the Vulkan install location as CMake has the include paths defaulted to there.
 
-- GLM
-- Tiny Obj Loader
-- STB
-- Vulkan Memory Allocator
+- [GLM](https://github.com/g-truc/glm)
+- [Tiny Obj Loader](https://github.com/tinyobjloader/tinyobjloader)
+- [STB](https://github.com/nothings/stb)
+- [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
+- [cmake-git-versioning](https://github.com/emanuelemessina/cmake-git-versioning)
 
 <br>
 

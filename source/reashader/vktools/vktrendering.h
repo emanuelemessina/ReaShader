@@ -12,7 +12,7 @@ namespace vkt {
 
 	namespace pipeline {
 
-		inline VkFramebuffer createFramebuffer(vktDevice* vktDevice, VkRenderPass renderPass, VkExtent2D extent, std::vector<vktAllocatedImage*> attachments) {
+		inline VkFramebuffer createFramebuffer(vktDevice* vktDevice, vktDeletionQueue* pDeletionQueue, VkRenderPass renderPass, VkExtent2D extent, std::vector<vktAllocatedImage*> attachments) {
 
 			uint32_t count = static_cast<uint32_t>(attachments.size());
 
@@ -35,7 +35,7 @@ namespace vkt {
 
 			VK_CHECK_RESULT(vkCreateFramebuffer(vktDevice->device, &framebufferInfo, nullptr, &frameBuffer));
 
-			vktDevice->pDeletionQueue->push_function([=]() {
+			pDeletionQueue->push_function([=]() {
 				vkDestroyFramebuffer(vktDevice->device, frameBuffer, nullptr);
 				});
 

@@ -17,6 +17,10 @@ namespace vkt {
 		VkQueue get() { return queue; };
 		uint32_t getFamilyIndex() { return queueFamilyIndex.value(); }
 
+		void waitIdle() {
+			VK_CHECK_RESULT(vkQueueWaitIdle(queue));
+		}
+
 		friend class vktCommandPool;
 
 	private:
