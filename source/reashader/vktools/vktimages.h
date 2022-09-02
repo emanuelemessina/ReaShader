@@ -12,11 +12,8 @@
 
 namespace vkt {
 
-	/**
-	 * images commands
-	 */
+	// image commands
 	namespace commands {
-
 		static void insertImageMemoryBarrier(
 			VkCommandBuffer cmdbuffer,
 			VkImage image,
@@ -70,6 +67,17 @@ namespace vkt {
 			return srcBuff;
 		}
 
+		/**
+		 * Transfer allocated pixel buffer (usage transfer src) to image.
+		 *
+		 * \param cmd
+		 * \param srcBuff
+		 * \param imageDst
+		 * \param extent
+		 * \param finalAccessMask
+		 * \param finalImageLayout
+		 * \param finalStageMask
+		 */
 		static void transferPixelBufferToImage(
 			VkCommandBuffer cmd,
 			vktAllocatedBuffer* srcBuff,
@@ -118,7 +126,7 @@ namespace vkt {
 				finalStageMask,
 				VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
 		}
-	};
+	}
 
 	class vktAllocatedImage {
 	public:
@@ -297,5 +305,45 @@ namespace vkt {
 		VmaAllocation allocation = nullptr;
 		VmaAllocationInfo allocationInfo{};
 	};
+
+	/**
+	 * images commands
+	 */
+	namespace commands {
+
+		/**
+		 * Transfer raw buffer to allocated image (currently the image must be mapped).
+		 */
+		static void transferRawBufferToImage(
+			vktDevice* vktDevice,
+			VkCommandBuffer cmd,
+			void* srcBuffer,
+			vktAllocatedImage* imageDst,
+			size_t size
+		) {
+			// transition to general (as transfer reciever)
+			vkt::commands::insertImageMemoryBarrier(
+				cmd,
+				imageDst->getImage(),
+				0,
+				VK_ACCESS_MEMORY_WRITE_BIT,
+				VK_IMAGE_LAYOUT_UNDEFINED,
+				VK_IMAGE_LAYOUT_GENERAL,
+				VK_PIPELINE_STAGE_TRANSFER_BIT,
+				VK_PIPELINE_STAGE_TRANSFER_BIT,
+				VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
+
+			// Get layout of the image (including row pitch)
+			VkImageSubresource subResource{};
+			subResource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			VkSubresourceLayout subResourceLayout;
+			vkGetImageSubresourceLayout(vktDevice->device, imageDst->getImage(), &subResource, &subResourceLayout);
+
+			// copy bits from src to framedest
+			memcpy((void*)(reinterpret_cast<uintptr_t>((imageDst->getAllocationInfo()).pMappedData) + subResourceLayout.offset), (void*)srcBuffer, size);
+
+		}
+	};
+
 
 }

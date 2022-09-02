@@ -378,6 +378,7 @@ namespace ReaShader {
 		vkt::vktDevice* vktDevice = rs->vktDevice;
 		vkt::vktCommandPool* commandPool = vktDevice->getGraphicsCommandPool();
 		vkt::vktQueue* queue = vktDevice->getGraphicsQueue();
+		VkCommandBuffer commandBuffer = rs->vkTransferCommandBuffer;
 
 		auto& FRAME_W = rs->FRAME_W;
 		auto& FRAME_H = rs->FRAME_H;
@@ -386,32 +387,7 @@ namespace ReaShader {
 
 		vktDevice->getGraphicsCommandPool()->restartCommandBuffer(rs->vkTransferCommandBuffer);
 
-		vkt::commands::insertImageMemoryBarrier(
-			rs->vkTransferCommandBuffer,
-			rs->vktFrameTransfer->getImage(),
-			0,
-			VK_ACCESS_MEMORY_WRITE_BIT,
-			VK_IMAGE_LAYOUT_UNDEFINED,
-			VK_IMAGE_LAYOUT_GENERAL,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
-
-		// submit command, signal fence
-		commandPool->submit(rs->vkTransferCommandBuffer, rs->vkInFlightFence, VK_NULL_HANDLE, VK_NULL_HANDLE);
-
-		// wait for it
-		vkWaitForFences(vktDevice->device, 1, &rs->vkInFlightFence, VK_TRUE, UINT64_MAX);
-		vkResetFences(vktDevice->device, 1, &rs->vkInFlightFence);
-
-		// Get layout of the image (including row pitch)
-		VkImageSubresource subResource{};
-		subResource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		VkSubresourceLayout subResourceLayout;
-		vkGetImageSubresourceLayout(vktDevice->device, rs->vktFrameTransfer->getImage(), &subResource, &subResourceLayout);
-
-		// copy bits from src to framedest
-		memcpy((void*)(reinterpret_cast<uintptr_t>((rs->vktFrameTransfer->getAllocationInfo()).pMappedData) + subResourceLayout.offset), (void*)srcBuffer, sizeof(LICE_pixel) * FRAME_W * FRAME_H);
+		vkt::commands::transferRawBufferToImage(vktDevice, commandBuffer, srcBuffer, rs->vktFrameTransfer, sizeof(LICE_pixel) * FRAME_W * FRAME_H);
 
 		commandPool->restartCommandBuffer(rs->vkTransferCommandBuffer);
 

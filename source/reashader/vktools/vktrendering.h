@@ -134,7 +134,6 @@ namespace vkt {
 				subpassTags.push_back(tag);
 				return *(subpassBuilders.back());
 			}
-			// TODO call destructors on subpassbuilders
 
 			VkRenderPass build() override {
 
