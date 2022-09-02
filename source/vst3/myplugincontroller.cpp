@@ -4,7 +4,6 @@
 
 #include "myplugincontroller.h"
 #include "myplugincids.h"
-#include "vstgui/plugin-bindings/vst3editor.h"
 #include "base/source/fstreamer.h"
 
 #include <thread>
@@ -14,11 +13,9 @@
 #include "tools/paths.h"
 
 #include "rsui/rseditor.h"
-#include "vstgui/uidescription/uiattributes.h"
-#include "vstgui/uidescription/uiviewcreator.h"
-#include "vstgui/uidescription/detail/uiviewcreatorattributes.h"
 
 using namespace Steinberg;
+using namespace VSTGUI;
 
 namespace ReaShader {
 
@@ -138,9 +135,9 @@ namespace ReaShader {
 		if (FIDStringsEqual(name, Vst::ViewType::kEditor))
 		{
 			// create your editor here and return a IPlugView ptr of it
-			auto* view = new RSEditor(this, "view", "myplugineditor.uidesc");
+			editor = new RSEditor(this, "view", "myplugineditor.uidesc");
 
-			auto description = view->getUIDescription();
+			auto description = editor->getUIDescription();
 
 			std::string viewName = "myview";
 			auto* debugAttr = new VSTGUI::UIAttributes();
@@ -150,8 +147,21 @@ namespace ReaShader {
 			description->addNewTemplate(viewName.c_str(), debugAttr);
 
 			//view->exchangeView("myview");
+			return editor;
+		}
+		return nullptr;
+	}
 
-			return view;
+	IController* ReaShaderController::createSubController(UTF8StringPtr name,
+		const IUIDescription* description,
+		VST3Editor* editor)
+	{
+		if (UTF8StringView(name) == "RSUI")
+		{
+			auto* controller = new RSUIController(this, editor, description);
+			RSEditor* rseditor = dynamic_cast<RSEditor*>(editor);
+			rseditor->subController = controller;
+			return controller;
 		}
 		return nullptr;
 	}

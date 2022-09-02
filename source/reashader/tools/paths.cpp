@@ -174,8 +174,7 @@ namespace tools {
 
 			ps[paths.size()] = NULL; // required by cwalk join multiple
 
-			size++; // final null terminator
-			size++; // don't know honestly... the last char is missing otherwise
+			size += paths.size(); // num paths - 1 = num slashes , +1 null terminator
 
 			char* const joined = new char[size]; // allocate new buffer
 

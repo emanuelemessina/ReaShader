@@ -4,17 +4,23 @@
 
 #pragma once
 
-#include "public.sdk/source/vst/vsteditcontroller.h"
 
 #include "pluginterfaces/vst/ivstmessage.h"
 
+#include "public.sdk/source/vst/vsteditcontroller.h"
+#include "vstgui/plugin-bindings/vst3editor.h"
 
+#include "vstgui/lib/iviewlistener.h"
+#include "vstgui/uidescription/icontroller.h"
+
+#include "vstgui/uidescription/delegationcontroller.h"
 
 #include <thread>
 #include <mutex>
 
 using namespace Steinberg;
 using namespace Vst;
+using namespace VSTGUI;
 
 namespace ReaShader {
 
@@ -22,7 +28,7 @@ namespace ReaShader {
 	//------------------------------------------------------------------------
 	//  ReaShaderController
 	//------------------------------------------------------------------------
-	class ReaShaderController : public Steinberg::Vst::EditControllerEx1
+	class ReaShaderController : public Steinberg::Vst::EditControllerEx1, public VSTGUI::VST3EditorDelegate
 	{
 	public:
 		//------------------------------------------------------------------------
@@ -53,9 +59,17 @@ namespace ReaShader {
 			Steinberg::Vst::TChar* string,
 			Steinberg::Vst::ParamValue& valueNormalized) SMTG_OVERRIDE;
 
+		auto getParameters() {
+			return &parameters;
+		}
 
+		//---from ComponentBase-----
 		tresult receiveText(const char* text) SMTG_OVERRIDE;
-		tresult PLUGIN_API notify(IMessage* message);
+		tresult PLUGIN_API notify(IMessage* message) SMTG_OVERRIDE;
+
+		//---from VST3EditorDelegate-----------
+		VSTGUI::IController* createSubController(VSTGUI::UTF8StringPtr name, const VSTGUI::IUIDescription* description,
+			VSTGUI::VST3Editor* editor) SMTG_OVERRIDE;
 
 		//---Interface---------
 		DEFINE_INTERFACES
@@ -65,8 +79,9 @@ namespace ReaShader {
 			DELEGATE_REFCOUNT(EditController)
 
 			//------------------------------------------------------------------------
+
 	protected:
-		bool windowShouldClose{ false };
+		VST3Editor* editor{ nullptr };
 	};
 
 	//------------------------------------------------------------------------
