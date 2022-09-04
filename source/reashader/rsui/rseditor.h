@@ -13,6 +13,8 @@
 
 #include "myplugincontroller.h"
 
+#include "version.h"
+
 namespace ReaShader {
 
 	using namespace VSTGUI;
@@ -151,7 +153,7 @@ namespace ReaShader {
 			switch (pControl->getTag()) {
 				// menu button clicked
 			case tMenuButton:
-
+				menu->popup();
 				break;
 			}
 		}
@@ -186,6 +188,7 @@ namespace ReaShader {
 		// ---- from IController -----------
 
 		const std::string l_rsui_container = "rsui";
+		const std::string l_rs_version = "rs-version";
 
 
 		//--- is called when a view is created -----
@@ -251,6 +254,11 @@ namespace ReaShader {
 			else if (CTextButton* button = dynamic_cast<CTextButton*> (view)) {
 				button->setTag(tMenuButton);
 				button->setListener(this);
+			}
+			else if (CTextLabel* label = dynamic_cast<CTextLabel*> (view)) {
+				if (uidesc_label == l_rs_version) {
+					label->setText(FULL_VERSION_STR);
+				}
 			}
 
 			return view;
@@ -394,9 +402,15 @@ namespace ReaShader {
 					scrollViewCredits->addView(makeRsLabel(ts1_r.offset(0, textLabelHeight), "GLM, STB, cwalk, Tiny Obj Loader", kRightText));
 					scrollViewCredits->addView(makeRsLabel(ts1_r.offset(0, textLabelHeight), "WDL, Vulkan Memory Allocator", kRightText));
 
+					CRect tsF = ts0;
+					tsF.offset(0, textLabelHeight * 7)
+						.setWidth(scrollContainerSizeRelative.getWidth());
+					alignHorizontal(tsF, scrollContainerSizeRelative);
+					scrollViewCredits->addView(makeRsLabel(tsF, stringLegalCopyright, kCenterText));
+
 					// extend scroll container height
 
-					CRect extContainerSize = scrollContainerSize.setHeight(textLabelHeight * 7);
+					CRect extContainerSize = scrollContainerSize.setHeight(textLabelHeight * 8);
 					scrollViewCredits->setContainerSize(extContainerSize);
 
 					// open splash

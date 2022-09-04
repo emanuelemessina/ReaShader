@@ -14,14 +14,6 @@ if(NOT EXISTS ${RS_VST3_SDK_DIR})
     message(FATAL_ERROR "Invalid path to vst3 sdk!")
 endif()
 
-# SET REAPER PATH (for debugging)
-
-set(RS_REAPER_PATH "S:\\_AUDIO\\Reaper\\reaper.exe" CACHE FILEPATH "Path to reaper executable")
-
-if(NOT EXISTS ${RS_REAPER_PATH})
-    message(WARNING "Reaper executable not found.")
-endif()
-
 # SET VERSION NUMBER
 
 # set project name
@@ -97,8 +89,13 @@ file(GLOB_RECURSE SOURCE_FILES
      
      "doc/*.md"
 
+     "scripts/*.ps1"
+
      "external/reaper-sdk/WDL/lice/lice.cpp"
      "external/cwalk/cwalk.c"
+
+     "README.md"
+     "sln-make.inix"
 )
 
 ##############################################################################
@@ -200,9 +197,6 @@ if(SMTG_MAC)
         BUNDLE_IDENTIFIER gvng.reashader
         COMPANY_NAME "Emanuele Messina"
     )
-    smtg_target_set_debug_executable(${PROJECT_NAME}
-        ${RS_REAPER_PATH}
-    )
 
 # CONFIGURE WIN
 
@@ -219,10 +213,6 @@ elseif(SMTG_WIN)
 
         # startup project
         set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${PROJECT_NAME}) 
-
-        smtg_target_set_debug_executable(${PROJECT_NAME}
-            ${RS_REAPER_PATH}
-        )
        
     endif()
 

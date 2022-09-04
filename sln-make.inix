@@ -10,6 +10,7 @@ slnDir= build\win
 
 attach=true
 flavor=local
+command=S:\_AUDIO\Reaper\reaper.exe
 
 [general]
 

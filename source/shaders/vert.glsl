@@ -16,16 +16,15 @@ layout(set = 0, binding = 0) uniform  CameraBuffer{
 	mat4 viewproj;
 } cameraData;
 
-//push constants block
+struct ObjectData{
+	mat4 finalModelMatrix;
+};
+
 layout( push_constant ) uniform constants
 {
-	vec4 data;
-	mat4 render_matrix;
-} PushConstants;
-
-struct ObjectData{
-	mat4 model;
-};
+	int objectId;
+	float videoParam;
+} pushConstants;
 
 //all object matrices
 layout(std140,set = 1, binding = 0) readonly buffer ObjectBuffer{
@@ -33,7 +32,7 @@ layout(std140,set = 1, binding = 0) readonly buffer ObjectBuffer{
 } objectBuffer;
 
 void main() {
-	mat4 modelMatrix = objectBuffer.objects[gl_BaseInstance].model;
+	mat4 modelMatrix = objectBuffer.objects[pushConstants.objectId].finalModelMatrix;
 	mat4 transformMatrix = (cameraData.viewproj * modelMatrix);
 	gl_Position = transformMatrix * vec4(vPosition, 1.0f);
 	fragColor = vColor;

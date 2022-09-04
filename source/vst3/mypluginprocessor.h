@@ -34,11 +34,6 @@ namespace ReaShader {
 	IVideoFrame* processVideoFrame(IREAPERVideoProcessor* vproc, const double* parmlist, int nparms, double project_time, double frate, int force_format);
 	bool getVideoParam(IREAPERVideoProcessor* vproc, int idx, double* valueOut);
 
-	// reaper api functions
-
-	// type 0=OK,1=OKCANCEL,2=ABORTRETRYIGNORE,3=YESNOCANCEL,4=YESNO,5=RETRYCANCEL : ret 1=OK,2=CANCEL,3=ABORT,4=RETRY,5=IGNORE,6=YES,7=NO
-	static int (*ShowMessageBox)(const char* msg, const char* title, int type);
-
 	//------------------------------------------------------------------------
 	//  ReaShaderProcessor
 	//------------------------------------------------------------------------
@@ -111,9 +106,11 @@ namespace ReaShader {
 		vkt::vktPhysicalDevice* vktPhysicalDevice;
 		vkt::vktDevice* vktDevice;
 
-		uint32_t FRAME_W{ 0 }, FRAME_H{ 0 };
+		// must be greater than 0
+		uint32_t FRAME_W{ 1 }, FRAME_H{ 1 };
 
 		vkt::vktAllocatedImage* vktFrameTransfer;
+		vkt::vktAllocatedImage* vktPostProcessSource;
 		vkt::vktAllocatedImage* vktColorAttachment;
 		vkt::vktAllocatedImage* vktDepthAttachment;
 
