@@ -30,11 +30,3 @@ if(-not $skipValidator){
 
 #   REASHADER  
 
-# compile shaders
-cd "$($env:project_root_dir)\source\shaders"
-
-glslc -fshader-stage=vert vert.glsl -o vert.spv
-if(-not $?){ end }
-glslc -fshader-stage=frag frag.glsl -o frag.spv
-if(-not $?){ end }
-log "Shaders compiled"

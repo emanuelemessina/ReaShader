@@ -458,10 +458,10 @@ namespace vkt {
 	};
 
 	struct RenderObject {
-		Mesh* mesh;
+		Mesh* mesh = nullptr;
 
 		Material* material;
 
-		glm::mat4 transformMatrix;
+		glm::mat4 localTransformMatrix = glm::mat4{ 1.0f };
 	};
 }

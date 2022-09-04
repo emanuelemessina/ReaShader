@@ -19,6 +19,7 @@ void main()
 {
 	//outColor = vec4(fragColor + sceneData.ambientColor.xyz, 1.0);
 	//outColor = vec4(texCoord.x,texCoord.y,0.5f,1.0f);
-	vec4 color = texture(tex1,texCoord).xyzw;
-	outColor = color;
+	//vec4 color = texture(tex1,texCoord).xyzw;
+	vec4 color = vec4(texture(tex1,texCoord).xyz, 1.f);
+	outColor = color + vec4(.2f, .2f, .2f, 0.f);
 }

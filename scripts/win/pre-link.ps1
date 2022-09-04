@@ -41,6 +41,19 @@ if(-not $?){ end }
 
 #   REASHADER
 
+# compile shaders
+cd "$($env:project_root_dir)\source\shaders"
+
+glslc -fshader-stage=vert vert.glsl -o vert.spv
+if(-not $?){ end }
+glslc -fshader-stage=frag frag.glsl -o frag.spv
+if(-not $?){ end }
+glslc -fshader-stage=vert pp_vert.glsl -o pp_vert.spv
+if(-not $?){ end }
+glslc -fshader-stage=frag pp_frag.glsl -o pp_frag.spv
+if(-not $?){ end }
+log "Shaders compiled"
+
 # copy resources
 cmake -E copy_directory "$($env:project_root_dir)\source\shaders" "$($env:assets_out_dir)\shaders"
 if(-not $?){ end }
