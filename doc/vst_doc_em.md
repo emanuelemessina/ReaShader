@@ -712,7 +712,8 @@ tresult PLUGIN_API ReaShaderProcessor::setActive(TBool state){
         }
 	}
 	else {
-		delete m_videoproc; // --> not sure about memory leak otherwise (terminate or destructor do not work if put there), also makes validator fail
+        if(m_videoproc)
+		    delete m_videoproc; // --> processing functions continue running and crashes (terminate or destructor do not work if put there)
 	}
     ...
 }
@@ -720,9 +721,7 @@ tresult PLUGIN_API ReaShaderProcessor::setActive(TBool state){
 
 <br>
 
-**IMPORTANT**: make sure to free Reaper API objects as soon as possible otherwise Reaper will crash on VST removal.
-
-*Remarks*: `validator.exe` crashes with `delete m_videoproc` for some reason. Comment the validator out in the post-build event command.
+**IMPORTANT**: make sure to free Reaper API objects as soon as possible otherwise Reaper will crash on VST removal for various reasons.
 
 <br>
 

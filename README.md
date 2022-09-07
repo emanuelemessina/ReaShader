@@ -66,6 +66,22 @@ Use [sln-make](http://github.com/emanuelemessina/sln-make) to apply Visual Studi
 
 <br>
 
+## Install
+
+<br>
+
+### Windows
+
+<br>
+
+- Make sure to have all the **VC Redist** updated to the latest version. It can be downloaded from Microsoft website.
+
+- Make sure to have the latest version of **Vulkan**. It's automatically shipped with the graphics driver, so update it if needed. Check the vulkan version with `vulkaninfo`.
+
+- If the plugin is still not recognised by Reaper, try running `validator.exe` on the actual `.vst3` and search for messages like `"exception"` or `"reashader crashed"`.
+
+<br>
+
 ## Development
 
 <br>

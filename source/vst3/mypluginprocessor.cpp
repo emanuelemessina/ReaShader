@@ -175,6 +175,11 @@ namespace ReaShader {
 				}
 			}
 		}
+		else {
+			if (m_videoproc)
+				delete m_videoproc; // MUST !! (otherwise continue running processing)
+			// also must be here otherwise crash
+		}
 
 		return AudioEffect::setActive(state);
 	}
