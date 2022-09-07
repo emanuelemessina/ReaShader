@@ -51,7 +51,7 @@
 namespace vkt {
 
 #ifdef NDEBUG
-	const bool enableVkValidationLayers = true;
+	const bool enableVkValidationLayers = false;
 #else
 	const bool enableVkValidationLayers = true;
 #endif
