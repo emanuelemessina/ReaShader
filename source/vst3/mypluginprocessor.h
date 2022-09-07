@@ -91,6 +91,8 @@ namespace ReaShader {
 
 		FUnknown* context;
 
+		bool exceptionOnInitialize{ false };
+
 		rParamsMap rParams;
 		RSData* m_data;
 

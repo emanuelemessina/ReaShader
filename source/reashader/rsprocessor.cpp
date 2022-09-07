@@ -1296,6 +1296,7 @@ namespace ReaShader {
 		{
 			std::cerr << "Device does not support blitting to linear tiled images, using copy instead of blit!" << std::endl;
 		}
+
 	}
 
 	void createRenderTargets(ReaShaderProcessor* rs) {

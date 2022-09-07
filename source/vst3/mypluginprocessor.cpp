@@ -112,6 +112,7 @@ namespace ReaShader {
 			initVulkan();
 		}
 		catch (const std::exception& e) {
+			exceptionOnInitialize = true;
 			std::cerr << (std::string("Exception: ") + e.what()).c_str() << "ReaShader crashed..." << std::endl;
 			return kResultFalse;
 		}
@@ -126,7 +127,8 @@ namespace ReaShader {
 
 		// clean up vulkan
 		try {
-			cleanupVulkan();
+			if (!exceptionOnInitialize)
+				cleanupVulkan();
 		}
 		catch (const std::exception& e) {
 			std::cerr << (std::string("Exception: ") + e.what()).c_str() << "ReaShader crashed..." << std::endl;
@@ -172,9 +174,6 @@ namespace ReaShader {
 					}
 				}
 			}
-		}
-		else {
-			delete m_videoproc; // --> !!MUST!! OTHERWISE MEMORY ACCESS VIOLATION (terminate or destructor do not work)
 		}
 
 		return AudioEffect::setActive(state);
