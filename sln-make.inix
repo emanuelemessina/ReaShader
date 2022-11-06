@@ -58,6 +58,7 @@ AssetsOutDir = $(VST3BundleOutDir)\Resources\assets
     set msbuild_project_dir=$(MSBuildProjectDirectory)
     set target_path=$(TargetPath)
     set vst3_bundle_out_dir=$(VST3BundleOutDir)
+    set project_name=$(ProjectName).vst3
 
     :: run post-build script
 

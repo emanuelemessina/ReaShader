@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"path": "..\\..\\vst-sdk-bundle\\vst3sdk"
+		}
+	],
+	"settings": {}
+}
