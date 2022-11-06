@@ -282,6 +282,33 @@ Use inline
 
 <br>
 
+### **Lists**
+
+<br>
+
+***Must use this namespace***
+```powershell
+using namespace System.Collections.Generic
+```
+
+<br>
+
+List of generic objects
+```powershell
+$objs = [List[PSObject]]::new();
+```
+\
+Add element to list
+```powershell
+$objs.Add($obj)
+```
+
+<br>
+
+---
+
+<br>
+
 ### **Hashtables**
 
 <br>
@@ -347,6 +374,30 @@ Escape single
 Escape all
 ```powershell
 'this is $("all text")'
+```
+
+<br>
+
+---
+
+<br>
+
+### **Regex**
+
+<br>
+
+Get matches in $str against the pattern (**global**)
+```powershell
+$m = [regex]::matches($str , '\*(\d)');
+```
+\
+Get capture groups in matches
+```powershell
+foreach ($match in $m){
+    $match.Groups[0] # the entire match
+    $match.Groups[1] # the first capture group
+    # ... etc
+}
 ```
 
 <br>
@@ -432,7 +483,6 @@ if($psISE){ ... }
 <br>
 
 Check if file exists
-
 ```powershell
 Test-Path -Path <PATH to FILE> -PathType Leaf
 ```
@@ -461,6 +511,32 @@ Join paths
 ```powershell
 Join-Path $path1 $path2
 ```
+\
+Create directory structure if not present
+```powershell
+[System.IO.Directory]::CreateDirectory("path\folder\subfolder")
+```
+\
+Copy entire folder with contents to location
+```powershell
+Copy-Item "path\to\mydir" -Destination "dest\parentdir" -Recurse
+# will be copied as -> dest\parentdir\mydir
+```
+
+<br>
+
+### **Read from file**
+
+<br>
+
+Read as ASCII string
+```powershell
+Get-Content -Path "path\to\file"
+```
+
+<br>
+
+---
 
 <br>
 

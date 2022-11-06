@@ -96,6 +96,8 @@ file(GLOB_RECURSE SOURCE_FILES
 
      "README.md"
      "sln-make.inix"
+
+     ".vscode/ReaShader.code-workspace"
 )
 
 ##############################################################################
