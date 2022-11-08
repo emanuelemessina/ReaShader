@@ -29,7 +29,7 @@ else()
     message(FATAL_ERROR "Git not found!")
 endif()
 
-set(RS_CGV_PATH CACHE PATH "GLM library include path")
+set(RS_CGV_PATH CACHE PATH "cmake-git-versioning module path")
 
 if(NOT EXISTS ${RS_CGV_PATH})
     message(FATAL_ERROR "Invalid path to cmake-git-versioning!")
@@ -58,11 +58,20 @@ set(RS_STB_PATH "$ENV{VK_SDK_PATH}/../stb" CACHE PATH "STB library include path"
 
 include_directories (
     "$ENV{VK_SDK_PATH}/include"
+    
     "external/reaper-sdk/sdk"
     "external/reaper-sdk/WDL"
+    
     "external/cwalk"
+
+    "external/restinio/dev/asio/include"
+    "external/restinio/dev/nodejs/http_parser"
+    "external/restinio/dev"
+    "external/restinio/dev/fmt/include"
+
     "source/vst3"
     "source/reashader"
+    
     ${RS_GLM_PATH}
     "${RS_VMA_PATH}/include"
     ${RS_TOL_PATH}
@@ -81,24 +90,32 @@ add_compile_definitions(
 
 # SOURCES
 
+# quick recursive search
 file(GLOB_RECURSE SOURCE_FILES
-     "source/*.h"
-     "source/*.cpp"
+    "source/*.h"
+    "source/*.cpp"
 
-     "source/*.glsl"
-     
-     "doc/*.md"
+    "source/*.glsl"
+    
+    "doc/*.md"
 
-     "scripts/*.ps1"
+    "scripts/*.ps1"
 
-     "external/reaper-sdk/WDL/lice/lice.cpp"
-     "external/cwalk/cwalk.c"
+    "external/reaper-sdk/WDL/lice/lice.cpp"
+    "external/cwalk/cwalk.c"
+    "external/restinio/dev/fmt/src/format.cc"
+    "external/restinio/dev/nodejs/http_parser/http_parser.c"
 
-     "README.md"
-     "sln-make.inix"
+    "sln-make.inix"
 
-     ".vscode/ReaShader.code-workspace"
+    ".vscode/ReaShader.code-workspace"
 )
+# specific files
+file (GLOB SOURCE_FILES_2 LIST_DIRECTORIES FALSE
+    "README.md"
+)
+# merge lists
+list (APPEND SOURCE_FILES ${SOURCE_FILES_2})
 
 ##############################################################################
 #
@@ -215,7 +232,7 @@ elseif(SMTG_WIN)
 
         # startup project
         set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${PROJECT_NAME}) 
-       
+
     endif()
 
 # CONFIGURE LINUX

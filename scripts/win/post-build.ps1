@@ -10,7 +10,7 @@ function log {
     param($msg)
 
     Write-Host "[ReaShader] $($msg)"
-}scripts/win/post-build.ps1
+}
 
 function end {
     log "[ERROR] Exited with $($lastexitcode)"
