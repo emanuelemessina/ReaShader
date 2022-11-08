@@ -8,9 +8,11 @@ slnDir= build\win
 
 [debug]
 
-attach=true
 flavor=local
-command=S:\_AUDIO\Reaper\reaper.exe
+;attach=true
+;command=S:\_AUDIO\Reaper\reaper.exe
+attach=false
+command=S:\_AUDIO\_VST\VST3PluginTestHost\VST3PluginTestHost.exe
 
 [general]
 

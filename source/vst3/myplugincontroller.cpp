@@ -6,13 +6,14 @@
 #include "myplugincids.h"
 #include "base/source/fstreamer.h"
 
-#include <thread>
 #include <stdio.h>
 #include <chrono>
 
 #include "tools/paths.h"
 
 #include "rsui/rseditor.h"
+
+#include <restinio/all.hpp> // must be included in this translation unit otherwise conflict with windows.h
 
 using namespace Steinberg;
 using namespace VSTGUI;
@@ -39,7 +40,25 @@ namespace ReaShader {
 		parameters.addParameter(STR16("Audio Gain"), STR16("dB"), 0, .5, Vst::ParameterInfo::kCanAutomate, ReaShaderParamIds::uAudioGain);
 		parameters.addParameter(STR16("Video Param"), STR16("units"), 0, .5, Vst::ParameterInfo::kCanAutomate, ReaShaderParamIds::uVideoParam);
 
-		return result;
+		// Launch UI Server Thread
+
+		restinio::running_server_instance_t<restinio::http_server_t<restinio::default_traits_t>>* uiserver_handle = restinio::run_async(
+			restinio::own_io_context(),
+			restinio::server_settings_t<restinio::default_traits_t>{}
+		.port(8080)
+			.address("localhost")
+			.request_handler([](auto req) {
+			return req->create_response().set_body("Hello, World!").done();
+				})
+			.cleanup_func([&] {
+					// called when server is shutting down
+				}),
+					1
+					).release();
+
+				_uiserver = uiserver_handle;
+
+				return result;
 	}
 
 	tresult ReaShaderController::receiveText(const char* text)
@@ -84,6 +103,9 @@ namespace ReaShader {
 	tresult PLUGIN_API ReaShaderController::terminate()
 	{
 		// Here the Plug-in will be de-instanciated, last possibility to remove some memory!
+
+		// terminate uiserver
+		std::any_cast<restinio::running_server_instance_t<restinio::http_server_t<restinio::default_traits_t>>*>(_uiserver)->stop();
 
 		//---do not forget to call parent ------
 		return EditControllerEx1::terminate();

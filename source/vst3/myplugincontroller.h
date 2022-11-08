@@ -17,6 +17,7 @@
 
 #include <thread>
 #include <mutex>
+#include <any>
 
 using namespace Steinberg;
 using namespace Vst;
@@ -82,6 +83,8 @@ namespace ReaShader {
 
 	protected:
 		VST3Editor* editor{ nullptr };
+
+		std::any _uiserver{ nullptr };
 	};
 
 	//------------------------------------------------------------------------

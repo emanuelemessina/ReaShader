@@ -87,7 +87,7 @@ namespace ReaShader {
 
 		friend class ReaShaderController;
 		friend IVideoFrame* processVideoFrame(IREAPERVideoProcessor* vproc, const double* parmlist, int nparms, double project_time, double frate, int force_format);
-		IREAPERVideoProcessor* m_videoproc;
+		IREAPERVideoProcessor* m_videoproc{ nullptr };
 
 		FUnknown* context;
 
