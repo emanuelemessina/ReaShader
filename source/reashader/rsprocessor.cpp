@@ -13,13 +13,11 @@
 
 #include "tools/paths.h"
 
-#define VST3_DIR tools::paths::goUp(tools::paths::getDynamicLibraryDir(), 1)
-#define RESOURCES_DIR tools::paths::join({VST3_DIR,"Resources"})
-#define ASSETS_DIR tools::paths::join({RESOURCES_DIR, "assets"})
+#define GET_ASSET_DIR(asset_dirname) tools::paths::join({ASSETS_DIR, asset_dirname})
 
-#define MESHES_DIR tools::paths::join({ASSETS_DIR, "meshes"})
-#define SHADERS_DIR tools::paths::join({ASSETS_DIR, "shaders"})
-#define IMAGES_DIR tools::paths::join({ASSETS_DIR, "images"})
+#define MESHES_DIR GET_ASSET_DIR("meshes")
+#define SHADERS_DIR GET_ASSET_DIR("shaders")
+#define IMAGES_DIR GET_ASSET_DIR("images")
 
 namespace ReaShader {
 
@@ -848,8 +846,8 @@ namespace ReaShader {
 
 		vktDevice->pDeletionQueue->push_function([=]() {
 			vkDestroyPipeline(vktDevice->device, material.pipeline, nullptr);
-			vkDestroyPipelineCache(vktDevice->device, material.pipelineCache, nullptr);
-			vkDestroyPipelineLayout(vktDevice->device, material.pipelineLayout, nullptr);
+		vkDestroyPipelineCache(vktDevice->device, material.pipelineCache, nullptr);
+		vkDestroyPipelineLayout(vktDevice->device, material.pipelineLayout, nullptr);
 			});
 
 		// ---------
@@ -1052,8 +1050,8 @@ namespace ReaShader {
 
 		vktDevice->pDeletionQueue->push_function([=]() {
 			vkDestroyPipeline(vktDevice->device, material.pipeline, nullptr);
-			vkDestroyPipelineCache(vktDevice->device, material.pipelineCache, nullptr);
-			vkDestroyPipelineLayout(vktDevice->device, material.pipelineLayout, nullptr);
+		vkDestroyPipelineCache(vktDevice->device, material.pipelineCache, nullptr);
+		vkDestroyPipelineLayout(vktDevice->device, material.pipelineLayout, nullptr);
 			});
 
 		// ---------

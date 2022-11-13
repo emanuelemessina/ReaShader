@@ -97,6 +97,10 @@ file(GLOB_RECURSE SOURCE_FILES
 
     "source/*.glsl"
     
+    "source/*.html"
+    "source/*.css"
+    "source/*.js"
+
     "doc/*.md"
 
     "scripts/*.ps1"

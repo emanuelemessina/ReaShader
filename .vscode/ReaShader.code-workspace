@@ -7,5 +7,7 @@
 			"path": "..\\..\\vst-sdk-bundle\\vst3sdk"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"powershell.cwd": "d:\\Library\\Coding\\GitHub\\_Reaper\\ReaShader"
+	}
 }

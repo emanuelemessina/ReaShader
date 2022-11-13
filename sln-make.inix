@@ -25,10 +25,12 @@ outDir=$(VST3BundleOutDir)\win-$(PlatformTarget)\
 
 ; automaticall adds ProjectRootDir to this file location
 
+ScriptsDir = $(ProjectRootDir)\scripts\win
 TargetBuildDir = $(MSBuildProjectDirectory)\VST3\$(Configuration)\$(PlatformTarget)
 VST3BundleOutDir = $(TargetBuildDir)\$(ProjectName).vst3
-ScriptsDir = $(ProjectRootDir)\scripts\win
-AssetsOutDir = $(VST3BundleOutDir)\Resources\assets
+VST3ResourcesOutDir = $(VST3BundleOutDir)\Resources
+AssetsOutDir = $(VST3ResourcesOutDir)\assets
+RSUIOutDir = $(VST3ResourcesOutDir)\rsui
 
 <pre-link> ; pre link batch script block
 
@@ -36,9 +38,10 @@ AssetsOutDir = $(VST3BundleOutDir)\Resources\assets
 
     :: convert macros to env vars
 
-    set vst3_resources_out_dir=$(VST3BundleOutDir)\Resources
+    set vst3_resources_out_dir=$(VST3ResourcesOutDir)
     set project_root_dir=$(ProjectRootDir)
     set assets_out_dir=$(AssetsOutDir)
+    set rsui_out_dir=$(RSUIOutDir)
 
     :: run pre link script
 

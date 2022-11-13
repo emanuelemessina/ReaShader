@@ -15,6 +15,8 @@
 
 #include <restinio/all.hpp> // must be included in this translation unit otherwise conflict with windows.h
 
+#include "tools/paths.h"
+
 using namespace Steinberg;
 using namespace VSTGUI;
 
@@ -30,127 +32,30 @@ namespace ReaShader {
 	{
 		auto router = std::make_unique< router_t >();
 
-		// GET request to homepage.
 		router->http_get("/", [](auto req, auto) {
+
+			try {
+
+			auto sf = restinio::sendfile(tools::paths::join({ RSUI_DIR, "rsui.html" }));
+
 			return
-			init_resp(req->create_response())
-			.set_body("GET request to the homepage.")
-			.done();
-			});
+				req->create_response()
+				.append_header(
+					restinio::http_field::server,
+					"ReaShader UI Server")
+				.append_header_date_field()
+				.append_header(
+					restinio::http_field::content_type,
+					"text/html")
+				.set_body(std::move(sf))
+				.done();
 
-		// POST request to homepage.
-		router->http_post("/", [](auto req, auto) {
-			return
-			init_resp(req->create_response())
-			.set_body("POST request to the homepage.\nbody: " + req->body())
-			.done();
-			});
-
-		// GET request with single parameter.
-		router->http_get("/single/:param", [](auto req, auto params) {
-			return
-			init_resp(req->create_response())
-			.set_body(
-				fmt::format(
-					RESTINIO_FMT_FORMAT_STRING(
-						"GET request with single parameter: '{}'"),
-					restinio::fmtlib_tools::streamed(params["param"])))
-			.done();
-			});
-
-		// POST request with several parameters.
-		router->http_post(R"(/many/:year(\d{4}).:month(\d{2}).:day(\d{2}))",
-			[](auto req, auto params) {
-				return
-				init_resp(req->create_response())
-			.set_body(
-				fmt::format(
-					RESTINIO_FMT_FORMAT_STRING(
-						"POST request with many parameters:\n"
-						"year: {}\nmonth: {}\nday: {}\nbody: {}"),
-					restinio::fmtlib_tools::streamed(params["year"]),
-					restinio::fmtlib_tools::streamed(params["month"]),
-					restinio::fmtlib_tools::streamed(params["day"]),
-					req->body()))
-			.done();
-			});
-
-		// GET request with indexed parameters.
-		router->http_get(R"(/indexed/([a-z]+)-(\d+)/(one|two|three))",
-			[](auto req, auto params) {
-				return
-				init_resp(req->create_response())
-			.set_body(
-				fmt::format(
-					RESTINIO_FMT_FORMAT_STRING(
-						"GET request with indexed parameters:\n"
-						"#0: '{}'\n#1: {}\n#2: '{}'"),
-					restinio::fmtlib_tools::streamed(params[0]),
-					restinio::fmtlib_tools::streamed(params[1]),
-					restinio::fmtlib_tools::streamed(params[2])))
-			.done();
-			});
-
-		// sendfiles
-		router->http_get(
-			R"(/:path(.*)\.:ext(.*))",
-			restinio::path2regex::options_t{}.strict(true),
-			[server_root_dir](auto req, auto params) {
-
-				auto path = req->header().path();
-
-		if (std::string::npos == path.find(".."))
-		{
-			// A nice path.
-
-			const auto file_path =
-				server_root_dir +
-				std::string{ path.data(), path.size() };
-
-			try
-			{
-				auto sf = restinio::sendfile(file_path);
-				auto modified_at =
-					restinio::make_date_field_value(sf.meta().last_modified_at());
-
-				auto expires_at =
-					restinio::make_date_field_value(
-						std::chrono::system_clock::now() +
-						std::chrono::hours(24 * 7));
-
-				return
-					req->create_response()
-					.append_header(
-						restinio::http_field::server,
-						"RESTinio")
-					.append_header_date_field()
-					.append_header(
-						restinio::http_field::last_modified,
-						std::move(modified_at))
-					.append_header(
-						restinio::http_field::expires,
-						std::move(expires_at))
-					.append_header(
-						restinio::http_field::content_type,
-						content_type_by_file_extention(params["ext"]))
-					.set_body(std::move(sf))
-					.done();
-
-			}
-			catch (const std::exception&)
-			{
-				return
-					req->create_response(restinio::status_not_found())
-					.append_header_date_field()
-					.connection_close()
-					.done();
-			}
 		}
-		else
+		catch (const std::exception&)
 		{
-			// Bad path.
 			return
-				req->create_response(restinio::status_forbidden())
+				req->create_response(restinio::status_not_found())
+				.set_body("rsui.html not found!")
 				.append_header_date_field()
 				.connection_close()
 				.done();
@@ -188,23 +93,27 @@ namespace ReaShader {
 
 		// Launch UI Server Thread
 
-		restinio::running_server_instance_t<restinio::http_server_t<restinio::default_traits_t>>* uiserver_handle = restinio::run_async(
+		using traits_t =
+			restinio::traits_t<
+			restinio::asio_timer_manager_t,
+			restinio::null_logger_t,
+			router_t >;
+
+		restinio::running_server_instance_t < restinio::http_server_t<traits_t>>* uiserver_handle = restinio::run_async<traits_t>(
 			restinio::own_io_context(),
-			restinio::server_settings_t<restinio::default_traits_t>{}
+			restinio::server_settings_t<traits_t>{}
 		.port(8080)
 			.address("localhost")
-			.request_handler([](auto req) {
-			ui_server_handler();
-				})
+			.request_handler(ui_server_handler())
 			.cleanup_func([&] {
-					// called when server is shutting down
+			// called when server is shutting down
 				}),
 				1
 				).release();
 
-				_uiserver = uiserver_handle;
+		_uiserver = uiserver_handle;
 
-				return result;
+		return result;
 	}
 
 	tresult ReaShaderController::receiveText(const char* text)
