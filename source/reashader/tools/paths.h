@@ -3,6 +3,14 @@
 #include <string>
 #include <vector>
 
+#define VST3_BUNDLE_DIR tools::paths::goUp(tools::paths::getDynamicLibraryDir(), 1)
+#define RESOURCES_DIR tools::paths::join({VST3_BUNDLE_DIR,"Resources"})
+
+#define GET_RESOURCE_DIR(resource_dirname) tools::paths::join({RESOURCES_DIR, resource_dirname})
+
+#define ASSETS_DIR GET_RESOURCE_DIR("assets")
+#define RSUI_DIR GET_RESOURCE_DIR("rsui")
+
 namespace tools {
 
 	namespace paths {

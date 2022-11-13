@@ -6,7 +6,6 @@ function log {
     Write-Host "[ReaShader] $($msg)"
 }
 
-
 function end {
     log "[ERROR] Exited with $($lastexitcode)"
     Exit
@@ -66,3 +65,7 @@ log "Copied images"
 cmake -E copy_directory "$($env:project_root_dir)\resource\meshes" "$($env:assets_out_dir)\meshes"
 if(-not $?){ end }
 log "Copied meshes"
+
+cmake -E copy_directory "$($env:project_root_dir)\source\reashader\rsui\uiserver" "$($env:rsui_out_dir)"
+if(-not $?){ end }
+log "Copied rsui"
