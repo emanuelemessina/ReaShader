@@ -15,7 +15,9 @@
 
 #include <restinio/all.hpp> // must be included in this translation unit otherwise conflict with windows.h
 
-#include "tools/paths.h"
+#include <nlohmann/json.hpp>
+
+#include <fmt/core.h>
 
 using namespace Steinberg;
 using namespace VSTGUI;
@@ -28,7 +30,9 @@ namespace ReaShader {
 
 	using router_t = restinio::router::express_router_t<>;
 
-	auto ui_server_handler()
+	using json = nlohmann::json;
+
+	auto ui_server_handler(ReaShaderController* rs)
 	{
 		auto router = std::make_unique< router_t >();
 
@@ -51,16 +55,43 @@ namespace ReaShader {
 				.done();
 
 		}
-		catch (const std::exception&)
+		catch (const std::exception& e)
 		{
+			std::string body = fmt::format("rsui.html not found! <br> Details: <br> {0}", e.what());
+
 			return
 				req->create_response(restinio::status_not_found())
-				.set_body("rsui.html not found!")
+				.set_body(body)
 				.append_header_date_field()
 				.connection_close()
 				.done();
 		}
 
+			});
+
+		router->http_put("/", [rs](auto req, auto) {
+
+			try {
+
+			auto msg = json::parse(req->body().c_str());
+			rs->setParamNormalized((Steinberg::Vst::ParamID)msg["paramId"], (Steinberg::Vst::ParamValue)msg["value"]);
+
+		}
+		catch (const std::exception& e) {
+
+			std::string body = fmt::format("invalid message format! <br> Details: <br> {0}", e.what());
+
+			return
+				req->create_response(restinio::status_not_acceptable())
+				.set_body(body)
+				.append_header_date_field()
+				.done();
+		}
+
+		return
+			req->create_response(restinio::status_ok())
+			.append_header_date_field()
+			.done();
 			});
 
 		router->non_matched_request_handler(
@@ -104,7 +135,7 @@ namespace ReaShader {
 			restinio::server_settings_t<traits_t>{}
 		.port(8080)
 			.address("localhost")
-			.request_handler(ui_server_handler())
+			.request_handler(ui_server_handler(this))
 			.cleanup_func([&] {
 			// called when server is shutting down
 				}),

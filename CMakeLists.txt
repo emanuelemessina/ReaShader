@@ -68,6 +68,7 @@ include_directories (
     "external/restinio/dev/nodejs/http_parser"
     "external/restinio/dev"
     "external/restinio/dev/fmt/include"
+    "external/json/include"
 
     "source/vst3"
     "source/reashader"
