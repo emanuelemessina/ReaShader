@@ -862,3 +862,36 @@ If you use the `.rc` file, the resources are accessed by their ID, and that tag 
 \
 \
 Instead, ditch the `.rc` file and place the resources in the `Resources` directory, then either using the `CView(UIDescription)` constructor or the VSTEditor `.uidesc` file, reference resource files with their relative path from the `Resources` folder.
+
+<br>
+
+### Controller
+
+<br>
+
+Things you can do in `Controller::createView`
+```c++
+IPlugView* PLUGIN_API ReaShaderController::createView(FIDString name)
+	{
+		// Here the Host wants to open your editor (if you have one)
+		if (FIDStringsEqual(name, Vst::ViewType::kEditor))
+		{
+			// create your editor here and return a IPlugView ptr of it
+			editor = new RSEditor(this, "view", "myplugineditor.uidesc");
+
+			auto description = editor->getUIDescription();
+
+            // create view template with attributes
+			std::string viewName = "myview";
+			auto* debugAttr = new VSTGUI::UIAttributes();
+			debugAttr->setAttribute(VSTGUI::UIViewCreator::kAttrClass, "CViewContainer");
+			debugAttr->setAttribute("size", "300, 300");
+
+			description->addNewTemplate(viewName.c_str(), debugAttr);
+
+			//view->exchangeView("myview");
+			return editor;
+		}
+		return nullptr;
+	}
+```

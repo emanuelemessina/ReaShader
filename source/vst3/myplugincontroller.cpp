@@ -92,28 +92,13 @@ namespace ReaShader {
 
 		router->http_put("/", [rs](auto req, auto) {
 
-			try {
-
-			//auto msg = json::parse(req->body().c_str());
-			//rs->setParamNormalized((Steinberg::Vst::ParamID)msg["paramId"], (Steinberg::Vst::ParamValue)msg["value"]);
 			rs->sendTextMessage(req->body().c_str());
-		}
-		catch (const std::exception& e) {
-
-			std::string body = fmt::format("invalid message format! <br> Details: <br> {0}", e.what());
-
-			return
-				req->create_response(restinio::status_not_acceptable())
-				.set_body(body)
-				.append_header_date_field()
-				.done();
-		}
-
+		
 		return
 			req->create_response(restinio::status_ok())
 			.append_header_date_field()
 			.done();
-			});
+			});	
 
 		router->non_matched_request_handler(
 			[](auto req) {
@@ -252,16 +237,6 @@ namespace ReaShader {
 			// create your editor here and return a IPlugView ptr of it
 			editor = new RSEditor(this, "view", "myplugineditor.uidesc");
 
-			auto description = editor->getUIDescription();
-
-			std::string viewName = "myview";
-			auto* debugAttr = new VSTGUI::UIAttributes();
-			debugAttr->setAttribute(VSTGUI::UIViewCreator::kAttrClass, "CViewContainer");
-			debugAttr->setAttribute("size", "300, 300");
-
-			description->addNewTemplate(viewName.c_str(), debugAttr);
-
-			//view->exchangeView("myview");
 			return editor;
 		}
 		return nullptr;
