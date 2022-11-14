@@ -15,7 +15,10 @@
 #include <stdlib.h>     /* srand, rand */
 #include <time.h>       /* time */
 
+#include <nlohmann/json.hpp>
+
 using namespace Steinberg;
+using json = nlohmann::json;
 
 namespace ReaShader {
 
@@ -70,10 +73,15 @@ namespace ReaShader {
 
 	tresult ReaShaderProcessor::receiveText(const char* text)
 	{
-		// received from Controller
-		fprintf(stderr, "[AGain] received: ");
-		fprintf(stderr, "%s", text);
-		fprintf(stderr, "\n");
+		// received param update message from controller
+		try {
+			auto msg = json::parse(text);
+			rParams.at((Steinberg::Vst::ParamID)msg["paramId"]) = (Steinberg::Vst::ParamValue)msg["value"];
+		}
+		catch (const std::exception& e) {
+			std::cerr << (std::string("[ReaShaderProcessor] Exception during message parsing: ") + e.what()).c_str() << std::endl;
+			return kResultFalse;
+		}
 
 		return kResultOk;
 	}

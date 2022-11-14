@@ -28,9 +28,30 @@ namespace ReaShader {
 	// ReaShaderController Implementation
 	//------------------------------------------------------------------------
 
+	bool port_in_use(unsigned short port) {
+		using namespace restinio::asio_ns;
+		using ip::tcp;
+
+		io_service svc;
+		tcp::acceptor a(svc);
+
+		error_code ec;
+		a.open(tcp::v4(), ec) || a.bind({ tcp::v4(), port }, ec);
+
+		return ec == error::address_in_use;
+	}
+
 	using router_t = restinio::router::express_router_t<>;
 
 	using json = nlohmann::json;
+
+	using uiserver_traits_t =
+		restinio::traits_t<
+		restinio::asio_timer_manager_t,
+		restinio::null_logger_t,
+		router_t >;
+
+	using uiserver_instance_t = restinio::running_server_instance_t < restinio::http_server_t<uiserver_traits_t>>;
 
 	auto ui_server_handler(ReaShaderController* rs)
 	{
@@ -73,9 +94,9 @@ namespace ReaShader {
 
 			try {
 
-			auto msg = json::parse(req->body().c_str());
-			rs->setParamNormalized((Steinberg::Vst::ParamID)msg["paramId"], (Steinberg::Vst::ParamValue)msg["value"]);
-
+			//auto msg = json::parse(req->body().c_str());
+			//rs->setParamNormalized((Steinberg::Vst::ParamID)msg["paramId"], (Steinberg::Vst::ParamValue)msg["value"]);
+			rs->sendTextMessage(req->body().c_str());
 		}
 		catch (const std::exception& e) {
 
@@ -124,16 +145,18 @@ namespace ReaShader {
 
 		// Launch UI Server Thread
 
-		using traits_t =
-			restinio::traits_t<
-			restinio::asio_timer_manager_t,
-			restinio::null_logger_t,
-			router_t >;
+		// random available port
+		uint16_t port;
+		do {
+			// random port in iana ephemeral range
+			port = rand() % (65535 - 49152 + 1) + 49152;
+		}
+		while(port_in_use(port));
 
-		restinio::running_server_instance_t < restinio::http_server_t<traits_t>>* uiserver_handle = restinio::run_async<traits_t>(
+		uiserver_instance_t* uiserver_handle = restinio::run_async(
 			restinio::own_io_context(),
-			restinio::server_settings_t<traits_t>{}
-		.port(8080)
+			restinio::server_settings_t<uiserver_traits_t>{}
+		.port(port)
 			.address("localhost")
 			.request_handler(ui_server_handler(this))
 			.cleanup_func([&] {
@@ -191,7 +214,7 @@ namespace ReaShader {
 		// Here the Plug-in will be de-instanciated, last possibility to remove some memory!
 
 		// terminate uiserver
-		std::any_cast<restinio::running_server_instance_t<restinio::http_server_t<restinio::default_traits_t>>*>(_uiserver)->stop();
+		std::any_cast<uiserver_instance_t*>(_uiserver)->stop();
 
 		//---do not forget to call parent ------
 		return EditControllerEx1::terminate();
@@ -205,6 +228,7 @@ namespace ReaShader {
 			return kResultFalse;
 
 		// basically the same code in the processor
+		// update ui with processor state (setParam)
 
 		IBStreamer streamer(state, kLittleEndian);
 
@@ -217,23 +241,6 @@ namespace ReaShader {
 		}
 
 		return kResultOk;
-	}
-
-	//------------------------------------------------------------------------
-	tresult PLUGIN_API ReaShaderController::setState(IBStream* state)
-	{
-		// Here you get the state of the controller
-
-		return kResultTrue;
-	}
-
-	//------------------------------------------------------------------------
-	tresult PLUGIN_API ReaShaderController::getState(IBStream* state)
-	{
-		// Here you are asked to deliver the state of the controller (if needed)
-		// Note: the real state of your plug-in is saved in the processor
-
-		return kResultTrue;
 	}
 
 	//------------------------------------------------------------------------
@@ -299,4 +306,22 @@ namespace ReaShader {
 	}
 
 	//------------------------------------------------------------------------
+
+	tresult PLUGIN_API ReaShaderController::setState(IBStream* state)
+	{
+		// Here you get the state of the controller
+
+		return kResultTrue;
+	}
+
+	//------------------------------------------------------------------------
+	tresult PLUGIN_API ReaShaderController::getState(IBStream* state)
+	{
+		// Here you are asked to deliver the state of the controller (if needed)
+		// Note: the real state of your plug-in is saved in the processor
+
+		return kResultTrue;
+	}
+	//------------------------------------------------------------------------
+
 } // namespace ReaShader
