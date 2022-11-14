@@ -497,19 +497,6 @@
 						}
 					}
 				}
-			},
-			"myview": {
-				"attributes": {
-					"background-color": "~ BlackCColor",
-					"background-color-draw-style": "filled and stroked",
-					"class": "CViewContainer",
-					"mouse-enabled": "true",
-					"opacity": "1",
-					"origin": "0, 0",
-					"size": "300, 300",
-					"transparent": "false",
-					"wants-focus": "false"
-				}
 			}
 		}
 	}

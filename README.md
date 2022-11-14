@@ -24,17 +24,35 @@ Donwload [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/) and install (preferabl
 
 <br>
 
-### Other libraries
+### Graphics libraries
 
 <br>
 
-The following libraries are required.
-Can be placed them next to the `x.x.x.x` folder inside the Vulkan install location as CMake has the include paths defaulted to there.
+The following libraries can be placed them next to the `x.x.x.x` folder inside the Vulkan install location as CMake has the include paths defaulted to there.
 
 - [GLM](https://github.com/g-truc/glm)
 - [Tiny Obj Loader](https://github.com/tinyobjloader/tinyobjloader)
 - [STB](https://github.com/nothings/stb)
 - [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
+
+<br>
+
+### Other libraries
+
+<br>
+
+The following libraries can be placed under `/external` , as they are logically source code
+
+- [nlohmann-json](https://github.com/nlohmann/json)
+
+<br>
+
+### CMake modules
+
+<br>
+
+The following CMake modules are required
+
 - [cmake-git-versioning](https://github.com/emanuelemessina/cmake-git-versioning)
 
 <br>
@@ -47,7 +65,9 @@ Can be placed them next to the `x.x.x.x` folder inside the Vulkan install locati
 
 <br>
 
-Run CMake with build generation directory `/build/<os>` folder.
+First, build VMA for both debug and release (to have the `.lib` files).
+
+Then, run CMake with build generation directory `/build/<os>` folder.
 <br>
 - For Windows: `<os>` is `win` , Compiler is **Visual Studio**
 - For Mac: `<os>` is `mac` , Compiler is **Xcode**
@@ -60,13 +80,15 @@ Run CMake with build generation directory `/build/<os>` folder.
 
 Use [sln-make](http://github.com/emanuelemessina/sln-make) to apply Visual Studio settings.
 
+Take ownership of `C:\Program Files\Common Files` as the plugin will be copied there after building.
+
 <br>
 
 ---
 
 <br>
 
-## Install
+## Run
 
 <br>
 
@@ -116,6 +138,8 @@ See [Development](doc/Development.md).
 - STB
 - Tiny Obj Loader
 - cwalk
+- RESTinio
+- nlohmann-json
 
 <br>
 
@@ -123,9 +147,9 @@ See [Development](doc/Development.md).
 
 <br>
 
-- VST by Steinberg Media Technologies GmbH
-- Vulkan by Khronos Group
-- Reaper SDK by Cockos
+- VST _by Steinberg Media Technologies GmbH_
+- Vulkan _by Khronos Group_
+- Reaper SDK _by Cockos_
 
 <br>
 
