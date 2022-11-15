@@ -79,12 +79,19 @@ namespace ReaShader {
 			END_DEFINE_INTERFACES(EditController)
 			DELEGATE_REFCOUNT(EditController)
 
-			//------------------------------------------------------------------------
+		//------------------------------------------------------------------------
+
+		// GETTERS
+
+		uint16_t getUiServerPort() { return _uiserver_port; }
+
+	//------------------------------------------------------------------------
 
 	protected:
-		VST3Editor* editor{ nullptr };
+		VST3Editor* _editor{ nullptr };
 
 		std::any _uiserver{ nullptr };
+		uint16_t _uiserver_port{ 0 };
 	};
 
 	//------------------------------------------------------------------------

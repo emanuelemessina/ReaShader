@@ -1,13 +1,38 @@
 # VST 3 Documentation
 _by Emanuele Messina_
 
+<style>
+h1{
+
+}
+h2{
+
+}
+h3{
+    color: lightgreen;
+}
+h4{
+    font-weight: bold;
+
+}
+h4::before{
+    content: "◆";
+    margin-right: 10px;
+    opacity: 60%;
+}
+summary{
+    color: cyan;
+    cursor: pointer;
+}
+</style>
+
 <br>
 
 ## Setup the project
 
 <br>
 
-### **Root CMakeLists.txt**
+### Root CMakeLists.txt
 
 <br>
 
@@ -239,7 +264,7 @@ endif(SMTG_MAC)
 
 <br>
 
-### **Configure Solution**
+### Configure Solution
 
 <br>
 
@@ -249,7 +274,7 @@ After CMake has generated the build files, you may want to customize some settin
 
 <br>
 
-### **Visual Studio settings**
+### Visual Studio settings
 
 <br>
 
@@ -259,7 +284,7 @@ Some concepts regarding VST apply to all platforms.
 
 <br>
 
-#### <span style="color:lightgreen">Solution custom property sheet</span>
+#### Solution custom property sheet
 
 <br>
 
@@ -272,7 +297,7 @@ In fact the generated folder will follow [this output folder structure](#output-
 
 <br>
 
-#### <span style="color:lightgreen">Solution properties overrides</span>
+#### Solution properties overrides
 
 <br>
 
@@ -282,7 +307,7 @@ In fact the generated folder will follow [this output folder structure](#output-
 
 <br>
 
-#### <span style="color:lightgreen">Custom build steps overrides</span>
+#### Custom build steps overrides
 
 <br>
 
@@ -649,7 +674,7 @@ The SDK provides a class called FUID for this purpose.
 
 <br>
 
-### <span style="color:lightgreen">API Connection</span>
+### API Connection
 
 <br>
 
@@ -657,7 +682,7 @@ The SDK provides a class called FUID for this purpose.
 
 <br>
 
-#### **VST 2.4**
+#### VST 2.4
 
 <br>
 
@@ -681,7 +706,7 @@ Then it can be fed to api functions obtained with another audioMaster call, eg:
 
 <br>
 
-#### **VST 3**
+#### VST 3
 
 <br>
 
@@ -729,7 +754,7 @@ tresult PLUGIN_API ReaShaderProcessor::setActive(TBool state){
 
 <br>
 
-### <span style="color:lightgreen">IREAPERVideoProcessor</span>
+### IREAPERVideoProcessor
 
 <br>
 
@@ -745,7 +770,7 @@ Fortunately, the IREAPERVideoProcessor class specifies a `void* userdata` pointe
 
 <br>
 
-### <span style="color:lightgreen">RSData</span>
+### RSData
 
 <br>
 
@@ -818,7 +843,7 @@ IVideoFrame* processVideoFrame(IREAPERVideoProcessor* vproc, const double* parml
 
 <br>
 
-### <span style="color:lightgreen">IVideoFrame</span>
+### IVideoFrame
 
 <br>
 
@@ -894,4 +919,250 @@ IPlugView* PLUGIN_API ReaShaderController::createView(FIDString name)
 		}
 		return nullptr;
 	}
+```
+\
+Register a subcontroller (and pass parameters to editor)
+```c++
+// the controller must extend VST3EditorDelegate as to implement createSubController
+class ReaShaderController : public Steinberg::Vst::EditControllerEx1, public VSTGUI::VST3EditorDelegate
+
+// .......
+
+IController* ReaShaderController::createSubController(UTF8StringPtr name,
+		const IUIDescription* description,
+		VST3Editor* editor)
+	{
+		if (UTF8StringView(name) == "RSUI")
+		{
+			auto* controller = new RSUIController(this, editor, description);
+			
+            // pass reference of subcontroller to editor
+            RSEditor* rseditor = dynamic_cast<RSEditor*>(editor);
+			rseditor->subController = controller;
+			
+            return controller;
+		}
+		return nullptr;
+	}
+```
+
+<br>
+
+### Custom editor
+
+<br>
+
+Declaration
+```c++
+class RSEditor
+		: public VST3Editor, // base class
+		public ViewMouseListenerAdapter // ex: listen to mouse events
+	{
+```
+
+<br>
+
+### Custom subcontroller
+
+<br>
+
+Declaration
+```c++
+class RSUIController
+		: public VSTGUI::IController, // base class
+		public VSTGUI::ViewListenerAdapter // listen to view events
+	{
+```
+\
+From `IControlListener`
+```c++
+//--- from IControlListener ----------------------
+
+		void valueChanged(CControl* pControl) override {
+			switch (pControl->getTag()) {
+
+			}
+		}
+
+		void controlBeginEdit(CControl* pControl) override {
+			switch (pControl->getTag()) {
+				// menu button clicked
+			case tMenuButton:
+				menu->popup();
+				break;
+			}
+		}
+
+		void controlEndEdit(CControl* pControl) override
+		{
+			//if (pControl->getTag() == kSendMessageTag)
+			//{
+			//	if (pControl->getValueNormalized() > 0.5f)
+			//	{
+			//		againController->sendTextMessage(textEdit->getText().data());
+			//		pControl->setValue(0.f);
+			//		pControl->invalid();
+
+			//		//---send a binary message
+			//		if (IPtr<IMessage> message = owned(againController->allocateMessage()))
+			//		{
+			//			message->setMessageID("BinaryMessage");
+			//			uint32 size = 100;
+			//			char8 data[100];
+			//			memset(data, 0, size * sizeof(char));
+			//			// fill my data with dummy stuff
+			//			for (uint32 i = 0; i < size; i++)
+			//				data[i] = i;
+			//			message->getAttributes()->setBinary("MyData", data, size);
+			//			againController->sendMessage(message);
+			//		}
+			//	}
+			//}
+		}
+```
+\
+From `IViewListenerAdapter`
+```c++
+        //--- from IViewListenerAdapter ----------------------
+
+		//--- is called when a view will be deleted: the editor is closed -----
+		void viewWillDelete(CView* view) override
+		{
+
+		}
+		//--- is called when the view is loosing the focus -----------------
+		void viewLostFocus(CView* view) override
+		{
+
+		}
+```
+\
+From `IController`
+```c++
+//--- is called when a view is created -----
+		CView* verifyView(CView* view, const UIAttributes& attributes,
+			const IUIDescription* description) override
+		{
+            ...
+            return view;
+        }
+```
+\
+Get a view attribute
+```c++
+            std::string uidesc_label = "";
+
+            {
+                const std::string* uidesc_label_ptr = attributes.getAttributeValue("uidesc-label");
+                if (uidesc_label_ptr) {
+                    uidesc_label = *uidesc_label_ptr;
+                }
+            }
+```
+\
+Check type of view being verified
+```c++
+            if (CViewContainer* container = dynamic_cast<CViewContainer*> (view)){...}
+            else if (COptionMenu* optionMenu = dynamic_cast<COptionMenu*> (view)){...}
+            else if (CTextButton* button = dynamic_cast<CTextButton*> (view)){...}
+            else if (CTextLabel* label = dynamic_cast<CTextLabel*> (view)){...}
+```
+\
+Check that the view type is a specific view (ex. based on an attribute)
+```c++
+            if (CViewContainer* container = dynamic_cast<CViewContainer*> (view))
+            {
+                if (uidesc_label == l_rsui_container) { ... }
+            }
+```
+\
+Set/Get other attributes on the view
+```c++
+                    // store ref to view for future modifications
+                    rsuiContainer = container;
+					container->setTransparency(true);
+
+					CRect size = container->getViewSize();
+					CPoint origin{};
+					attributes.getPointAttribute("origin", origin);
+
+                    //CView* imageView = new CView({ 0, 0, 100, 100 });
+					//{
+					//	std::string bPath = tools::paths::join({ "assets","images","reashader text.png" });
+					//	CResourceDescription bDesc(bPath.c_str());
+					//	CBitmap* logo = new CBitmap(bDesc);
+					//	imageView->setBackground(logo);
+					//}
+
+					//CTextButton* button = new CTextButton({ 0, 0, 100, 100 }, this, 777, "hey");
+
+					////container->addView(imageView);
+
+					//CTextLabel* label = new CTextLabel(size);
+					//label->setText("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+					//label->setTransparency(true);
+					////container->addView(label, imageView);
+```
+\
+Attributes on a button
+```c++
+                button->setTag(tMenuButton);
+				button->setListener(this);
+```
+\
+Attributes on a text label
+```c++
+                label->setText(FULL_VERSION_STR);
+                label->setBackColor({ 0,0,0,0 });
+        #ifdef DEBUG
+                label->setFrameWidth(2);
+                label->setFrameColor(kRedCColor);
+        #endif
+                label->setFontColor(kWhiteCColor);
+                label->setHoriAlign(hAlign);
+```
+
+<br>
+
+### Views
+
+<br>
+
+_In-depth look on specific views_
+
+<br>
+
+#### Option Menu
+
+<br>
+
+Attributes on an option menu
+```c++
+                menu = optionMenu;
+				menu->setTransparency(true);
+
+				{
+					CCommandMenuItem::Desc desc("Contact developer", editor, "Help", "Contact developer");
+					CMenuItem* item = new CCommandMenuItem(desc);
+					menu->addEntry(item);
+				}
+
+				{
+					CCommandMenuItem::Desc desc("Credits", editor, "Help", "Credits");
+					CMenuItem* item = new CCommandMenuItem(desc);
+					menu->addEntry(item);
+				}
+```
+\
+Pop up the menu with button press
+```c++
+    // in custom controller
+    void controlBeginEdit(CControl* pControl) override {
+			switch (pControl->getTag()) {
+				// menu button clicked
+			case tMenuButton:
+				menu->popup();
+				break;
+			}
+		}
 ```
