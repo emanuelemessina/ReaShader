@@ -93,12 +93,12 @@ namespace ReaShader {
 		router->http_put("/", [rs](auto req, auto) {
 
 			rs->sendTextMessage(req->body().c_str());
-		
+
 		return
 			req->create_response(restinio::status_ok())
 			.append_header_date_field()
 			.done();
-			});	
+			});
 
 		router->non_matched_request_handler(
 			[](auto req) {
@@ -131,17 +131,15 @@ namespace ReaShader {
 		// Launch UI Server Thread
 
 		// random available port
-		uint16_t port;
 		do {
 			// random port in iana ephemeral range
-			port = rand() % (65535 - 49152 + 1) + 49152;
-		}
-		while(port_in_use(port));
+			_uiserver_port = rand() % (65535 - 49152 + 1) + 49152;
+		} while (port_in_use(_uiserver_port));
 
 		uiserver_instance_t* uiserver_handle = restinio::run_async(
 			restinio::own_io_context(),
 			restinio::server_settings_t<uiserver_traits_t>{}
-		.port(port)
+		.port(_uiserver_port)
 			.address("localhost")
 			.request_handler(ui_server_handler(this))
 			.cleanup_func([&] {
@@ -235,9 +233,9 @@ namespace ReaShader {
 		if (FIDStringsEqual(name, Vst::ViewType::kEditor))
 		{
 			// create your editor here and return a IPlugView ptr of it
-			editor = new RSEditor(this, "view", "myplugineditor.uidesc");
+			_editor = new RSEditor(this, "view", "myplugineditor.uidesc");
 
-			return editor;
+			return _editor;
 		}
 		return nullptr;
 	}
@@ -250,7 +248,7 @@ namespace ReaShader {
 		{
 			auto* controller = new RSUIController(this, editor, description);
 			RSEditor* rseditor = dynamic_cast<RSEditor*>(editor);
-			rseditor->subController = controller;
+			rseditor->setSubController(controller);
 			return controller;
 		}
 		return nullptr;
