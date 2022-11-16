@@ -77,9 +77,8 @@ namespace ReaShader {
 			auto msg = json::parse(text);
 			rParams.at((Steinberg::Vst::ParamID)msg["paramId"]) = (Steinberg::Vst::ParamValue)msg["value"];
 		}
-		catch (const std::exception& e) {
-			LOG_EXCEPTION(e, "ReaShaderProcessor", "Exception during message parsing")
-				return kResultFalse;
+		catch (STDEXC e) {
+			// the message is not a param update message
 		}
 
 		return kResultOk;
@@ -205,7 +204,7 @@ namespace ReaShader {
 					Vst::ParamValue value;
 					int32 sampleOffset;
 					int32 numPoints = paramQueue->getPointCount();
-					switch (paramQueue->getParameterId())
+					/*switch (paramQueue->getParameterId())
 					{
 					case ReaShaderParamIds::uAudioGain:
 						if (paramQueue->getPoint(numPoints - 1, sampleOffset, value) == kResultTrue)
@@ -215,6 +214,13 @@ namespace ReaShader {
 						if (paramQueue->getPoint(numPoints - 1, sampleOffset, value) == kResultTrue)
 							rParams.at(uVideoParam) = value;
 						break;
+					}*/
+					if (paramQueue->getPoint(numPoints - 1, sampleOffset, value) == kResultTrue) {
+						// update processor param
+						rParams.at(paramQueue->getParameterId()) = value; 
+						// relay back to frontend
+						json j; j["paramId"] = paramQueue->getParameterId(); j["value"] = value;
+						sendTextMessage(j.dump().c_str());
 					}
 				}
 			}

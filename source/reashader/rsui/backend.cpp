@@ -92,13 +92,18 @@ namespace ReaShader {
 						*req,
 						rws::activation_t::immediate,
 						[&](auto wsh, auto m) {
-							if (rws::opcode_t::text_frame == m->opcode() ||
-							rws::opcode_t::binary_frame == m->opcode() ||
-								rws::opcode_t::continuation_frame == m->opcode())
+							if (rws::opcode_t::text_frame == m->opcode())
 							{
-								// handle incoming message
-								//wsh->send_message(*m);
+								// json with param update recieved from frontend
+								// update param both in controller and processor
 								_update_param(m->payload().c_str());
+							}
+							else if (
+								rws::opcode_t::binary_frame == m->opcode() ||
+								rws::opcode_t::continuation_frame == m->opcode()) {
+								// other type of message recieved
+								// just send it back
+								wsh->send_message(*m);
 							}
 							else if (rws::opcode_t::ping_frame == m->opcode())
 							{
@@ -149,25 +154,29 @@ namespace ReaShader {
 				.address("localhost")
 				.request_handler(_uiserver_handler())
 				.cleanup_func([&] {
-				std::any_cast<ws_registry_t*>(_ws_registry)->clear();
-					}),
-				1
-						).release();
+					
+				}),
+			1
+				).release();
 		}
 		catch (const std::exception& e) {
-			EXCEPTION_OUT(e, "RSUIServer", "couldn't start ui server")
+			EXCEPTION_OUT(e, "RSUIServer", std::format("Couldn't start ui server at port {}", _port).c_str())
 				_failed = true;
 		}
 	}
 	RSUIServer::~RSUIServer() {
-		std::any_cast<uiserver_instance_t*>(_uiserver_handle)->stop();
+		uiserver_instance_t* uiserver_handle = std::any_cast<uiserver_instance_t*>(_uiserver_handle);
+		if (uiserver_handle) {
+			uiserver_handle->stop();
+		}
+		std::any_cast<ws_registry_t*>(_ws_registry)->clear();
 		delete std::any_cast<ws_registry_t*>(_ws_registry);
 	}
 
 	/**
-		 * Sends raw JSON message to processor.
-		 * Parse the JSON and set param normalized (to update the vst ui).
-		 */
+	* Sends raw JSON message to processor.
+	* Parse the JSON and set param normalized (to update the vst ui).
+	*/
 	void RSUIServer::_update_param(const char* json) {
 		using njson = nlohmann::json;
 
@@ -178,6 +187,18 @@ namespace ReaShader {
 		}
 		catch (STDEXC e) {
 			LOG_EXCEPTION(e, "RSUIServer", "malformed json message!");
+		}
+	}
+
+	/**
+	 * Send broadcast message to each ws connection.
+	 */
+	void RSUIServer::sendWSMessage(const char* msg) {
+		auto message = rws::message_t(
+			rws::final_frame, rws::opcode_t::text_frame, msg
+		);
+		for (const auto& [id, handle] : *std::any_cast<ws_registry_t*>(_ws_registry)) {
+			handle->send_message(message);
 		}
 	}
 };

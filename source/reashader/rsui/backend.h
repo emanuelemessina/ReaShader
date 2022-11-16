@@ -15,12 +15,12 @@ namespace ReaShader {
 		RSUIServer& operator= (const RSUIServer&) = delete;
 
 		bool hasError() { return _failed; }
-
 		uint16_t getPort() const { return _port; }
+		void sendWSMessage(const char* msg);
 
 	private:
 		uint16_t _port;
-		std::any _uiserver_handle;
+		std::any _uiserver_handle{ nullptr };
 		std::any _ws_registry;
 		controller* _rsController;
 		bool _failed{ false };
