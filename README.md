@@ -132,14 +132,15 @@ See [Development](doc/Development.md).
 
 <br>
 
-- WDL by Cockos
-- Vulkan Memory Allocator by GPUOpen
-- GLM
-- STB
-- Tiny Obj Loader
-- cwalk
-- RESTinio
-- nlohmann-json
+- [WDL](https://github.com/justinfrankel/WDL)
+- [GLM](https://github.com/g-truc/glm)
+- [Tiny Obj Loader](https://github.com/tinyobjloader/tinyobjloader)
+- [STB](https://github.com/nothings/stb)
+- [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
+- [RESTinio](https://github.com/Stiffstream/restinio)
+- [cwalk](https://github.com/likle/cwalk)
+- [nlohmann-json](https://github.com/nlohmann/json)
+- [boxer](https://github.com/aaronmjacobs/Boxer)
 
 <br>
 
@@ -147,9 +148,9 @@ See [Development](doc/Development.md).
 
 <br>
 
-- VST _by Steinberg Media Technologies GmbH_
-- Vulkan _by Khronos Group_
-- Reaper SDK _by Cockos_
+- [VST](https://www.steinberg.net/developers/) _by Steinberg Media Technologies GmbH_
+- [Vulkan](https://vulkan.lunarg.com/) _by Khronos Group_
+- [Reaper SDK](https://github.com/justinfrankel/reaper-sdk) _by Cockos_
 
 <br>
 

@@ -16,12 +16,12 @@
 #include <time.h>       /* time */
 
 #include <nlohmann/json.hpp>
+#include "tools/exceptions.h"
 
 using namespace Steinberg;
 using json = nlohmann::json;
 
 namespace ReaShader {
-
 	//------------------------------------------------------------------------
 	// ReaShaderProcessor
 	//------------------------------------------------------------------------
@@ -44,7 +44,6 @@ namespace ReaShader {
 
 		m_data->push(&rParams);
 		m_data->push(this);
-
 	}
 
 	tresult PLUGIN_API ReaShaderProcessor::notify(IMessage* message)
@@ -79,18 +78,16 @@ namespace ReaShader {
 			rParams.at((Steinberg::Vst::ParamID)msg["paramId"]) = (Steinberg::Vst::ParamValue)msg["value"];
 		}
 		catch (const std::exception& e) {
-			std::cerr << (std::string("[ReaShaderProcessor] Exception during message parsing: ") + e.what()).c_str() << std::endl;
-			return kResultFalse;
+			LOG_EXCEPTION(e, "ReaShaderProcessor", "Exception during message parsing")
+				return kResultFalse;
 		}
 
 		return kResultOk;
 	}
 
-
 	//------------------------------------------------------------------------
 	ReaShaderProcessor::~ReaShaderProcessor()
 	{
-
 	}
 
 	//------------------------------------------------------------------------
@@ -153,13 +150,11 @@ namespace ReaShader {
 		//--- called when the Plug-in is enable/disable (On/Off) -----
 
 		if (state) {
-
-			// REAPER API (here we are after effOpen equivalent in vst3) 
+			// REAPER API (here we are after effOpen equivalent in vst3)
 
 			// query reaper interface
 			IReaperHostApplication* reaperApp{ nullptr };
 			if (context->queryInterface(IReaperHostApplication_iid, (void**)&reaperApp) == kResultOk) {
-
 				// get create video processor
 				IREAPERVideoProcessor* (*video_CreateVideoProcessor)(void* fxctx, int version) { nullptr };
 				//vst2.4: *(void**)&video_CreateVideoProcessor = (void*)audioMaster(&cEffect, 0xdeadbeef, 0xdeadf00d, 0, "video_CreateVideoProcessor", 0.0f);
@@ -228,7 +223,6 @@ namespace ReaShader {
 		//-- Flush case: we only need to update parameter, noprocessing possible
 		if (data.numInputs == 0 || data.numSamples == 0)
 			return kResultOk;
-
 
 		//--- Here you have to implement your processing
 
@@ -324,5 +318,4 @@ namespace ReaShader {
 	}
 
 	//------------------------------------------------------------------------
-
 } // namespace ReaShader

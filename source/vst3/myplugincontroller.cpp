@@ -9,108 +9,15 @@
 #include <stdio.h>
 #include <chrono>
 
-#include "tools/paths.h"
-
 #include "rsui/rseditor.h"
-
-#include <restinio/all.hpp> // must be included in this translation unit otherwise conflict with windows.h
-
-#include <nlohmann/json.hpp>
-
-#include <fmt/core.h>
 
 using namespace Steinberg;
 using namespace VSTGUI;
 
 namespace ReaShader {
-
 	//------------------------------------------------------------------------
 	// ReaShaderController Implementation
 	//------------------------------------------------------------------------
-
-	bool port_in_use(unsigned short port) {
-		using namespace restinio::asio_ns;
-		using ip::tcp;
-
-		io_service svc;
-		tcp::acceptor a(svc);
-
-		error_code ec;
-		a.open(tcp::v4(), ec) || a.bind({ tcp::v4(), port }, ec);
-
-		return ec == error::address_in_use;
-	}
-
-	using router_t = restinio::router::express_router_t<>;
-
-	using json = nlohmann::json;
-
-	using uiserver_traits_t =
-		restinio::traits_t<
-		restinio::asio_timer_manager_t,
-		restinio::null_logger_t,
-		router_t >;
-
-	using uiserver_instance_t = restinio::running_server_instance_t < restinio::http_server_t<uiserver_traits_t>>;
-
-	auto ui_server_handler(ReaShaderController* rs)
-	{
-		auto router = std::make_unique< router_t >();
-
-		router->http_get("/", [](auto req, auto) {
-
-			try {
-
-			auto sf = restinio::sendfile(tools::paths::join({ RSUI_DIR, "rsui.html" }));
-
-			return
-				req->create_response()
-				.append_header(
-					restinio::http_field::server,
-					"ReaShader UI Server")
-				.append_header_date_field()
-				.append_header(
-					restinio::http_field::content_type,
-					"text/html")
-				.set_body(std::move(sf))
-				.done();
-
-		}
-		catch (const std::exception& e)
-		{
-			std::string body = fmt::format("rsui.html not found! <br> Details: <br> {0}", e.what());
-
-			return
-				req->create_response(restinio::status_not_found())
-				.set_body(body)
-				.append_header_date_field()
-				.connection_close()
-				.done();
-		}
-
-			});
-
-		router->http_put("/", [rs](auto req, auto) {
-
-			rs->sendTextMessage(req->body().c_str());
-
-		return
-			req->create_response(restinio::status_ok())
-			.append_header_date_field()
-			.done();
-			});
-
-		router->non_matched_request_handler(
-			[](auto req) {
-				return
-				req->create_response(restinio::status_not_found())
-			.append_header_date_field()
-			.connection_close()
-			.done();
-			});
-
-		return router;
-	}
 
 	tresult PLUGIN_API ReaShaderController::initialize(FUnknown* context)
 	{
@@ -123,32 +30,16 @@ namespace ReaShader {
 			return result;
 		}
 
-		// Here you could register some parameters
+		// Here you register parameters for the vst ui (used for automation)
 
 		parameters.addParameter(STR16("Audio Gain"), STR16("dB"), 0, .5, Vst::ParameterInfo::kCanAutomate, ReaShaderParamIds::uAudioGain);
 		parameters.addParameter(STR16("Video Param"), STR16("units"), 0, .5, Vst::ParameterInfo::kCanAutomate, ReaShaderParamIds::uVideoParam);
 
 		// Launch UI Server Thread
 
-		// random available port
-		do {
-			// random port in iana ephemeral range
-			_uiserver_port = rand() % (65535 - 49152 + 1) + 49152;
-		} while (port_in_use(_uiserver_port));
-
-		uiserver_instance_t* uiserver_handle = restinio::run_async(
-			restinio::own_io_context(),
-			restinio::server_settings_t<uiserver_traits_t>{}
-		.port(_uiserver_port)
-			.address("localhost")
-			.request_handler(ui_server_handler(this))
-			.cleanup_func([&] {
-			// called when server is shutting down
-				}),
-				1
-				).release();
-
-		_uiserver = uiserver_handle;
+		_rsuiServer = new RSUIServer(this);
+		if (_rsuiServer->hasError())
+			return kResultFalse;
 
 		return result;
 	}
@@ -190,14 +81,13 @@ namespace ReaShader {
 		return EditControllerEx1::notify(message);
 	}
 
-
 	//------------------------------------------------------------------------
 	tresult PLUGIN_API ReaShaderController::terminate()
 	{
 		// Here the Plug-in will be de-instanciated, last possibility to remove some memory!
 
 		// terminate uiserver
-		std::any_cast<uiserver_instance_t*>(_uiserver)->stop();
+		delete _rsuiServer;
 
 		//---do not forget to call parent ------
 		return EditControllerEx1::terminate();
@@ -296,5 +186,4 @@ namespace ReaShader {
 		return kResultTrue;
 	}
 	//------------------------------------------------------------------------
-
 } // namespace ReaShader
