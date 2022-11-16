@@ -121,6 +121,7 @@ file(GLOB_RECURSE SOURCE_FILES
 # specific files
 file (GLOB SOURCE_FILES_2 LIST_DIRECTORIES FALSE
     "README.md"
+    "resource/myplugineditor.uidesc"
 )
 # merge lists
 list (APPEND SOURCE_FILES ${SOURCE_FILES_2})

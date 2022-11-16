@@ -47,12 +47,13 @@ namespace ReaShader {
 		return result;
 	}
 
+	// controller recieveText is a tunnel to sendWSMessage
 	tresult ReaShaderController::receiveText(const char* text)
 	{
 		if (text)
 		{
 			// recieved message from processor -> need to update the web ui
-				// send ws message to frontend
+			// relay ws message to frontend
 			_rsuiServer->sendWSMessage(text);
 		}
 

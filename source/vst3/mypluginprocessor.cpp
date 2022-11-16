@@ -10,6 +10,8 @@
 
 #include "public.sdk/source/vst/vstaudioprocessoralgo.h"
 
+#include "reaper_plugin.h"
+#include "reaper_plugin_functions.h"
 #include "reaper_vst3_interfaces.h"
 
 #include <stdlib.h>     /* srand, rand */
@@ -72,7 +74,7 @@ namespace ReaShader {
 
 	tresult ReaShaderProcessor::receiveText(const char* text)
 	{
-		// received param update message from controller
+		// check param update message from rsuiserver
 		try {
 			auto msg = json::parse(text);
 			rParams.at((Steinberg::Vst::ParamID)msg["paramId"]) = (Steinberg::Vst::ParamValue)msg["value"];
@@ -154,18 +156,20 @@ namespace ReaShader {
 			// query reaper interface
 			IReaperHostApplication* reaperApp{ nullptr };
 			if (context->queryInterface(IReaperHostApplication_iid, (void**)&reaperApp) == kResultOk) {
-				// get create video processor
-				IREAPERVideoProcessor* (*video_CreateVideoProcessor)(void* fxctx, int version) { nullptr };
-				//vst2.4: *(void**)&video_CreateVideoProcessor = (void*)audioMaster(&cEffect, 0xdeadbeef, 0xdeadf00d, 0, "video_CreateVideoProcessor", 0.0f);
-				*(void**)&video_CreateVideoProcessor = (void*)reaperApp->getReaperApi("video_CreateVideoProcessor");
-
+			
 				//vst2.4: void* ctx = (void*)audioMaster(&cEffect, 0xdeadbeef, 0xdeadf00e, 4, NULL, 0.0f);
 				void* ctx = reaperApp->getReaperParent(4);
 
 				if (ctx)
 				{
+					// get create video processor
+					IREAPERVideoProcessor* (*video_CreateVideoProcessor)(void* fxctx, int version) { nullptr };
+					//vst2.4: *(void**)&video_CreateVideoProcessor = (void*)audioMaster(&cEffect, 0xdeadbeef, 0xdeadf00d, 0, "video_CreateVideoProcessor", 0.0f);
+					*(void**)&video_CreateVideoProcessor = (void*)reaperApp->getReaperApi("video_CreateVideoProcessor");
+
 					if (video_CreateVideoProcessor)
 					{
+						// create the video processor
 						m_videoproc = video_CreateVideoProcessor(ctx, IREAPERVideoProcessor::REAPER_VIDEO_PROCESSOR_VERSION);
 						if (m_videoproc)
 						{
@@ -173,6 +177,23 @@ namespace ReaShader {
 							m_videoproc->process_frame = processVideoFrame;
 							m_videoproc->get_parameter_value = getVideoParam;
 						}
+					}
+
+					// get track info and send it to ui
+
+					MediaTrack* track = (MediaTrack*) reaperApp->getReaperParent(1);
+
+					//void* (*GetSetMediaTrackInfo)(MediaTrack* tr, const char* parmname, void* setNewValue);
+					*(void**)&GetSetMediaTrackInfo = reaperApp->getReaperApi("GetSetMediaTrackInfo");
+					if (GetSetMediaTrackInfo) {
+						// P_NAME : char * : track name (on master returns NULL)
+						const char* trackName{ nullptr };
+						GetSetMediaTrackInfo(track, "P_NAME", (void*)trackName);
+					}
+					//double (*GetMediaTrackInfo_Value)(MediaTrack* tr, const char* parmname);
+					*(void**)&GetMediaTrackInfo_Value = reaperApp->getReaperApi("GetMediaTrackInfo_Value");
+					if (GetMediaTrackInfo_Value) {
+						// IP_TRACKNUMBER : int : track number 1-based, 0=not found, -1=master track (read-only, returns the int directly)
 					}
 				}
 			}
