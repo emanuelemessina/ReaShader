@@ -10,6 +10,9 @@
 #include <chrono>
 
 #include "rsui/rseditor.h"
+#include "tools/exceptions.h"
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
 
 using namespace Steinberg;
 using namespace VSTGUI;
@@ -46,12 +49,11 @@ namespace ReaShader {
 
 	tresult ReaShaderController::receiveText(const char* text)
 	{
-		// received from Component
 		if (text)
 		{
-			fprintf(stderr, "[AGainController] received: ");
-			fprintf(stderr, "%s", text);
-			fprintf(stderr, "\n");
+			// recieved message from processor -> need to update the web ui
+				// send ws message to frontend
+			_rsuiServer->sendWSMessage(text);
 		}
 
 		return kResultOk;
