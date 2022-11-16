@@ -5,17 +5,19 @@
 #include <restinio/all.hpp> // must be included in this translation unit otherwise conflict with windows.h
 #include <restinio/websocket/websocket.hpp> // must be included right after restinio/all .. (otherwise syntax error wtf)
 namespace rws = restinio::websocket::basic;
-using ws_registry_t = std::map< std::uint64_t, rws::ws_handle_t >;
+using ws_registry_t = std::map<std::uint64_t, rws::ws_handle_t>;
 
 #include <nlohmann/json.hpp>
 
-#include "tools/paths.h"
 #include "tools/exceptions.h"
+#include "tools/paths.h"
 
 #include "backend.h"
 
-namespace ReaShader {
-	bool port_in_use(unsigned short port) {
+namespace ReaShader
+{
+	bool port_in_use(unsigned short port)
+	{
 		using namespace restinio::asio_ns;
 		using ip::tcp;
 
@@ -30,33 +32,25 @@ namespace ReaShader {
 
 	using router_t = restinio::router::express_router_t<>;
 
-	using uiserver_traits_t =
-		restinio::traits_t<
-		restinio::asio_timer_manager_t,
-		restinio::null_logger_t,
-		router_t >;
+	using uiserver_traits_t = restinio::traits_t<restinio::asio_timer_manager_t, restinio::null_logger_t, router_t>;
 
-	using uiserver_instance_t = restinio::running_server_instance_t < restinio::http_server_t<uiserver_traits_t>>;
+	using uiserver_instance_t = restinio::running_server_instance_t<restinio::http_server_t<uiserver_traits_t>>;
 
 	using json = nlohmann::json;
 
 	auto RSUIServer::_uiserver_handler()
 	{
-		auto router = std::make_unique< router_t >();
+		auto router = std::make_unique<router_t>();
 
 		router->http_get("/", [](auto req, auto) {
-			try {
+			try
+		{
 			auto sf = restinio::sendfile(tools::paths::join({ RSUI_DIR, "rsui.html" }));
 
-			return
-				req->create_response()
-				.append_header(
-					restinio::http_field::server,
-					"ReaShader UI Server")
+			return req->create_response()
+				.append_header(restinio::http_field::server, "ReaShader UI Server")
 				.append_header_date_field()
-				.append_header(
-					restinio::http_field::content_type,
-					"text/html")
+				.append_header(restinio::http_field::content_type, "text/html")
 				.set_body(std::move(sf))
 				.done();
 		}
@@ -66,8 +60,7 @@ namespace ReaShader {
 
 			EXCEPTION_OUT(e, "RSUIServer", "rsui.html not found!")
 
-				return
-				req->create_response(restinio::status_not_found())
+				return req->create_response(restinio::status_not_found())
 				.set_body(body)
 				.append_header_date_field()
 				.connection_close()
@@ -78,44 +71,36 @@ namespace ReaShader {
 		router->http_put("/", [&](auto req, auto) {
 			_update_param(req->body().c_str());
 
-		return
-			req->create_response(restinio::status_ok())
-			.append_header_date_field()
-			.done();
+		return req->create_response(restinio::status_ok()).append_header_date_field().done();
 			});
 
 		router->http_get("/ws", [&](auto req, auto) {
 			if (restinio::http_connection_header_t::upgrade == req->header().connection())
 			{
-				auto wsh =
-					rws::upgrade< uiserver_traits_t >(
-						*req,
-						rws::activation_t::immediate,
-						[&](auto wsh, auto m) {
-							if (rws::opcode_t::text_frame == m->opcode())
-							{
-								// json with param update recieved from frontend
-								// update param both in controller and processor
-								_update_param(m->payload().c_str());
-							}
-							else if (
-								rws::opcode_t::binary_frame == m->opcode() ||
-								rws::opcode_t::continuation_frame == m->opcode()) {
-								// other type of message recieved
-								// just send it back
-								wsh->send_message(*m);
-							}
-							else if (rws::opcode_t::ping_frame == m->opcode())
-							{
-								auto resp = *m;
-								resp.set_opcode(rws::opcode_t::pong_frame);
-								wsh->send_message(resp);
-							}
-							else if (rws::opcode_t::connection_close_frame == m->opcode())
-							{
-								std::any_cast<ws_registry_t*>(_ws_registry)->erase(wsh->connection_id());
-							}
-						});
+				auto wsh = rws::upgrade<uiserver_traits_t>(*req, rws::activation_t::immediate, [&](auto wsh, auto m) {
+					if (rws::opcode_t::text_frame == m->opcode())
+					{
+						// json with param update recieved from frontend
+						// update param both in controller and processor
+						_update_param(m->payload().c_str());
+					}
+					else if (rws::opcode_t::binary_frame == m->opcode() || rws::opcode_t::continuation_frame == m->opcode())
+					{
+						// other type of message recieved
+						// just send it back
+						wsh->send_message(*m);
+					}
+					else if (rws::opcode_t::ping_frame == m->opcode())
+					{
+						auto resp = *m;
+						resp.set_opcode(rws::opcode_t::pong_frame);
+						wsh->send_message(resp);
+					}
+					else if (rws::opcode_t::connection_close_frame == m->opcode())
+					{
+						std::any_cast<ws_registry_t*>(_ws_registry)->erase(wsh->connection_id());
+					}
+					});
 
 				std::any_cast<ws_registry_t*>(_ws_registry)->emplace(wsh->connection_id(), wsh);
 
@@ -125,48 +110,48 @@ namespace ReaShader {
 		return restinio::request_rejected();
 			});
 
-		router->non_matched_request_handler(
-			[](auto req) {
-				return
-				req->create_response(restinio::status_not_found())
-			.append_header_date_field()
-			.connection_close()
-			.done();
+		router->non_matched_request_handler([](auto req) {
+			return req->create_response(restinio::status_not_found()).append_header_date_field().connection_close().done();
 			});
 
 		return router;
 	}
 
-	RSUIServer::RSUIServer(controller* rsController) : _rsController(rsController) {
+	RSUIServer::RSUIServer(controller* rsController) : _rsController(rsController)
+	{
 		_ws_registry = new ws_registry_t();
 
-		try {
+		try
+		{
 			// random available port
-			do {
+			do
+			{
 				// random port in iana ephemeral range
 				_port = rand() % (65535 - 49152 + 1) + 49152;
 			} while (port_in_use(_port));
 
-			_uiserver_handle = restinio::run_async(
-				restinio::own_io_context(),
+			_uiserver_handle = restinio::run_async(restinio::own_io_context(),
 				restinio::server_settings_t<uiserver_traits_t>{}
 			.port(_port)
 				.address("localhost")
 				.request_handler(_uiserver_handler())
 				.cleanup_func([&] {
-					
-				}),
-			1
-				).release();
+
+					}),
+					1)
+					.release();
 		}
-		catch (const std::exception& e) {
+		catch (const std::exception& e)
+		{
 			EXCEPTION_OUT(e, "RSUIServer", std::format("Couldn't start ui server at port {}", _port).c_str())
 				_failed = true;
 		}
 	}
-	RSUIServer::~RSUIServer() {
+	RSUIServer::~RSUIServer()
+	{
 		uiserver_instance_t* uiserver_handle = std::any_cast<uiserver_instance_t*>(_uiserver_handle);
-		if (uiserver_handle) {
+		if (uiserver_handle)
+		{
 			uiserver_handle->stop();
 		}
 		std::any_cast<ws_registry_t*>(_ws_registry)->clear();
@@ -174,18 +159,22 @@ namespace ReaShader {
 	}
 
 	/**
-	* Sends raw JSON message to processor.
-	* Parse the JSON and set param normalized (to update the vst ui).
-	*/
-	void RSUIServer::_update_param(const char* json) {
+	 * Sends raw JSON message to processor.
+	 * Parse the JSON and set param normalized (to update the vst ui).
+	 */
+	void RSUIServer::_update_param(const char* json)
+	{
 		using njson = nlohmann::json;
 
 		_rsController->sendTextMessage(json);
-		try {
+		try
+		{
 			auto msg = njson::parse(json);
-			_rsController->setParamNormalized((Steinberg::Vst::ParamID)msg["paramId"], (Steinberg::Vst::ParamValue)msg["value"]);
+			_rsController->setParamNormalized((Steinberg::Vst::ParamID)msg["paramId"],
+				(Steinberg::Vst::ParamValue)msg["value"]);
 		}
-		catch (STDEXC e) {
+		catch (STDEXC e)
+		{
 			LOG_EXCEPTION(e, "RSUIServer", "malformed json message!");
 		}
 	}
@@ -193,12 +182,12 @@ namespace ReaShader {
 	/**
 	 * Send broadcast message to each ws connection.
 	 */
-	void RSUIServer::sendWSMessage(const char* msg) {
-		auto message = rws::message_t(
-			rws::final_frame, rws::opcode_t::text_frame, msg
-		);
-		for (const auto& [id, handle] : *std::any_cast<ws_registry_t*>(_ws_registry)) {
+	void RSUIServer::sendWSMessage(const char* msg)
+	{
+		auto message = rws::message_t(rws::final_frame, rws::opcode_t::text_frame, msg);
+		for (const auto& [id, handle] : *std::any_cast<ws_registry_t*>(_ws_registry))
+		{
 			handle->send_message(message);
 		}
 	}
-};
+}; // namespace ReaShader
