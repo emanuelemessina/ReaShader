@@ -1,19 +1,15 @@
 #pragma once
 
-#include "vstgui/plugin-bindings/vst3editor.h"
+#include "myplugincontroller.h"
+#include "tools/paths.h"
+#include "version.h"
 #include "vstgui/lib/iviewlistener.h"
+#include "vstgui/plugin-bindings/vst3editor.h"
+#include "vstgui/uidescription/detail/uiviewcreatorattributes.h"
 #include "vstgui/uidescription/icontroller.h"
-
 #include "vstgui/uidescription/uiattributes.h"
 #include "vstgui/uidescription/uiviewcreator.h"
-#include "vstgui/uidescription/detail/uiviewcreatorattributes.h"
 #include "vstgui/uidescription/viewcreator/viewcreator.h"
-
-#include "tools/paths.h"
-
-#include "myplugincontroller.h"
-
-#include "version.h"
 
 namespace ReaShader {
 	using namespace VSTGUI;
@@ -24,16 +20,13 @@ namespace ReaShader {
 
 	class RSUIController
 		: public VSTGUI::IController,
-		public VSTGUI::ViewListenerAdapter
-	{
+		public VSTGUI::ViewListenerAdapter {
 	public:
-
-		RSUIController(
-			ReaShaderController* controller,
+		RSUIController(ReaShaderController* controller,
 			VST3Editor* editor,
-			const IUIDescription* description
-		)
-			: _rsController(controller), _editor(editor)
+			const IUIDescription* description)
+			: _rsController(controller)
+			, _editor(editor)
 		{
 			_ui_url = std::string("http://localhost:") + std::to_string(_rsController->getRSUIServer()->getPort());
 		}
@@ -42,18 +35,19 @@ namespace ReaShader {
 
 		//--- from IControlListener ----------------------
 
-		void valueChanged(CControl* pControl) override {
-			switch (pControl->getTag()) {
-			}
+		void valueChanged(CControl* pControl) override
+		{
+			/*switch (pControl->getTag()) {
+			default: break;
+			}*/
 		}
 
-		void controlBeginEdit(CControl* pControl) override {
-		}
+		void controlBeginEdit(CControl* pControl) override { }
 
 		void controlEndEdit(CControl* pControl) override
 		{
 			switch (pControl->getTag()) {
-			case tButtonRSUIOpen:
+			case tButtonRSUIOpen: {
 				// open ui in browser
 #ifdef _WIN32
 				std::string cmd = "start";
@@ -67,12 +61,16 @@ namespace ReaShader {
 				system(cmd.append(" ").append(_ui_url).c_str());
 				break;
 			}
+			default: break;
+			}
 		}
 
 		// ---- from IController -----------
 
 		//--- is called when a view is created -----
-		CView* verifyView(CView* view, const UIAttributes& attributes, const IUIDescription* description) override
+		CView* verifyView(CView* view,
+			const UIAttributes& attributes,
+			const IUIDescription* description) override
 		{
 			std::string uidesc_label = "";
 
@@ -83,14 +81,13 @@ namespace ReaShader {
 				}
 			}
 
-			if (CViewContainer* container = dynamic_cast<CViewContainer*> (view))
-			{
+			if (CViewContainer* container = dynamic_cast<CViewContainer*>(view)) {
 				if (uidesc_label == l_rsui_container) {
 					rsuiContainer = container;
 					container->setTransparency(true);
 				}
 			}
-			else if (CTextButton* button = dynamic_cast<CTextButton*> (view)) {
+			else if (CTextButton* button = dynamic_cast<CTextButton*>(view)) {
 				// set tag on rsui-open button
 				if (uidesc_label == l_button_rsui_open) {
 					button->setTag(tButtonRSUIOpen);
@@ -99,7 +96,7 @@ namespace ReaShader {
 				// bind this as listener to button
 				button->setListener(this);
 			}
-			else if (CTextLabel* label = dynamic_cast<CTextLabel*> (view)) {
+			else if (CTextLabel* label = dynamic_cast<CTextLabel*>(view)) {
 				// set version string label
 				if (uidesc_label == l_rs_version) {
 					label->setText(FULL_VERSION_STR);
@@ -113,13 +110,9 @@ namespace ReaShader {
 		//--- from IViewListenerAdapter ----------------------
 
 		//--- is called when a view will be deleted: the editor is closed -----
-		void viewWillDelete(CView* view) override
-		{
-		}
+		void viewWillDelete(CView* view) override { }
 		//--- is called when the view is loosing the focus -----------------
-		void viewLostFocus(CView* view) override
-		{
-		}
+		void viewLostFocus(CView* view) override { }
 		//-------------------------------------------
 
 	protected:
@@ -135,7 +128,6 @@ namespace ReaShader {
 		// children of main container
 
 	private:
-
 		const std::string l_rsui_container = "rsui";
 		const std::string l_rs_version = "rs-version";
 		const std::string l_button_rsui_open = "button-rsui-open";
@@ -145,39 +137,38 @@ namespace ReaShader {
 
 	class RSEditor
 		: public VST3Editor,
-		public ViewMouseListenerAdapter
-	{
+		public ViewMouseListenerAdapter {
 	public:
-		RSEditor(
-			ReaShaderController* controller,
+		RSEditor(ReaShaderController* controller,
 			UTF8StringPtr templateName,
-			UTF8StringPtr xmlFile
-		)
-			: VST3Editor(
-				controller,
-				templateName,
-				xmlFile
-			),
-			_rsController(controller)
-		{}
+			UTF8StringPtr xmlFile)
+			: VST3Editor(controller, templateName, xmlFile)
+			, _rsController(controller)
+		{
+		}
 
 		// SETTERS
 
-		void setSubController(RSUIController* rsSubController) { _subController = rsSubController; }
+		void setSubController(RSUIController* rsSubController)
+		{
+			_subController = rsSubController;
+		}
 
 	protected:
-
 		// ------ from CommandMenuItemTargetAdapter --------
 
-		bool validateCommandMenuItem(CCommandMenuItem* item) override {
+		bool validateCommandMenuItem(CCommandMenuItem* item) override
+		{
 			return VST3Editor::validateCommandMenuItem(item);
 		}
-		bool onCommandMenuItemSelected(CCommandMenuItem* item) override {
+		bool onCommandMenuItemSelected(CCommandMenuItem* item) override
+		{
 			return VST3Editor::onCommandMenuItemSelected(item);
 		}
 		//--------------------------
 
-		void onMouseEvent(MouseEvent& event, CFrame* frame) override {
+		void onMouseEvent(MouseEvent& event, CFrame* frame) override
+		{
 			VST3Editor::onMouseEvent(event, frame);
 		}
 
@@ -186,4 +177,4 @@ namespace ReaShader {
 		RSUIController* _subController{ nullptr };
 		ReaShaderController* _rsController{ nullptr };
 	};
-}
+} // namespace ReaShader

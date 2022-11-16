@@ -77,7 +77,7 @@ namespace ReaShader {
 			auto msg = json::parse(text);
 			rParams.at((Steinberg::Vst::ParamID)msg["paramId"]) = (Steinberg::Vst::ParamValue)msg["value"];
 		}
-		catch (STDEXC e) {
+		catch (STDEXC /*e*/) {
 			// the message is not a param update message
 		}
 
@@ -235,7 +235,8 @@ namespace ReaShader {
 		int32 numChannels = data.inputs[0].numChannels;
 
 		//---get audio buffers using helper-functions(vstaudioprocessoralgo.h)-------------
-		uint32 sampleFramesSize = getSampleFramesSizeInBytes(processSetup, data.numSamples);
+		
+		//uint32 sampleFramesSize = getSampleFramesSizeInBytes(processSetup, data.numSamples);
 		void** in = getChannelBuffersPointer(processSetup, data.inputs[0]);
 		void** out = getChannelBuffersPointer(processSetup, data.outputs[0]);
 
