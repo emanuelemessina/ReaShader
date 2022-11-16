@@ -90,8 +90,8 @@
 				"EditorSize": "0, 0, 1216, 751",
 				"SplitViewSize_0_0": "0.7558620689655172197873866934969555586576",
 				"SplitViewSize_0_1": "0.216551724137931028701942182124184910208",
-				"SplitViewSize_1_0": "0.4710344827586206983838224005012307316065",
-				"SplitViewSize_1_1": "0.5179310344827585677052184109925292432308",
+				"SplitViewSize_1_0": "0.4717241379310344595587878302467288449407",
+				"SplitViewSize_1_1": "0.5172413793103448620414042125048581510782",
 				"SplitViewSize_2_0": "0.7582236842105263274760318381595425307751",
 				"SplitViewSize_2_1": "0.2376644736842105365415278583895997144282",
 				"TabSwitchValue": "3",
@@ -206,24 +206,27 @@
 							},
 							"CViewContainer": {
 								"attributes": {
+									"background-color": "~ BlackCColor",
 									"background-color-draw-style": "stroked",
 									"class": "CViewContainer",
 									"mouse-enabled": "true",
 									"opacity": "1",
 									"origin": "98, 220",
 									"size": "300, 40",
-									"transparent": "false",
+									"transparent": "true",
 									"wants-focus": "false"
 								},
 								"children": {
 									"CTextLabel": {
 										"attributes": {
+											"back-color": "~ BlackCColor",
 											"background-offset": "0, 0",
 											"class": "CTextLabel",
 											"default-value": "0.5",
 											"font": "~ NormalFont",
 											"font-antialias": "true",
 											"font-color": "~ WhiteCColor",
+											"frame-color": "~ BlackCColor",
 											"frame-width": "1",
 											"max-value": "1",
 											"min-value": "0",
@@ -231,6 +234,7 @@
 											"opacity": "1",
 											"origin": "0, 0",
 											"round-rect-radius": "6",
+											"shadow-color": "~ RedCColor",
 											"size": "140, 40",
 											"style-3D-in": "false",
 											"style-3D-out": "false",
@@ -253,8 +257,10 @@
 									"CTextButton": {
 										"attributes": {
 											"class": "CTextButton",
+											"control-tag": "Gain",
 											"default-value": "0.5",
 											"font": "~ NormalFont",
+											"frame-color": "~ BlackCColor",
 											"frame-color-highlighted": "~ BlackCColor",
 											"frame-width": "1",
 											"gradient": "RS Button Gradient",
@@ -273,7 +279,7 @@
 											"text-alignment": "center",
 											"text-color": "~ WhiteCColor",
 											"text-color-highlighted": "~ WhiteCColor",
-											"title": "http://localhost:xxxxx",
+											"title": "http://localhost:55558",
 											"tooltip": "Open UI in browser",
 											"transparent": "false",
 											"uidesc-label": "button-rsui-open",

@@ -4,7 +4,6 @@
 
 #pragma once
 
-
 #include "pluginterfaces/vst/ivstmessage.h"
 
 #include "public.sdk/source/vst/vsteditcontroller.h"
@@ -19,13 +18,13 @@
 #include <mutex>
 #include <any>
 
+#include "rsui/backend.h"
+
 using namespace Steinberg;
 using namespace Vst;
 using namespace VSTGUI;
 
 namespace ReaShader {
-
-
 	//------------------------------------------------------------------------
 	//  ReaShaderController
 	//------------------------------------------------------------------------
@@ -60,10 +59,6 @@ namespace ReaShader {
 			Steinberg::Vst::TChar* string,
 			Steinberg::Vst::ParamValue& valueNormalized) SMTG_OVERRIDE;
 
-		auto getParameters() {
-			return &parameters;
-		}
-
 		//---from ComponentBase-----
 		tresult receiveText(const char* text) SMTG_OVERRIDE;
 		tresult PLUGIN_API notify(IMessage* message) SMTG_OVERRIDE;
@@ -79,19 +74,20 @@ namespace ReaShader {
 			END_DEFINE_INTERFACES(EditController)
 			DELEGATE_REFCOUNT(EditController)
 
-		//------------------------------------------------------------------------
+			//------------------------------------------------------------------------
 
-		// GETTERS
+			auto getParameters() {
+			return &parameters;
+		}
 
-		uint16_t getUiServerPort() { return _uiserver_port; }
-
-	//------------------------------------------------------------------------
+		const RSUIServer* getRSUIServer() {
+			return _rsuiServer;
+		}
 
 	protected:
 		VST3Editor* _editor{ nullptr };
 
-		std::any _uiserver{ nullptr };
-		uint16_t _uiserver_port{ 0 };
+		RSUIServer* _rsuiServer{ nullptr };
 	};
 
 	//------------------------------------------------------------------------

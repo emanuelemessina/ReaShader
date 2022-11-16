@@ -62,13 +62,14 @@ include_directories (
     "external/reaper-sdk/sdk"
     "external/reaper-sdk/WDL"
     
-    "external/cwalk"
-
     "external/restinio/dev/asio/include"
     "external/restinio/dev/nodejs/http_parser"
     "external/restinio/dev"
     "external/restinio/dev/fmt/include"
+    
+    "external/cwalk"
     "external/json/include"
+    "external/boxer/include"
 
     "source/vst3"
     "source/reashader"
@@ -110,6 +111,8 @@ file(GLOB_RECURSE SOURCE_FILES
     "external/cwalk/cwalk.c"
     "external/restinio/dev/fmt/src/format.cc"
     "external/restinio/dev/nodejs/http_parser/http_parser.c"
+    "external/boxer/src/*.cpp"
+    "external/boxer/src/*.mm"
 
     "sln-make.inix"
 

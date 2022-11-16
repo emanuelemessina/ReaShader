@@ -16,7 +16,6 @@
 #include "version.h"
 
 namespace ReaShader {
-
 	using namespace VSTGUI;
 
 	enum RSUITags {
@@ -36,7 +35,7 @@ namespace ReaShader {
 		)
 			: _rsController(controller), _editor(editor)
 		{
-			_ui_url = std::string("http://localhost:") + std::to_string(_rsController->getUiServerPort());
+			_ui_url = std::string("http://localhost:") + std::to_string(_rsController->getRSUIServer()->getPort());
 		}
 
 		//-------------------------
@@ -45,12 +44,10 @@ namespace ReaShader {
 
 		void valueChanged(CControl* pControl) override {
 			switch (pControl->getTag()) {
-
 			}
 		}
 
 		void controlBeginEdit(CControl* pControl) override {
-
 		}
 
 		void controlEndEdit(CControl* pControl) override
@@ -118,12 +115,10 @@ namespace ReaShader {
 		//--- is called when a view will be deleted: the editor is closed -----
 		void viewWillDelete(CView* view) override
 		{
-
 		}
 		//--- is called when the view is loosing the focus -----------------
 		void viewLostFocus(CView* view) override
 		{
-
 		}
 		//-------------------------------------------
 
@@ -133,7 +128,6 @@ namespace ReaShader {
 		VST3Editor* _editor;
 
 		// item of subcontroller but not in main subcontainer
-
 
 		// main container of subcontroller
 		CViewContainer* rsuiContainer{ nullptr };
@@ -167,7 +161,6 @@ namespace ReaShader {
 			_rsController(controller)
 		{}
 
-
 		// SETTERS
 
 		void setSubController(RSUIController* rsSubController) { _subController = rsSubController; }
@@ -177,17 +170,14 @@ namespace ReaShader {
 		// ------ from CommandMenuItemTargetAdapter --------
 
 		bool validateCommandMenuItem(CCommandMenuItem* item) override {
-
 			return VST3Editor::validateCommandMenuItem(item);
 		}
 		bool onCommandMenuItemSelected(CCommandMenuItem* item) override {
-
 			return VST3Editor::onCommandMenuItemSelected(item);
 		}
 		//--------------------------
 
 		void onMouseEvent(MouseEvent& event, CFrame* frame) override {
-
 			VST3Editor::onMouseEvent(event, frame);
 		}
 
@@ -196,5 +186,4 @@ namespace ReaShader {
 		RSUIController* _subController{ nullptr };
 		ReaShaderController* _rsController{ nullptr };
 	};
-
 }

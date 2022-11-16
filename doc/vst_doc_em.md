@@ -1166,3 +1166,238 @@ Pop up the menu with button press
 			}
 		}
 ```
+\
+Prevent default editor from handling custom option menu items
+```c++
+        // ------ from CommandMenuItemTargetAdapter --------
+
+		bool validateCommandMenuItem(CCommandMenuItem* item) override {
+			if (item->getCommandCategory() == "Help") {
+				return false;
+			}
+			return VST3Editor::validateCommandMenuItem(item);
+		}
+```
+\
+Handle item selected event
+```c++
+        bool onCommandMenuItemSelected(CCommandMenuItem* item) override {
+			if (item->getCommandCategory() == "Help") {
+				if (item->getCommandName() == "Credits" {...}
+                ...
+                return false
+            }
+            return VST3Editor::onCommandMenuItemSelected(item);
+        }
+```
+
+<br>
+
+#### Custom Splash Screen
+
+<br>
+
+<details>
+
+<summary>Code</summary>
+
+```c++
+class RSSplashScreen :
+		public VSTGUI::ViewListenerAdapter
+	{
+	public:
+
+		RSSplashScreen(CViewContainer* parent, const CRect& size, const CRect& sizeContent, IControlListener* listener, int32_t tag)
+			: parent(parent), sizeContent(sizeContent) {
+
+			// wrapper view
+			splashContainer = new CViewContainer(size);
+			splashContainer->registerViewListener(this);
+
+			splashScreen = new CSplashScreen(size, listener, tag, splashContainer);
+			splashScreen->setDisplayArea(size);
+
+			parent->addView(splashScreen);
+		}
+
+		/**
+		 * Adds view to splashContainer.
+		 */
+		bool addView(CView* view) {
+			return splashContainer->addView(view);
+		}
+
+		CViewContainer* const getContainer() const {
+			return splashContainer;
+		}
+
+		void splash() {
+			MouseDownEvent event{ {0,0},MouseButton::Left };
+			CPoint where(0, 0);
+			splashScreen->onMouseDown(where, kLButton);
+			splashed = true;
+		}
+
+		bool isSplashed() {
+			return splashed;
+		}
+
+		CRect getSizeContent() {
+			return sizeContent;
+		}
+
+		void destroy(IViewMouseListener* mouseListener) {
+			// unregister mouse listeners for container children
+			if (mouseListener) {
+				splashContainer->forEachChild([&](CView* child) {
+					child->unregisterViewMouseListener(mouseListener);
+					});
+			}
+
+			// unregister view listener for container
+			splashContainer->unregisterViewListener(this);
+
+			// close splash
+			splashScreen->unSplash();
+
+			splashed = false;
+
+			parent->removeView(splashScreen);
+		}
+
+	protected:
+
+		//--- from IViewListenerAdapter ----------------------
+
+		//--- is called when a view will be deleted: the editor is closed -----
+		void viewWillDelete(CView* view) override
+		{
+			if (dynamic_cast<CTextEdit*> (view) == nullptr)
+			{
+				/*textEdit->unregisterViewListener(this);
+				textEdit = nullptr;*/
+			}
+		}
+		//--- is called when the view is loosing the focus -----------------
+		void viewLostFocus(CView* view) override
+		{
+			if (dynamic_cast<CTextEdit*> (view) == nullptr)
+			{
+				// save the last content of the text edit view
+				/*const UTF8String& text = textEdit->getText();
+				String128 messageText;
+				String str;
+				str.fromUTF8(text.data());
+				str.copyTo(messageText, 0, 128);
+				againController->setDefaultMessageText(messageText);*/
+			}
+		}
+
+	private:
+
+		CViewContainer* parent{ nullptr };
+		CSplashScreen* splashScreen{ nullptr };
+		CViewContainer* splashContainer{ nullptr };
+
+		bool splashed{ false };
+		CRect sizeContent{};
+	};
+
+```
+\
+In the editor
+```c++
+        void onMouseEvent(MouseEvent& event, CFrame* frame) override {
+			// check splash
+			if (splash && splash->isSplashed() && event.buttonState.isLeft() && event.type == EventType::MouseDown) {
+				if (!splash->getSizeContent().pointInside(event.mousePosition)) {
+					splash->destroy(this);
+				}
+			}
+
+			VST3Editor::onMouseEvent(event, frame);
+		}
+```
+```c++
+bool onCommandMenuItemSelected(CCommandMenuItem* item) override {
+			if (item->getCommandCategory() == "Help") {
+				if (item->getCommandName() == "Credits") {
+
+					// splash size entire window
+					CRect splashRect(subController->rsuiContainer->getViewSize());
+					// content size
+					CRect scrollViewSize = splashRect;
+					scrollViewSize.inset(70, 70);
+
+					// create splash
+					splash = new RSSplashScreen(subController->rsuiContainer, splashRect, scrollViewSize, subController, tSplashScreen);
+
+					splash->getContainer()->setBackgroundColor({ 0,0,0,100 });
+
+					// views
+
+					// relative to scrollview
+					CRect scrollContainerSize = { 0,0,scrollViewSize.getWidth(), scrollViewSize.getHeight() };
+					scrollContainerSize.setHeight(scrollViewSize.getHeight());
+					scrollContainerSize.inset(20, 20);
+
+					int32_t scrollViewFlags = CScrollView::CScrollViewStyle::kAutoHideScrollbars | CScrollView::CScrollViewStyle::kVerticalScrollbar | CScrollView::CScrollViewStyle::kOverlayScrollbars;
+					CScrollView* scrollViewCredits = new CScrollView(scrollViewSize, scrollContainerSize, scrollViewFlags, 10);
+					scrollViewCredits->registerViewMouseListener(this);
+
+					splash->addView(scrollViewCredits);
+
+					// populate scrollview
+
+					// relative to scrollcontainer
+					CRect scrollContainerSizeRelative = { 0,0,scrollContainerSize.getWidth(), scrollContainerSize.getHeight() };
+
+					CRect textLabelSize = scrollContainerSizeRelative;
+					int textLabelHeight = 50;
+					textLabelSize.setHeight(textLabelHeight).setWidth(textLabelSize.getWidth() / 3);
+
+					CRect ts0 = textLabelSize;
+					alignHorizontal(ts0, scrollContainerSizeRelative);
+					scrollViewCredits->addView(makeRsLabel(ts0, "CREDITS", kCenterText));
+
+					CRect ts1 = textLabelSize.offset(0, textLabelHeight);
+					scrollViewCredits->addView(makeRsLabel(ts1, "Developer: "));
+
+					CRect ts1_r = ts1;
+					ts1_r.setWidth(scrollContainerSizeRelative.getWidth() - ts1.getWidth()).offset(ts1.getWidth(), 0);
+					scrollViewCredits->addView(makeRsLabel(ts1_r, "Emanuele Messina", kRightText));
+					scrollViewCredits->addView(makeRsLabel(ts1_r.offset(0, textLabelHeight), "( github.com/emanuelemessina )", kRightText));
+
+					CRect ts2 = ts1.offset(0, textLabelHeight * 2);
+					scrollViewCredits->addView(makeRsLabel(ts2, "Third Party: "));
+
+					scrollViewCredits->addView(makeRsLabel(ts1_r.offset(0, textLabelHeight), "VST by Steiberg Media Technologies GmbH", kRightText));
+					scrollViewCredits->addView(makeRsLabel(ts1_r.offset(0, textLabelHeight), "Vulkan by Khronos Group", kRightText));
+
+					CRect ts3 = ts2.offset(0, textLabelHeight * 2);
+					scrollViewCredits->addView(makeRsLabel(ts3, "Open Source: "));
+
+					scrollViewCredits->addView(makeRsLabel(ts1_r.offset(0, textLabelHeight), "GLM, STB, cwalk, Tiny Obj Loader", kRightText));
+					scrollViewCredits->addView(makeRsLabel(ts1_r.offset(0, textLabelHeight), "WDL, Vulkan Memory Allocator", kRightText));
+
+					CRect tsF = ts0;
+					tsF.offset(0, textLabelHeight * 7)
+						.setWidth(scrollContainerSizeRelative.getWidth());
+					alignHorizontal(tsF, scrollContainerSizeRelative);
+					scrollViewCredits->addView(makeRsLabel(tsF, stringLegalCopyright, kCenterText));
+
+					// extend scroll container height
+
+					CRect extContainerSize = scrollContainerSize.setHeight(textLabelHeight * 8);
+					scrollViewCredits->setContainerSize(extContainerSize);
+
+					// open splash
+					splash->splash();
+
+				}
+				return false;
+			}
+			return VST3Editor::onCommandMenuItemSelected(item);
+		}
+```
+</details>
