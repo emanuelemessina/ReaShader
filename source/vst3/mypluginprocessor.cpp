@@ -11,7 +11,7 @@
 #include "public.sdk/source/vst/vstaudioprocessoralgo.h"
 
 #include "reaper_plugin.h"
-#include "reaper_plugin_functions.h"
+//#include "reaper_plugin_functions.h"
 #include "reaper_vst3_interfaces.h"
 
 #include <stdlib.h>     /* srand, rand */
@@ -181,20 +181,37 @@ namespace ReaShader {
 
 					// get track info and send it to ui
 
-					MediaTrack* track = (MediaTrack*) reaperApp->getReaperParent(1);
+					char* trackName{ nullptr };
+					double trackNumber{ 0 };
 
-					//void* (*GetSetMediaTrackInfo)(MediaTrack* tr, const char* parmname, void* setNewValue);
+					MediaTrack* track = (MediaTrack*)reaperApp->getReaperParent(1);
+
+					void* (*GetSetMediaTrackInfo)(MediaTrack * tr, const char* parmname, void* setNewValue);
 					*(void**)&GetSetMediaTrackInfo = reaperApp->getReaperApi("GetSetMediaTrackInfo");
 					if (GetSetMediaTrackInfo) {
 						// P_NAME : char * : track name (on master returns NULL)
-						const char* trackName{ nullptr };
-						GetSetMediaTrackInfo(track, "P_NAME", (void*)trackName);
+						trackName = (char*)GetSetMediaTrackInfo(track, "P_NAME", nullptr);
 					}
-					//double (*GetMediaTrackInfo_Value)(MediaTrack* tr, const char* parmname);
+
+					double (*GetMediaTrackInfo_Value)(MediaTrack * tr, const char* parmname);
 					*(void**)&GetMediaTrackInfo_Value = reaperApp->getReaperApi("GetMediaTrackInfo_Value");
 					if (GetMediaTrackInfo_Value) {
 						// IP_TRACKNUMBER : int : track number 1-based, 0=not found, -1=master track (read-only, returns the int directly)
+						trackNumber = GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER");
 					}
+
+					json j;
+					if (trackNumber != 0) {
+						// send track info to ui
+						j["trackNumber"] = trackNumber;
+					}
+					if (trackName) {
+						j["trackName"] = trackName;
+					}
+					else if (trackNumber == -1) // master track
+						j["trackName"] = "MASTER";
+
+					sendTextMessage(j.dump().c_str());
 				}
 			}
 		}
@@ -237,7 +254,7 @@ namespace ReaShader {
 						break;
 					}*/
 					if (paramQueue->getPoint(numPoints - 1, sampleOffset, value) == kResultTrue) {
-						// update processor param
+						// update processor param (change was made by vstui or automation)
 						rParams.at(paramQueue->getParameterId()) = value; 
 						// relay back to frontend
 						json j; j["paramId"] = paramQueue->getParameterId(); j["value"] = value;
