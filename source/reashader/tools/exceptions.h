@@ -1,5 +1,3 @@
 #pragma once
 
-#include "logging.h"
-
-
+#define STDEXC const std::exception&

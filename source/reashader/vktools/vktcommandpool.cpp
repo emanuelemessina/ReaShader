@@ -1,30 +1,12 @@
-#include "vktcommandqueue.h"
+#include "vktcommandpool.h"
+#include "vktqueue.h"
 
 namespace vkt {
 
-	// class vktQueue
-
-	vktQueue::vktQueue(vktDeletionQueue& deletionQueue, VkDevice device, uint32_t queueFamilyIndex)
-		: queueFamilyIndex(queueFamilyIndex), device(device) {
-		deletionQueue.push_function([=]() { delete(this); });
-		vkGetDeviceQueue(device, queueFamilyIndex, 0, &queue);
-	}
-
-	VkQueue vktQueue::get() { return queue; };
-	uint32_t vktQueue::getFamilyIndex() { return queueFamilyIndex.value(); }
-
-	void vktQueue::waitIdle() {
-		VK_CHECK_RESULT(vkQueueWaitIdle(queue));
-	}
-
-	// clasee vktQueue
-	//------------------------------------
-
-
 	// class vktCommandPool
 
-	vktCommandPool::vktCommandPool(vktDeletionQueue& deletionQueue, vkt::vktQueue* queue)
-		: device(queue->device), vktQueue(queue), pDeletionQueue(&deletionQueue) {
+	CommandPool::CommandPool(deletion_queue& deletionQueue, vkt::Queue* queue)
+		: device(queue->getVkDevice()), vktQueue(queue), pDeletionQueue(&deletionQueue) {
 
 		deletionQueue.push_function([=]() { delete(this); });
 
@@ -46,7 +28,7 @@ namespace vkt {
 	Allocates new command buffer, begins it, then returns it.
 	Deletion is up to you.
 	*/
-	VkCommandBuffer vktCommandPool::createCommandBuffer() {
+	VkCommandBuffer CommandPool::createCommandBuffer() {
 
 		VkCommandBuffer commandBuffer;
 
@@ -72,14 +54,14 @@ namespace vkt {
 	Creates a command buffer, begins it, stores it and pushes to the deletion queue.
 	@param pOutCommandBuffer optional pointer to immediately retrieve the command buffer upon creation.
 	*/
-	vktCommandPool* vktCommandPool::createCommandBuffer(const int id, VkCommandBuffer* pOutCommandBuffer) {
+	CommandPool* CommandPool::createCommandBuffer(const int id, VkCommandBuffer* pOutCommandBuffer) {
 		return createCommandBuffers({ id }, { pOutCommandBuffer });
 	}
 	/**
 	Create command buffers, begin them, store them and push them to the deletion queue.
 	@param pOutCommandBuffers optional pointers to immediately retrieve the command buffers upon creation.
 	*/
-	vktCommandPool* vktCommandPool::createCommandBuffers(std::vector<int> ids, std::vector<VkCommandBuffer*> pOutCommandBuffers) {
+	CommandPool* CommandPool::createCommandBuffers(std::vector<int> ids, std::vector<VkCommandBuffer*> pOutCommandBuffers) {
 
 		uint32_t count = static_cast<uint32_t>(ids.size());
 
@@ -123,22 +105,18 @@ namespace vkt {
 
 		return this;
 	}
-
-	/**
-	Returns the VkCommandPool
-	*/
-	VkCommandPool vktCommandPool::get() { return m_commandPool; }
+	
 	/**
 	Returns the VkCommandBuffer with id.
 	@param id
 	*/
-	VkCommandBuffer vktCommandPool::get(const int id) { return *m_commandBuffers.get(id); }
+	VkCommandBuffer CommandPool::get(const int id) { return *m_commandBuffers.get(id); }
 
 	/**
 	Resets the previous command buffer provided.
 	Then begins it.
 	*/
-	vktCommandPool* vktCommandPool::restartCommandBuffer(const VkCommandBuffer& previousCommandBuffer) {
+	CommandPool* CommandPool::restartCommandBuffer(const VkCommandBuffer& previousCommandBuffer) {
 
 		vkResetCommandBuffer(previousCommandBuffer, 0);
 
@@ -155,7 +133,7 @@ namespace vkt {
 	Resets and begins the command buffer with id.
 	@param id
 	*/
-	vktCommandPool* vktCommandPool::restartCommandBuffer(int id) {
+	CommandPool* CommandPool::restartCommandBuffer(int id) {
 
 		VkCommandBuffer previousCommandBuffer = *m_commandBuffers.get(id);
 		restartCommandBuffer(previousCommandBuffer);
@@ -164,7 +142,7 @@ namespace vkt {
 	/**
 	Calls restartCommandBuffer on all the stored command buffers.
 	*/
-	vktCommandPool* vktCommandPool::restartAll() {
+	CommandPool* CommandPool::restartAll() {
 		for (const auto& cmd : std::views::values(m_commandBuffers.get())) {
 			restartCommandBuffer(cmd);
 		}
@@ -175,7 +153,7 @@ namespace vkt {
 	/**
 	Ends the commandBuffer, then submits it (top of pipe).
 	*/
-	void vktCommandPool::submitQueueSingle(VkCommandBuffer commandBuffer, VkFence fence, VkSemaphore signalSemaphore, VkSemaphore waitSemaphore) {
+	void CommandPool::submitQueueSingle(VkCommandBuffer commandBuffer, VkFence fence, VkSemaphore signalSemaphore, VkSemaphore waitSemaphore) {
 
 		VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer));
 
@@ -199,7 +177,8 @@ namespace vkt {
 			submitInfo.pSignalSemaphores = signalSemaphores.data();
 		}
 
-		if (vkQueueSubmit(vktQueue->queue, 1, &submitInfo, fence) != VK_SUCCESS) {
+		if (vkQueueSubmit(vktQueue->vk(), 1, &submitInfo, fence) != VK_SUCCESS)
+		{
 			throw std::runtime_error("failed to submit draw command buffer!");
 		}
 	}
@@ -208,7 +187,7 @@ namespace vkt {
 	Submits the command buffer specified by id.
 	@param id
 	*/
-	vktCommandPool* vktCommandPool::submit(const int id, VkFence fence, VkSemaphore signalSemaphore, VkSemaphore waitSemaphore) {
+	CommandPool* CommandPool::submit(const int id, VkFence fence, VkSemaphore signalSemaphore, VkSemaphore waitSemaphore) {
 
 		VkCommandBuffer cmd = get(id);
 		submitQueueSingle(cmd, fence, signalSemaphore, waitSemaphore);
@@ -218,7 +197,7 @@ namespace vkt {
 	/**
 	Submits the command buffer provided.
 	*/
-	vktCommandPool* vktCommandPool::submit(VkCommandBuffer cmd, VkFence fence, VkSemaphore signalSemaphore, VkSemaphore waitSemaphore) {
+	CommandPool* CommandPool::submit(VkCommandBuffer cmd, VkFence fence, VkSemaphore signalSemaphore, VkSemaphore waitSemaphore) {
 
 		submitQueueSingle(cmd, fence, signalSemaphore, waitSemaphore);
 

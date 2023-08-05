@@ -622,6 +622,59 @@ Parameters are registered in the controller `initialize` method:
 		parameters.addParameter(STR16("Gain"), STR16("dB"), 0, .5, Vst::ParameterInfo::kCanAutomate, ReaShaderParamIds::uAudioGain);
 		parameters.addParameter(STR16("Video Param"), STR16("units"), 0, .5, Vst::ParameterInfo::kCanAutomate, ReaShaderParamIds::uVideoParam);
 ```
+\
+Calling flow of events when a param is updated:
+
+- param is modified thru vst default ui or automation : `setParamNormalized` (updates the vst ui thru the controller) AND in the processor `process` method a data input change is triggered
+
+	<details>
+	<summary>process()</summary>
+
+	```c++
+	tresult PLUGIN_API ReaShaderProcessor::process(Vst::ProcessData& data)
+		{
+			//--- First : Read inputs parameter changes-----------
+
+			if (data.inputParameterChanges)
+			{
+				// for each parameter defined by its ID
+				int32 numParamsChanged = data.inputParameterChanges->getParameterCount();
+				for (int32 index = 0; index < numParamsChanged; index++)
+				{
+					// for this parameter we could iterate the list of value changes (could 1 per audio block or more!)
+					// in this example we get only the last value (getPointCount - 1)
+					if (auto* paramQueue = data.inputParameterChanges->getParameterData(index))
+					{
+						Vst::ParamValue value;
+						int32 sampleOffset;
+						int32 numPoints = paramQueue->getPointCount();
+						/*
+						// individual check for each param
+						switch (paramQueue->getParameterId())
+						{
+						case ReaShaderParamIds::uAudioGain:
+							if (paramQueue->getPoint(numPoints - 1, sampleOffset, value) == kResultTrue)
+								rParams.at(uAudioGain) = value;
+							break;
+						case ReaShaderParamIds::uVideoParam:
+							if (paramQueue->getPoint(numPoints - 1, sampleOffset, value) == kResultTrue)
+								rParams.at(uVideoParam) = value;
+							break;
+						}*/
+						if (paramQueue->getPoint(numPoints - 1, sampleOffset, value) == kResultTrue) {
+							// update processor param (change was made by vstui or automation)
+							rParams.at(paramQueue->getParameterId()) = value; 
+						}
+					}
+				}
+			}
+			...
+		}
+	```
+	</details>
+
+- plugin is loaded : processor `getState` (restore saved preset, internally updates param value) -> controller `setComponentState` (which in turn calls `setParamNormalized`)
+
 
 <br>
 

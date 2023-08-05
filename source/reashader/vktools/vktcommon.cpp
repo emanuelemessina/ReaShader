@@ -1,4 +1,4 @@
-#include "vktools.h"
+#include "vktcommon.h"
 
 // --- single defines ---
 
@@ -65,7 +65,7 @@ namespace vkt {
 
 	// CREATE INSTANCE
 
-	VkInstance createVkInstance(vktDeletionQueue& deletionQueue, const char* applicationName, const char* engineName) {
+	VkInstance createVkInstance(deletion_queue& deletionQueue, const char* applicationName, const char* engineName) {
 
 		if (enableVkValidationLayers && !checkValidationLayerSupport()) {
 			throw std::runtime_error("validation layers requested, but not available!");

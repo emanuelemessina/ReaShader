@@ -10,45 +10,27 @@
 
 #include "public.sdk/source/vst/vstaudioprocessoralgo.h"
 
-#include "reaper_plugin.h"
-//#include "reaper_plugin_functions.h"
-#include "reaper_vst3_interfaces.h"
-
-#include <stdlib.h>     /* srand, rand */
-#include <time.h>       /* time */
 
 #include <nlohmann/json.hpp>
+
+#include "rsparams.h"
 #include "tools/exceptions.h"
 
 using namespace Steinberg;
 using json = nlohmann::json;
 
-namespace ReaShader {
+namespace ReaShader
+{
 	//------------------------------------------------------------------------
-	// ReaShaderProcessor
+	// MyPluginProcessor
 	//------------------------------------------------------------------------
-	ReaShaderProcessor::ReaShaderProcessor()
+	MyPluginProcessor::MyPluginProcessor()
 	{
 		//--- set the wanted controller for our processor
 		setControllerClass(kReaShaderControllerUID);
-
-		// Set parameters defaults
-		rParams = {
-			{ReaShaderParamIds::uAudioGain, 1.f},
-			{ReaShaderParamIds::uVideoParam, 0.5f}
-		};
-
-		srand(time(NULL));
-
-		myColor = rand() % 0xffffff | (0xff0000);
-
-		m_data = new RSData(2);
-
-		m_data->push(&rParams);
-		m_data->push(this);
 	}
 
-	tresult PLUGIN_API ReaShaderProcessor::notify(IMessage* message)
+	tresult PLUGIN_API MyPluginProcessor::notify(IMessage* message)
 	{
 		if (!message)
 			return kInvalidArgument;
@@ -63,7 +45,7 @@ namespace ReaShader {
 				// size should be 100
 				if (size == 100 && ((char*)data)[1] == 1) // yeah...
 				{
-					fprintf(stderr, "[ReaShaderProcessor] received the binary message!\n");
+					fprintf(stderr, "[MyPluginProcessor] received the binary message!\n");
 				}
 				return kResultOk;
 			}
@@ -72,14 +54,16 @@ namespace ReaShader {
 		return AudioEffect::notify(message);
 	}
 
-	tresult ReaShaderProcessor::receiveText(const char* text)
+	tresult MyPluginProcessor::receiveText(const char* text)
 	{
 		// check param update message from rsuiserver
-		try {
+		try
+		{
 			auto msg = json::parse(text);
-			rParams.at((Steinberg::Vst::ParamID)msg["paramId"]) = (Steinberg::Vst::ParamValue)msg["value"];
+			reaShaderProcessor->receivedJSONfromUI(msg);
 		}
-		catch (STDEXC /*e*/) {
+		catch (STDEXC /*e*/)
+		{
 			// the message is not a param update message
 		}
 
@@ -87,12 +71,7 @@ namespace ReaShader {
 	}
 
 	//------------------------------------------------------------------------
-	ReaShaderProcessor::~ReaShaderProcessor()
-	{
-	}
-
-	//------------------------------------------------------------------------
-	tresult PLUGIN_API ReaShaderProcessor::initialize(FUnknown* context)
+	tresult PLUGIN_API MyPluginProcessor::initialize(FUnknown* context)
 	{
 		// Here the Plug-in will be instanciated
 
@@ -111,121 +90,42 @@ namespace ReaShader {
 		/* If you don't need an event bus, you can remove the next line */
 		addEventInput(STR16("Event In"), 1);
 
-		this->context = context;
-
-		// init vulkan
-		try {
-			initVulkan();
-		}
-		catch (const std::exception& e) {
-			exceptionOnInitialize = true;
-			std::cerr << (std::string("Exception: ") + e.what()).c_str() << "ReaShader crashed..." << std::endl;
-			return kResultFalse;
-		}
+		reaShaderProcessor = std::make_unique<ReaShaderProcessor>(this, context);
+		reaShaderProcessor->initialize();
 
 		return kResultOk;
 	}
 
 	//------------------------------------------------------------------------
-	tresult PLUGIN_API ReaShaderProcessor::terminate()
+	tresult PLUGIN_API MyPluginProcessor::terminate()
 	{
 		// Here the Plug-in will be de-instanciated, last possibility to remove some memory!
 
-		// clean up vulkan
-		try {
-			if (!exceptionOnInitialize)
-				cleanupVulkan();
-		}
-		catch (const std::exception& e) {
-			std::cerr << (std::string("Exception: ") + e.what()).c_str() << "ReaShader crashed..." << std::endl;
-			return kResultFalse;
-		}
+		reaShaderProcessor->terminate();
 
 		//---do not forget to call parent ------
 		return AudioEffect::terminate();
 	}
 
 	//------------------------------------------------------------------------
-	tresult PLUGIN_API ReaShaderProcessor::setActive(TBool state)
+	tresult PLUGIN_API MyPluginProcessor::setActive(TBool state)
 	{
 		//--- called when the Plug-in is enable/disable (On/Off) -----
 
-		if (state) {
-			// REAPER API (here we are after effOpen equivalent in vst3)
-
-			// query reaper interface
-			IReaperHostApplication* reaperApp{ nullptr };
-			if (context->queryInterface(IReaperHostApplication_iid, (void**)&reaperApp) == kResultOk) {
-			
-				//vst2.4: void* ctx = (void*)audioMaster(&cEffect, 0xdeadbeef, 0xdeadf00e, 4, NULL, 0.0f);
-				void* ctx = reaperApp->getReaperParent(4);
-
-				if (ctx)
-				{
-					// get create video processor
-					IREAPERVideoProcessor* (*video_CreateVideoProcessor)(void* fxctx, int version) { nullptr };
-					//vst2.4: *(void**)&video_CreateVideoProcessor = (void*)audioMaster(&cEffect, 0xdeadbeef, 0xdeadf00d, 0, "video_CreateVideoProcessor", 0.0f);
-					*(void**)&video_CreateVideoProcessor = (void*)reaperApp->getReaperApi("video_CreateVideoProcessor");
-
-					if (video_CreateVideoProcessor)
-					{
-						// create the video processor
-						m_videoproc = video_CreateVideoProcessor(ctx, IREAPERVideoProcessor::REAPER_VIDEO_PROCESSOR_VERSION);
-						if (m_videoproc)
-						{
-							m_videoproc->userdata = m_data;
-							m_videoproc->process_frame = processVideoFrame;
-							m_videoproc->get_parameter_value = getVideoParam;
-						}
-					}
-
-					// get track info and send it to ui
-
-					char* trackName{ nullptr };
-					double trackNumber{ 0 };
-
-					MediaTrack* track = (MediaTrack*)reaperApp->getReaperParent(1);
-
-					void* (*GetSetMediaTrackInfo)(MediaTrack * tr, const char* parmname, void* setNewValue);
-					*(void**)&GetSetMediaTrackInfo = reaperApp->getReaperApi("GetSetMediaTrackInfo");
-					if (GetSetMediaTrackInfo) {
-						// P_NAME : char * : track name (on master returns NULL)
-						trackName = (char*)GetSetMediaTrackInfo(track, "P_NAME", nullptr);
-					}
-
-					double (*GetMediaTrackInfo_Value)(MediaTrack * tr, const char* parmname);
-					*(void**)&GetMediaTrackInfo_Value = reaperApp->getReaperApi("GetMediaTrackInfo_Value");
-					if (GetMediaTrackInfo_Value) {
-						// IP_TRACKNUMBER : int : track number 1-based, 0=not found, -1=master track (read-only, returns the int directly)
-						trackNumber = GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER");
-					}
-
-					json j;
-					if (trackNumber != 0) {
-						// send track info to ui
-						j["trackNumber"] = trackNumber;
-					}
-					if (trackName) {
-						j["trackName"] = trackName;
-					}
-					else if (trackNumber == -1) // master track
-						j["trackName"] = "MASTER";
-
-					sendTextMessage(j.dump().c_str());
-				}
-			}
+		if (state)
+		{
+			reaShaderProcessor->activate();
 		}
-		else {
-			if (m_videoproc)
-				delete m_videoproc; // MUST !! (otherwise continue running processing)
-			// also must be here otherwise crash
+		else
+		{
+			reaShaderProcessor->deactivate();
 		}
 
 		return AudioEffect::setActive(state);
 	}
 
 	//------------------------------------------------------------------------
-	tresult PLUGIN_API ReaShaderProcessor::process(Vst::ProcessData& data)
+	tresult PLUGIN_API MyPluginProcessor::process(Vst::ProcessData& data)
 	{
 		//--- First : Read inputs parameter changes-----------
 
@@ -253,12 +153,9 @@ namespace ReaShader {
 							rParams.at(uVideoParam) = value;
 						break;
 					}*/
-					if (paramQueue->getPoint(numPoints - 1, sampleOffset, value) == kResultTrue) {
-						// update processor param (change was made by vstui or automation)
-						rParams.at(paramQueue->getParameterId()) = value; 
-						// relay back to frontend
-						json j; j["paramId"] = paramQueue->getParameterId(); j["value"] = value;
-						sendTextMessage(j.dump().c_str());
+					if (paramQueue->getPoint(numPoints - 1, sampleOffset, value) == kResultTrue)
+					{
+						reaShaderProcessor->parameterUpdate(paramQueue->getParameterId(), value);
 					}
 				}
 			}
@@ -273,8 +170,8 @@ namespace ReaShader {
 		int32 numChannels = data.inputs[0].numChannels;
 
 		//---get audio buffers using helper-functions(vstaudioprocessoralgo.h)-------------
-		
-		//uint32 sampleFramesSize = getSampleFramesSizeInBytes(processSetup, data.numSamples);
+
+		// uint32 sampleFramesSize = getSampleFramesSizeInBytes(processSetup, data.numSamples);
 		void** in = getChannelBuffersPointer(processSetup, data.inputs[0]);
 		void** out = getChannelBuffersPointer(processSetup, data.outputs[0]);
 
@@ -284,7 +181,7 @@ namespace ReaShader {
 		data.outputs[0].silenceFlags = 0;
 
 		// optionally derive another value from param default range [0,1]
-		float gain = rParams.at(uAudioGain);
+		float gain = rsParams[uAudioGain].value;
 		// for each channel (left and right)
 		for (int32 i = 0; i < numChannels; i++)
 		{
@@ -305,14 +202,14 @@ namespace ReaShader {
 	}
 
 	//------------------------------------------------------------------------
-	tresult PLUGIN_API ReaShaderProcessor::setupProcessing(Vst::ProcessSetup& newSetup)
+	tresult PLUGIN_API MyPluginProcessor::setupProcessing(Vst::ProcessSetup& newSetup)
 	{
 		//--- called before any processing ----
 		return AudioEffect::setupProcessing(newSetup);
 	}
 
 	//------------------------------------------------------------------------
-	tresult PLUGIN_API ReaShaderProcessor::canProcessSampleSize(int32 symbolicSampleSize)
+	tresult PLUGIN_API MyPluginProcessor::canProcessSampleSize(int32 symbolicSampleSize)
 	{
 		// by default kSample32 is supported
 		if (symbolicSampleSize == Vst::kSample32)
@@ -326,38 +223,20 @@ namespace ReaShader {
 	}
 
 	//------------------------------------------------------------------------
-	tresult PLUGIN_API ReaShaderProcessor::setState(IBStream* state)
+	tresult PLUGIN_API MyPluginProcessor::setState(IBStream* state)
 	{
 		if (!state)
 			return kResultFalse;
 
-		// called when we load a preset or project, the model has to be reloaded
-		IBStreamer streamer(state, kLittleEndian);
-
-		// make sure everything is read in order (in the exact way it was saved)
-
-		for (auto const& [uParamId, value] : rParams) {
-			float savedParam = 0.f;
-			if (streamer.readFloat(savedParam) == false)
-				return kResultFalse;
-			rParams.at(uParamId) = savedParam;
-		}
+		reaShaderProcessor->loadParamsValues(state);
 
 		return kResultOk;
 	}
 
 	//------------------------------------------------------------------------
-	tresult PLUGIN_API ReaShaderProcessor::getState(IBStream* state)
+	tresult PLUGIN_API MyPluginProcessor::getState(IBStream* state)
 	{
-		// here we need to save the model
-		IBStreamer streamer(state, kLittleEndian);
-
-		// make sure everything is saved in order
-		for (auto const& [uParamId, value] : rParams) {
-			streamer.writeFloat(value);
-		}
-
-		this->sendTextMessage("hellooooo");
+		reaShaderProcessor->storeParamsValues(state);
 
 		return kResultOk;
 	}

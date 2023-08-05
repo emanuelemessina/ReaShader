@@ -1,0 +1,17 @@
+# Style: GVNG
+
+BasedOnStyle: Microsoft
+
+UseTab: Always
+TabWidth: '4'
+
+AccessModifierOffset: -2
+NamespaceIndentation: All
+IndentCaseLabels: true
+
+AlignTrailingComments: true
+PointerAlignment: Left
+
+SpacesBeforeTrailingComments: 1
+
+Cpp11BracedListStyle: false

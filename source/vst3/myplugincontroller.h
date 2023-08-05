@@ -5,40 +5,33 @@
 #pragma once
 
 #include "pluginterfaces/vst/ivstmessage.h"
-
 #include "public.sdk/source/vst/vsteditcontroller.h"
-#include "vstgui/plugin-bindings/vst3editor.h"
 
-#include "vstgui/lib/iviewlistener.h"
+#include "vstgui/plugin-bindings/vst3editor.h"
 #include "vstgui/uidescription/icontroller.h"
 
-#include "vstgui/uidescription/delegationcontroller.h"
-
-#include <thread>
-#include <mutex>
-#include <any>
-
-#include "rsui/backend.h"
+#include "rscontroller.h"
 
 using namespace Steinberg;
 using namespace Vst;
 using namespace VSTGUI;
 
-namespace ReaShader {
+namespace ReaShader
+{
 	//------------------------------------------------------------------------
-	//  ReaShaderController
+	//  MyPluginController
 	//------------------------------------------------------------------------
-	class ReaShaderController : public Steinberg::Vst::EditControllerEx1, public VSTGUI::VST3EditorDelegate
+	class MyPluginController : public Steinberg::Vst::EditControllerEx1, public VSTGUI::VST3EditorDelegate
 	{
-	public:
+	  public:
 		//------------------------------------------------------------------------
-		ReaShaderController() = default;
-		~ReaShaderController() SMTG_OVERRIDE = default;
+		MyPluginController() = default;
+		~MyPluginController() SMTG_OVERRIDE = default;
 
 		// Create function
 		static Steinberg::FUnknown* createInstance(void* /*context*/)
 		{
-			return (Steinberg::Vst::IEditController*)new ReaShaderController;
+			return (Steinberg::Vst::IEditController*)new MyPluginController;
 		}
 
 		// IPluginBase
@@ -51,13 +44,12 @@ namespace ReaShader {
 		Steinberg::tresult PLUGIN_API setState(Steinberg::IBStream* state) SMTG_OVERRIDE;
 		Steinberg::tresult PLUGIN_API getState(Steinberg::IBStream* state) SMTG_OVERRIDE;
 		Steinberg::tresult PLUGIN_API setParamNormalized(Steinberg::Vst::ParamID tag,
-			Steinberg::Vst::ParamValue value) SMTG_OVERRIDE;
+														 Steinberg::Vst::ParamValue value) SMTG_OVERRIDE;
 		Steinberg::tresult PLUGIN_API getParamStringByValue(Steinberg::Vst::ParamID tag,
-			Steinberg::Vst::ParamValue valueNormalized,
-			Steinberg::Vst::String128 string) SMTG_OVERRIDE;
-		Steinberg::tresult PLUGIN_API getParamValueByString(Steinberg::Vst::ParamID tag,
-			Steinberg::Vst::TChar* string,
-			Steinberg::Vst::ParamValue& valueNormalized) SMTG_OVERRIDE;
+															Steinberg::Vst::ParamValue valueNormalized,
+															Steinberg::Vst::String128 string) SMTG_OVERRIDE;
+		Steinberg::tresult PLUGIN_API getParamValueByString(Steinberg::Vst::ParamID tag, Steinberg::Vst::TChar* string,
+															Steinberg::Vst::ParamValue& valueNormalized) SMTG_OVERRIDE;
 
 		//---from ComponentBase-----
 		tresult receiveText(const char* text) SMTG_OVERRIDE;
@@ -65,29 +57,23 @@ namespace ReaShader {
 
 		//---from VST3EditorDelegate-----------
 		VSTGUI::IController* createSubController(VSTGUI::UTF8StringPtr name, const VSTGUI::IUIDescription* description,
-			VSTGUI::VST3Editor* editor) SMTG_OVERRIDE;
+												 VSTGUI::VST3Editor* editor) SMTG_OVERRIDE;
 
 		//---Interface---------
 		DEFINE_INTERFACES
-			// Here you can add more supported VST3 interfaces
-			// DEF_INTERFACE (Vst::IXXX)
-			END_DEFINE_INTERFACES(EditController)
-			DELEGATE_REFCOUNT(EditController)
+		// Here you can add more supported VST3 interfaces DEF_INTERFACE (Vst::IXXX)
+		END_DEFINE_INTERFACES(EditController)
+		DELEGATE_REFCOUNT(EditController)
 
-			//------------------------------------------------------------------------
+		//------------------------------------------------------------------------
 
-			auto getParameters() {
-			return &parameters;
+		ParameterContainer& getParameters()
+		{
+			return parameters;
 		}
 
-		const RSUIServer* getRSUIServer() {
-			return _rsuiServer;
-		}
-
-	protected:
-		VST3Editor* _editor{ nullptr };
-
-		RSUIServer* _rsuiServer{ nullptr };
+	  protected:
+		std::unique_ptr<ReaShaderController> reaShaderController;
 	};
 
 	//------------------------------------------------------------------------

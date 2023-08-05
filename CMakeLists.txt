@@ -122,6 +122,7 @@ file(GLOB_RECURSE SOURCE_FILES
 file (GLOB SOURCE_FILES_2 LIST_DIRECTORIES FALSE
     "README.md"
     "resource/myplugineditor.uidesc"
+    ".clang-format"
 )
 # merge lists
 list (APPEND SOURCE_FILES ${SOURCE_FILES_2})
