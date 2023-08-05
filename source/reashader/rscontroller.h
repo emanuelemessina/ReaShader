@@ -7,6 +7,9 @@
 
 #include "rsui/rseditor.h"
 
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
+
 using namespace Steinberg;
 using namespace Vst;
 
@@ -28,7 +31,7 @@ namespace ReaShader
 		void sendMessageToUI(const char* text);
 		void loadParamsUIValues(IBStream* state);
 		IPlugView* createVSTView();
-		RSUIController* createViewSubController(const IUIDescription* description);
+		RSUIController* createVSTViewSubController(const IUIDescription* description);
 
 		void terminate();
 
@@ -39,6 +42,9 @@ namespace ReaShader
 		FUnknown* context;
 
 		void _registerUIParams();
+
+		void _receiveTextFromWebUI(const std::string& msg);
+		void _receiveBinaryFromWebUI(const std::vector<char>& msg);
 
 		// memory managed by plugin
 		RSEditor* rsEditor;

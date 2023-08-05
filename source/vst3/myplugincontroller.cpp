@@ -36,7 +36,10 @@ namespace ReaShader
 		return kResultOk;
 	}
 
-	// controller recieveText is a tunnel to sendWSMessage
+	/**
+	 * @brief We will use plugin controller - processor text communication as a tunnel to frontend webui - rsprocessor
+	 * communication. Received message from processor, relay back to webui.
+	 */
 	tresult MyPluginController::receiveText(const char* text)
 	{
 		if (text)
@@ -111,7 +114,7 @@ namespace ReaShader
 	{
 		if (UTF8StringView(name) == "RSUI")
 		{
-			return reaShaderController->createViewSubController(description);
+			return reaShaderController->createVSTViewSubController(description);
 		}
 		return nullptr;
 	}

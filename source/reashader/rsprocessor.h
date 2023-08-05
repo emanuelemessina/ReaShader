@@ -15,7 +15,6 @@ using namespace Steinberg;
 
 #include "rsrenderer.h"
 
-
 namespace ReaShader
 {
 	FWD_DECL(MyPluginProcessor);
@@ -31,7 +30,12 @@ namespace ReaShader
 		ReaShaderProcessor(MyPluginProcessor* processor, FUnknown* context);
 
 		void initialize();
-		void receivedJSONfromUI(json msg);
+		void receivedJSONFromController(json msg);
+		/**
+		 * @brief Gets called from the plugin processor when a parameter is updated from the DAW
+		 * @param id
+		 * @param newValue
+		 */
 		void parameterUpdate(Vst::ParamID id, Vst::ParamValue newValue);
 		void storeParamsValues(IBStream* state);
 		void loadParamsValues(IBStream* state);

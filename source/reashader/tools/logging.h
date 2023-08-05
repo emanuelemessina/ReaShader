@@ -7,8 +7,6 @@
 #include <format>
 #include <iostream>
 
-// TODO: refactor logging and exceptions
-
 enum LogLevel
 {
 	INFO,
