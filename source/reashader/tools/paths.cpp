@@ -123,7 +123,7 @@ namespace tools {
 
 		std::string getDynamicLibraryPath() {
 
-			//TODO: try this code
+			//TODO: try module path finding code on linux and mac
 
 			// List all mach-o images in a process
 			/*uint32_t i;

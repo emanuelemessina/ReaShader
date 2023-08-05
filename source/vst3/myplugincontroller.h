@@ -52,6 +52,7 @@ namespace ReaShader
 															Steinberg::Vst::ParamValue& valueNormalized) SMTG_OVERRIDE;
 
 		//---from ComponentBase-----
+		
 		tresult receiveText(const char* text) SMTG_OVERRIDE;
 		tresult PLUGIN_API notify(IMessage* message) SMTG_OVERRIDE;
 

@@ -117,9 +117,9 @@ namespace ReaShader
 				}
 			});
 
-		// legacy update param over http put
+		// legacy messaging over http put
 		router->http_put("/", [&](auto req, auto) {
-			_update_param(req->body().c_str());
+			_incomingTextMessageHandler(req->body().c_str());
 
 			return req->create_response(restinio::status_ok()).append_header_date_field().done();
 		});
@@ -131,16 +131,17 @@ namespace ReaShader
 				auto wsh = rws::upgrade<uiserver_traits_t>(*req, rws::activation_t::immediate, [&](auto wsh, auto m) {
 					if (rws::opcode_t::text_frame == m->opcode())
 					{
-						// json with param update recieved from frontend
-						// update param both in controller and processor
-						_update_param(m->payload().c_str());
+						_incomingTextMessageHandler(m->payload().c_str());
 					}
 					else if (rws::opcode_t::binary_frame == m->opcode() ||
 							 rws::opcode_t::continuation_frame == m->opcode())
 					{
 						// other type of message recieved
-						// just send it back
-						wsh->send_message(*m);
+						// wsh->send_message(*m);
+						//
+						// Convert the string to a vector of chars
+						std::vector<char> charVector(m->payload().begin(), m->payload().end());
+						_incomingBinaryMessageHandler(charVector);
 					}
 					else if (rws::opcode_t::ping_frame == m->opcode())
 					{
@@ -173,7 +174,10 @@ namespace ReaShader
 		return router;
 	}
 
-	RSUIServer::RSUIServer(controller* rsController) : _rsController(rsController)
+	RSUIServer::RSUIServer(IncomingTextMessageHandler incomingTextMessageHandler,
+						   IncomingBinaryMessageHandler incomingBinaryMessageHandler)
+		: _incomingTextMessageHandler(incomingTextMessageHandler),
+		  _incomingBinaryMessageHandler(incomingBinaryMessageHandler)
 	{
 		_ws_registry = new ws_registry_t();
 
@@ -216,32 +220,22 @@ namespace ReaShader
 	}
 
 	/**
-	 * Sends raw JSON message to processor.
-	 * Parse the JSON and set param normalized (to update the vst ui).
+	 * Send broadcast message to each ws connection (from server to browser).
 	 */
-	void RSUIServer::_update_param(const char* json)
+	void RSUIServer::sendWSTextMessage(std::string& msg)
 	{
-		using njson = nlohmann::json;
-
-		_rsController->sendTextMessage(json);
-		try
-		{
-			auto msg = njson::parse(json);
-			_rsController->setParamNormalized((Steinberg::Vst::ParamID)msg["paramId"],
-											  (Steinberg::Vst::ParamValue)msg["value"]);
-		}
-		catch (STDEXC e)
-		{
-			LOG(e, toConsole | toFile, "RSUIServer", "malformed json message!", std::format("Recieved: {}", json));
-		}
+		_sendWSMessage(msg, false);
+	}
+	void RSUIServer::sendWSBinaryMessage(std::vector<char>& msg)
+	{
+		std::string str(msg.data(), msg.size());
+		_sendWSMessage(str, true);
 	}
 
-	/**
-	 * Send broadcast message to each ws connection.
-	 */
-	void RSUIServer::sendWSMessage(const char* msg)
+	void RSUIServer::_sendWSMessage(std::string& msg, bool binary)
 	{
-		auto message = rws::message_t(rws::final_frame, rws::opcode_t::text_frame, msg);
+		auto message =
+			rws::message_t(rws::final_frame, binary ? rws::opcode_t::binary_frame : rws::opcode_t::text_frame, msg);
 		for (const auto& [id, handle] : *std::any_cast<ws_registry_t*>(_ws_registry))
 		{
 			handle->send_message(message);

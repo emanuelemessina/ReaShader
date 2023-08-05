@@ -10,7 +10,6 @@
 
 #include "public.sdk/source/vst/vstaudioprocessoralgo.h"
 
-
 #include <nlohmann/json.hpp>
 
 #include "rsparams.h"
@@ -56,15 +55,16 @@ namespace ReaShader
 
 	tresult MyPluginProcessor::receiveText(const char* text)
 	{
-		// check param update message from rsuiserver
+		// checkmessage from rsuiserver
 		try
 		{
 			auto msg = json::parse(text);
-			reaShaderProcessor->receivedJSONfromUI(msg);
+			reaShaderProcessor->receivedJSONFromController(msg);
 		}
 		catch (STDEXC /*e*/)
 		{
-			// the message is not a param update message
+			// the message is not a webui message
+			// json parse exception is catched and logged by controller
 		}
 
 		return kResultOk;

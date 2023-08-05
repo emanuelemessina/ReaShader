@@ -9,6 +9,8 @@
 // #include "reaper_plugin_functions.h"
 #include "reaper_vst3_interfaces.h"
 
+#include "tools/logging.h"
+
 using namespace Steinberg;
 
 namespace ReaShader
@@ -28,18 +30,33 @@ namespace ReaShader
 		reaShaderRenderer->init();
 	}
 
-	void ReaShaderProcessor::receivedJSONfromUI(json msg)
+	void ReaShaderProcessor::receivedJSONFromController(json msg)
 	{
-		rsParams[(Steinberg::Vst::ParamID)msg["paramId"]].value = (Steinberg::Vst::ParamValue)msg["value"];
+		try
+		{
+			std::string type = msg["type"];
+
+			if (type == "paramUpdate")
+			{
+				rsParams[(Steinberg::Vst::ParamID)msg["paramId"]].value = (Steinberg::Vst::ParamValue)msg["value"];
+			}
+		}
+		catch (STDEXC e)
+		{
+			LOG(WARNING, toConsole | toFile, "ReaShaderProcessor", "Unrecognized JSON from Controller",
+				std::format("Got {}", msg.dump()));
+		}
 	}
 	void ReaShaderProcessor::parameterUpdate(Vst::ParamID id, Vst::ParamValue newValue)
 	{
 		// update processor param (change was made by vstui or automation)
 		rsParams[id].value = newValue;
-		// relay back to frontend
+		// relay back to frontend to update webui
 		json j;
 		j["paramId"] = id;
 		j["value"] = newValue;
+		j["type"] = "paramUpdate";
+
 		myPluginProcessor->sendTextMessage(j.dump().c_str());
 	}
 	void ReaShaderProcessor::storeParamsValues(IBStream* state)
@@ -51,10 +68,12 @@ namespace ReaShader
 
 		for (int i = 0; i < uNumParams; i++)
 		{
-			streamer.writeFloat(rsParams[i].value);
+			if (streamer.writeFloat(rsParams[i].value) == false)
+			{
+				LOG(WARNING, toConsole | toFile | toBox, "ReaShaderProcessor", "IBStreamer write error",
+					std::format("Cannot write param w/ id {}", i));
+			}
 		}
-
-		myPluginProcessor->sendTextMessage("hellooooo");
 	}
 	void ReaShaderProcessor::loadParamsValues(IBStream* state)
 	{
@@ -67,7 +86,8 @@ namespace ReaShader
 			float savedParam = 0.f;
 			if (streamer.readFloat(savedParam) == false)
 			{
-				// TODO: ERROR CHECK
+				LOG(WARNING, toConsole | toFile | toBox, "ReaShaderProcessor", "IBStreamer read error",
+					std::format("Cannot read param w/ id {}", i));
 			}
 			rsParams[i].value = savedParam;
 		}
@@ -111,7 +131,7 @@ namespace ReaShader
 
 				MediaTrack* track = (MediaTrack*)reaperApp->getReaperParent(1);
 
-				void* (*GetSetMediaTrackInfo)(MediaTrack* tr, const char* parmname, void* setNewValue);
+				void* (*GetSetMediaTrackInfo)(MediaTrack * tr, const char* parmname, void* setNewValue);
 				*(void**)&GetSetMediaTrackInfo = reaperApp->getReaperApi("GetSetMediaTrackInfo");
 				if (GetSetMediaTrackInfo)
 				{
@@ -119,7 +139,7 @@ namespace ReaShader
 					trackName = (char*)GetSetMediaTrackInfo(track, "P_NAME", nullptr);
 				}
 
-				double (*GetMediaTrackInfo_Value)(MediaTrack* tr, const char* parmname);
+				double (*GetMediaTrackInfo_Value)(MediaTrack * tr, const char* parmname);
 				*(void**)&GetMediaTrackInfo_Value = reaperApp->getReaperApi("GetMediaTrackInfo_Value");
 				if (GetMediaTrackInfo_Value)
 				{
@@ -128,18 +148,23 @@ namespace ReaShader
 					trackNumber = GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER");
 				}
 
+				// send track info to ui
+
 				json j;
-				if (trackNumber != 0)
-				{
-					// send track info to ui
-					j["trackNumber"] = trackNumber;
-				}
+
+				j["type"] = "trackInfo";
+
+				j["trackNumber"] = (int)trackNumber;
+
+				if (trackNumber == -1) // master track
+					j["trackName"] = "MASTER";
+				else if (trackNumber == 0)
+					j["trackName"] = "Track Not Found";
+
 				if (trackName)
 				{
 					j["trackName"] = trackName;
 				}
-				else if (trackNumber == -1) // master track
-					j["trackName"] = "MASTER";
 
 				myPluginProcessor->sendTextMessage(j.dump().c_str());
 			}
