@@ -4,49 +4,30 @@
 
 #pragma once
 
-#include "public.sdk/source/vst/vstaudioeffect.h"
-
-#include "myplugincids.h"
-
-#include "video_processor.h"
-
-#include "mptorpdata/mptorpdata.h"
-
 #include "pluginterfaces/vst/ivstmessage.h"
+#include <public.sdk/source/vst/vstaudioeffect.h>
+#include <public.sdk/source/vst/vstcomponent.h>
 
-#include <vulkan/vulkan.h>
-#include "vktools/vktools.h"
-#include "vktools/vktdevices.h"
-#include "vktools/vktsync.h"
-#include "vktools/vktimages.h"
-#include "vktools/vktrendering.h"
-#include "vktools/vktdescriptors.h"
+#include "rsprocessor.h"
+#include <pluginterfaces/vst/ivstaudioprocessor.h>
 
 using namespace Steinberg;
 using namespace Vst;
 
-namespace ReaShader {
-
-	// internal processor params map
-	typedef std::map<Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue> rParamsMap;
-
-	// reaper video processor functions
-	IVideoFrame* processVideoFrame(IREAPERVideoProcessor* vproc, const double* parmlist, int nparms, double project_time, double frate, int force_format);
-	bool getVideoParam(IREAPERVideoProcessor* vproc, int idx, double* valueOut);
-
+namespace ReaShader
+{
 	//------------------------------------------------------------------------
-	//  ReaShaderProcessor
+	//  MyPluginProcessor
 	//------------------------------------------------------------------------
-	class ReaShaderProcessor : public Steinberg::Vst::AudioEffect
+	class MyPluginProcessor : public Steinberg::Vst::AudioEffect
 	{
-	public:
-		ReaShaderProcessor();
-		~ReaShaderProcessor() SMTG_OVERRIDE;
+	  public:
+		MyPluginProcessor();
 
 		// Create function
 		static Steinberg::FUnknown* createInstance(void* /*context*/)
 		{
-			return (Steinberg::Vst::IAudioProcessor*)new ReaShaderProcessor;
+			return (Steinberg::Vst::IAudioProcessor*)new MyPluginProcessor;
 		}
 
 		//------------------------------------------------------------------------
@@ -82,71 +63,9 @@ namespace ReaShader {
 		tresult receiveText(const char* text) SMTG_OVERRIDE;
 
 		//------------------------------------------------------------------------
-		// VIDEO 
-		//------------------------------------------------------------------------
 
-		friend class ReaShaderController;
-		friend IVideoFrame* processVideoFrame(IREAPERVideoProcessor* vproc, const double* parmlist, int nparms, double project_time, double frate, int force_format);
-		IREAPERVideoProcessor* m_videoproc{ nullptr };
-
-		FUnknown* context;
-
-		bool exceptionOnInitialize{ false };
-
-		rParamsMap rParams;
-		RSData* m_data;
-
-		int myColor;
-
-		void initVulkan();
-		void cleanupVulkan();
-
-		VkInstance myVkInstance;
-		vkt::vktDeletionQueue vktMainDeletionQueue{};
-		vkt::vktDeletionQueue vktFrameResizedDeletionQueue{};
-
-		vkt::vktPhysicalDevice* vktPhysicalDevice;
-		vkt::vktDevice* vktDevice;
-
-		// must be greater than 0
-		uint32_t FRAME_W{ 1 }, FRAME_H{ 1 };
-
-		vkt::vktAllocatedImage* vktFrameTransfer;
-		vkt::vktAllocatedImage* vktPostProcessSource;
-		vkt::vktAllocatedImage* vktColorAttachment;
-		vkt::vktAllocatedImage* vktDepthAttachment;
-
-		VkRenderPass vkRenderPass;
-		VkFramebuffer vkFramebuffer;
-
-		VkCommandBuffer vkDrawCommandBuffer;
-		VkCommandBuffer vkTransferCommandBuffer;
-
-		VkSemaphore vkImageAvailableSemaphore;
-		VkSemaphore vkRenderFinishedSemaphore;
-		VkFence vkInFlightFence;
-
-		vkt::vectors::searchable_map<int, vkt::Mesh*> meshes;
-		vkt::vectors::searchable_map<int, vkt::Material> materials;
-		vkt::vectors::searchable_map<int, vkt::vktAllocatedImage*> textures;
-
-		std::vector<vkt::RenderObject> renderObjects;
-
-		vkt::vktDescriptorPool* vktDescriptorPool;
-
-		VkSampler vkSampler;
-
-		struct FrameData {
-
-			vkt::vktAllocatedBuffer* cameraBuffer;
-			vkt::vktAllocatedBuffer* sceneBuffer;
-			vkt::vktAllocatedBuffer* objectBuffer;
-
-			vkt::vktDescriptorSet globalSet;
-			vkt::vktDescriptorSet objectSet;
-			vkt::vktDescriptorSet textureSet;
-
-		} frameData{};
+	  protected:
+		std::unique_ptr<ReaShaderProcessor> reaShaderProcessor;
+		friend class ReaShaderProcessor;
 	};
-
 } // namespace ReaShader

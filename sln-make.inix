@@ -23,7 +23,7 @@ outDir=$(VST3BundleOutDir)\win-$(PlatformTarget)\
 
 [macros]
 
-; automaticall adds ProjectRootDir to this file location
+; automatically adds ProjectRootDir to this file location
 
 ScriptsDir = $(ProjectRootDir)\scripts\win
 TargetBuildDir = $(MSBuildProjectDirectory)\VST3\$(Configuration)\$(PlatformTarget)

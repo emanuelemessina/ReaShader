@@ -1,5 +1,7 @@
 #pragma once
 
+#include "tools/fwd_decl.h"
+
 #include <vulkan/vulkan.h>
 
 #include <vector>
@@ -43,7 +45,6 @@
 		msg += __FILE__; \
 		msg += " at line "; \
 		msg += std::to_string(__LINE__) ; \
-		std::cout << msg << std::endl ; \
 		throw std::runtime_error(msg);															\
 	}																									\
 }
@@ -62,7 +63,7 @@ namespace vkt {
 		"VK_LAYER_KHRONOS_validation"
 	};
 
-	struct vktDeletionQueue
+	struct deletion_queue
 	{
 		std::deque<std::function<void()>> deletors;
 
@@ -80,7 +81,7 @@ namespace vkt {
 		}
 	};
 
-	VkInstance createVkInstance(vktDeletionQueue& deletionQueue, const char* applicationName, const char* engineName);
+	VkInstance createVkInstance(deletion_queue& deletionQueue, const char* applicationName, const char* engineName);
 
 	namespace io {
 
@@ -192,6 +193,19 @@ namespace vkt {
 		 * The build function returns the type to be built.
 		 */
 		virtual B build() = 0;
+	};
+
+	template <typename VkType>
+	/**
+	 * Interface for a class wrapping a VkType in a high level abstraction class
+	 */
+	class IVkWrapper
+	{
+	  public:
+		/**
+		 * Returns the wrapped low level VkType 
+		 */
+		virtual VkType vk() = 0;
 	};
 }
 
