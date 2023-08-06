@@ -72,10 +72,10 @@ namespace vkt
 
 			// layout transition to dst optimal
 
-			vkt::commands::insertImageMemoryBarrier(cmd, imageDst, 0, VK_ACCESS_MEMORY_WRITE_BIT,
-													VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-													VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-													VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
+			commands::insertImageMemoryBarrier(cmd, imageDst, 0, VK_ACCESS_MEMORY_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+											   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_TRANSFER_BIT,
+											   VK_PIPELINE_STAGE_TRANSFER_BIT,
+											   VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
 
 			// copy buffer to image
 
@@ -95,12 +95,10 @@ namespace vkt
 
 			// retransition
 
-			vkt::commands::insertImageMemoryBarrier(cmd, imageDst, 0, finalAccessMask,
-													VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, finalImageLayout,
-													VK_PIPELINE_STAGE_TRANSFER_BIT, finalStageMask,
-													VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
+			commands::insertImageMemoryBarrier(cmd, imageDst, 0, finalAccessMask, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+											   finalImageLayout, VK_PIPELINE_STAGE_TRANSFER_BIT, finalStageMask,
+											   VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
 		}
-	
 
 		/**
 		 * Transfer raw buffer to allocated image (currently the image must be mapped).
@@ -109,10 +107,10 @@ namespace vkt
 											 Images::AllocatedImage* imageDst, size_t size)
 		{
 			// transition to general (as transfer reciever)
-			vkt::commands::insertImageMemoryBarrier(cmd, imageDst->getImage(), 0, VK_ACCESS_MEMORY_WRITE_BIT,
-													VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
-													VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-													VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
+			commands::insertImageMemoryBarrier(cmd, imageDst->getImage(), 0, VK_ACCESS_MEMORY_WRITE_BIT,
+											   VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
+											   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+											   VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
 
 			// Get layout of the image (including row pitch)
 			VkImageSubresource subResource{};
@@ -126,6 +124,4 @@ namespace vkt
 				   (void*)srcBuffer, size);
 		}
 	}; // namespace commands
-}
-
-
+} // namespace vkt

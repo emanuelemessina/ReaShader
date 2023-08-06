@@ -22,10 +22,11 @@
 #define SHADERS_DIR GET_ASSET_DIR("shaders")
 #define IMAGES_DIR GET_ASSET_DIR("images")
 
-#include "vktools/vktcommandpool.h"
-#include "vktools/vktcommands.h"
-#include "vktools/vktpipeline.h"
-#include "vktools/vkttextures.h"
+#include "vkt/vktcommandpool.h"
+#include "vkt/vktcommands.h"
+#include "vkt/vktpipeline.h"
+#include "vkt/vktqueue.h"
+#include "vkt/vkttextures.h"
 
 namespace ReaShader
 {
@@ -608,7 +609,7 @@ namespace ReaShader
 	// GRAPHICS PIPELINE
 
 	vkt::Rendering::Material createMaterialOpaque(vkt::Logical::Device* vktDevice, VkRenderPass& renderPass,
-									   std::vector<VkDescriptorSetLayout> descriptorSetLayouts)
+												  std::vector<VkDescriptorSetLayout> descriptorSetLayouts)
 	{
 		VkShaderModule vertShaderModule =
 			vkt::Pipeline::createShaderModule(vktDevice, tools::paths::join({ SHADERS_DIR, "vert.spv" }));
@@ -819,7 +820,7 @@ namespace ReaShader
 	}
 
 	vkt::Rendering::Material createMaterialPP(vkt::Logical::Device* vktDevice, VkRenderPass& renderPass,
-								   std::vector<VkDescriptorSetLayout> descriptorSetLayouts)
+											  std::vector<VkDescriptorSetLayout> descriptorSetLayouts)
 	{
 		VkShaderModule vertShaderModule =
 			vkt::Pipeline::createShaderModule(vktDevice, tools::paths::join({ SHADERS_DIR, "pp_vert.spv" }));
@@ -1079,11 +1080,13 @@ namespace ReaShader
 		{
 			myVkInstance = vkt::createVkInstance(vktMainDeletionQueue, "ReaShader Effect", "No Engine");
 
-			std::vector<VkPhysicalDevice> vkSuitablePhysicalDevices =
-				vkt::Physical::DeviceSelector().enumerate(myVkInstance).removeUnsuitable(&isPhysicalDeviceSuitable).get();
+			std::vector<VkPhysicalDevice> vkSuitablePhysicalDevices = vkt::Physical::DeviceSelector()
+																		  .enumerate(myVkInstance)
+																		  .removeUnsuitable(&isPhysicalDeviceSuitable)
+																		  .get();
 
 			vktPhysicalDevice = new vkt::Physical::Device(vktMainDeletionQueue, myVkInstance,
-														   vkSuitablePhysicalDevices[0]); // choose the first suitable
+														  vkSuitablePhysicalDevices[0]); // choose the first suitable
 
 			vktDevice = new vkt::Logical::Device(vktMainDeletionQueue, vktPhysicalDevice);
 		}
@@ -1130,11 +1133,11 @@ namespace ReaShader
 
 		// declare types and needs
 		vktDescriptorPool = new vkt::Descriptors::DescriptorPool(vktDevice,
-													   { { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 5 },
-														 { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 5 },
-														 { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5 },
-														 { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5 } },
-													   5);
+																 { { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 5 },
+																   { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 5 },
+																   { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5 },
+																   { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5 } },
+																 5);
 
 		// bind sets
 
@@ -1239,14 +1242,14 @@ namespace ReaShader
 
 			renderObjects.push_back(std::move(reashader));
 
-			/*	vkt::RenderObject monkey{};
+			/*	::RenderObject monkey{};
 				monkey.mesh = *meshes.get(ids::meshes::suzanne);
 				monkey.material = materials.get(ids::materials::opaque);
 				monkey.localTransformMatrix = glm::mat4{ 1.0f };
 
 				renderObjects.push_back(std::move(monkey));*/
 
-			/*vkt::RenderObject triangle{};
+			/*::RenderObject triangle{};
 			triangle.mesh = *meshes.get(ids::meshes::triangle);
 			triangle.material = materials.get(ids::materials::opaque);
 			glm::mat4 translation = glm::translate(glm::mat4{ 1.0 }, glm::vec3(5, 0, 5));

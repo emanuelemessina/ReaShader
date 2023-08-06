@@ -2,10 +2,10 @@
 
 #include <memory>
 
-#include "rsui/backend.h"
+#include "rsui/backend/backend.h"
 #include "tools/fwd_decl.h"
 
-#include "rsui/rseditor.h"
+#include "rsui/vst/rsuieditor.h"
 
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
@@ -16,7 +16,9 @@ using namespace Vst;
 namespace ReaShader
 {
 	FWD_DECL(MyPluginController)
-	FWD_DECL(RSEditor)
+	FWD_DECL(RSUI::RSUIEditor)
+
+	using namespace RSUI;
 
 	class ReaShaderController
 	{
@@ -28,10 +30,9 @@ namespace ReaShader
 
 		void initialize();
 
-		void sendMessageToUI(const char* text);
 		void loadParamsUIValues(IBStream* state);
 		IPlugView* createVSTView();
-		RSUIController* createVSTViewSubController(const IUIDescription* description);
+		RSUISubController* createVSTViewSubController(const IUIDescription* description);
 
 		void terminate();
 
@@ -43,11 +44,11 @@ namespace ReaShader
 
 		void _registerUIParams();
 
-		void _receiveTextFromWebUI(const std::string& msg);
-		void _receiveBinaryFromWebUI(const std::vector<char>& msg);
+		void _receiveTextFromRSUIServer(const std::string& msg);
+		void _receiveBinaryFromRSUIServer(const std::vector<char>& msg);
 
 		// memory managed by plugin
-		RSEditor* rsEditor;
-		RSUIController* rsuiController;
+		RSUIEditor* rsEditor;
+		RSUISubController* rsuiController;
 	};
 } // namespace ReaShader

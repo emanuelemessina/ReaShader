@@ -116,6 +116,6 @@ namespace vkt
 
 			return shaderModule;
 		}
-	}; // namespace pipeline
+	}; // namespace Pipeline
 
 } // namespace vkt

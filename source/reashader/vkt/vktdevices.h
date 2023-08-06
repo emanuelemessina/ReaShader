@@ -1,8 +1,8 @@
 #pragma once
 
-#include "vktools/vktcommon.h"
+#include "vkt/vktcommon.h"
 
-namespace vkt {
+namespace  vkt {
 
 	FWD_DECL(CommandPool);
 	FWD_DECL(Queue);

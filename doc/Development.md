@@ -16,12 +16,6 @@ The vkt namespace contains the custom vk tools to simplify the vulkan process.
 
 <br>
 
-### headers flow
-
-`vktools -> vktcommandqueue -> vktdevices -> vktsync , vktbuffers -> vktimages -> vktdescriptors -> vktrendering`
-
-<br>
-
 ---
 
 <br>

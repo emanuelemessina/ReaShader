@@ -8,8 +8,7 @@ namespace vkt
 		// DescriptorSetLayoutBuilder
 
 		DescriptorSetLayoutBuilder& DescriptorSetLayoutBuilder::bind(int binding, VkDescriptorType type,
-																   VkShaderStageFlags stages,
-										 int descriptorCount)
+																	 VkShaderStageFlags stages, int descriptorCount)
 		{
 			VkDescriptorSetLayoutBinding b = {};
 			b.binding = binding;
@@ -65,7 +64,8 @@ namespace vkt
 				[=]() { vkDestroyDescriptorPool(vktDevice->vk(), m_descriptorPool, nullptr); });
 		}
 
-		void DescriptorPool::allocateDescriptorSets(std::vector<std::reference_wrapper<DescriptorSet>> vktDescriptorSets)
+		void DescriptorPool::allocateDescriptorSets(
+			std::vector<std::reference_wrapper<DescriptorSet>> vktDescriptorSets)
 		{
 
 			uint32_t count = static_cast<uint32_t>(vktDescriptorSets.size());
@@ -111,7 +111,7 @@ namespace vkt
 		{
 			currentSetWrite.dstBinding = binding;
 
-			VkDescriptorSetLayoutBinding bindInfo = vkt::vectors::findRef(
+			VkDescriptorSetLayoutBinding bindInfo = vectors::findRef(
 				currentDescSet.bindings, [&](const VkDescriptorSetLayoutBinding& b) { return b.binding == binding; });
 
 			currentSetWrite.descriptorCount = bindInfo.descriptorCount; // the one set in the binding info
@@ -159,5 +159,5 @@ namespace vkt
 								   nullptr);
 		}
 
-	}
+	} // namespace Descriptors
 } // namespace vkt

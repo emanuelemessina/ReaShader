@@ -1,11 +1,11 @@
 #pragma once
 
+#include "vktbuffers.h"
 #include "vktcommon.h"
 #include "vktdescriptors.h"
-#include "vktimages.h"
 #include "vktdevices.h"
+#include "vktimages.h"
 #include "vktvertex.h"
-#include "vktbuffers.h"
 
 #include "tiny_obj_loader.h"
 
@@ -70,6 +70,6 @@ namespace vkt
 
 			glm::mat4 localTransformMatrix = glm::mat4{ 1.0f };
 		};
-	}
+	} // namespace Rendering
 
 } // namespace vkt

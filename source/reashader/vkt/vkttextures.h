@@ -29,4 +29,4 @@ namespace vkt
 		}
 	}; // namespace textures
 
-}
+} // namespace vkt

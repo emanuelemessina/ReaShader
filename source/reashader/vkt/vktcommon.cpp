@@ -14,7 +14,7 @@
 
 // ------
 
-namespace vkt {
+namespace  vkt {
 
 	namespace io {
 

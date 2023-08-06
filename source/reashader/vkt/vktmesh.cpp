@@ -16,9 +16,9 @@ namespace vkt
 
 		Mesh* Mesh::setVertices(std::vector<Vertex> vertices)
 		{
-			vertexBuffer->allocate(vertices.size() * sizeof(vkt::Vertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+			vertexBuffer->allocate(vertices.size() * sizeof(Vertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
 								   VMA_MEMORY_USAGE_GPU_TO_CPU);
-			vertexBuffer->putData(vertices.data(), vertices.size() * sizeof(vkt::Vertex));
+			vertexBuffer->putData(vertices.data(), vertices.size() * sizeof(Vertex));
 
 			this->vertices = vertices;
 
@@ -139,5 +139,5 @@ namespace vkt
 
 			return true;
 		}
-	}
-}
+	} // namespace Rendering
+} // namespace vkt
