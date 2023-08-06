@@ -1,8 +1,8 @@
 #pragma once
 
-#include "vktools/vktdevices.h"
+#include "vkt/vktdevices.h"
 
-namespace vkt {
+namespace  vkt {
 
 	template <typename T>
 	concept VkSyncObject = std::same_as<T, VkFence> || std::same_as<T, VkSemaphore>;

@@ -74,7 +74,7 @@ namespace vkt
 			return position == other.position && uv == other.uv && normal == other.normal;
 		}
 	};
-}
+} // namespace vkt
 
 // hash func for vertex
 namespace std

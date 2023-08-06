@@ -4,13 +4,15 @@
 #include "vktqueue.h"
 #include <ranges>
 
-namespace vkt {
+namespace vkt
+{
 
-	class CommandPool : IVkWrapper<VkCommandPool> {
+	class CommandPool : IVkWrapper<VkCommandPool>
+	{
 
-	public:
+	  public:
 		CommandPool(deletion_queue& deletionQueue, Queue* queue);
-		
+
 		/**
 		Allocates new command buffer, begins it, then returns it.
 		Deletion is up to you.
@@ -60,15 +62,14 @@ namespace vkt {
 		*/
 		CommandPool* restartAll();
 
-	private:
-
+	  private:
 		/**
 		Ends the commandBuffer, then submits it (top of pipe).
 		*/
-		void submitQueueSingle(VkCommandBuffer commandBuffer, VkFence fence, VkSemaphore signalSemaphore, VkSemaphore waitSemaphore);
+		void submitQueueSingle(VkCommandBuffer commandBuffer, VkFence fence, VkSemaphore signalSemaphore,
+							   VkSemaphore waitSemaphore);
 
-	public:
-
+	  public:
 		/**
 		Submits the command buffer specified by id.
 		@param id
@@ -80,14 +81,12 @@ namespace vkt {
 		*/
 		CommandPool* submit(VkCommandBuffer cmd, VkFence fence, VkSemaphore signalSemaphore, VkSemaphore waitSemaphore);
 
-	private:
-
+	  private:
 		VkCommandPool m_commandPool = VK_NULL_HANDLE;
 		VkDevice device = VK_NULL_HANDLE;
 		deletion_queue* pDeletionQueue;
 		Queue* vktQueue;
 		vectors::searchable_map<int, VkCommandBuffer> m_commandBuffers;
-
 	};
 
-}
+} // namespace vkt

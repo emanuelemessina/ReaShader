@@ -30,34 +30,63 @@ namespace ReaShader
 		reaShaderRenderer->init();
 	}
 
+	void ReaShaderProcessor::_sendJSONToController(json msg)
+	{
+		myPluginProcessor->sendTextMessage(msg.dump().c_str());
+	}
+
+	void ReaShaderProcessor::_webuiSendParamUpdate(Vst::ParamID id, Vst::ParamValue newValue)
+	{
+		json j;
+		j["paramId"] = id;
+		j["value"] = newValue;
+		j["type"] = RSUI::typeStrings[RSUI::ParamUpdate];
+
+		_sendJSONToController(j);
+	}
+	void ReaShaderProcessor::_webuiSendTrackInfo(ReaShader::TrackInfo trackInfo)
+	{
+		json j;
+
+		j["type"] = RSUI::typeStrings[RSUI::TrackInfo];
+
+		j["trackNumber"] = trackInfo.number;
+
+		if (trackInfo.number == -1) // master track
+			j["trackName"] = "MASTER";
+		else if (trackInfo.number == 0)
+			j["trackName"] = "Track Not Found";
+
+		if (trackInfo.name)
+		{
+			j["trackName"] = trackInfo.name;
+		}
+
+		_sendJSONToController(j);
+	}
+
 	void ReaShaderProcessor::receivedJSONFromController(json msg)
 	{
-		try
-		{
-			std::string type = msg["type"];
-
-			if (type == "paramUpdate")
-			{
-				rsParams[(Steinberg::Vst::ParamID)msg["paramId"]].value = (Steinberg::Vst::ParamValue)msg["value"];
-			}
-		}
-		catch (STDEXC e)
-		{
-			LOG(WARNING, toConsole | toFile, "ReaShaderProcessor", "Unrecognized JSON from Controller",
-				std::format("Got {}", msg.dump()));
-		}
+		RSUI::MessageHandler(msg)
+			.reacToParamUpdate(
+				[&](Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue) { rsParams[id].value = newValue; })
+			.reactToRequest([&](RSUI::RequestType type) {
+				switch (type)
+				{
+					case RSUI::RequestType::WantTrackInfo:
+						_webuiSendTrackInfo(trackInfo);
+						break;
+				}
+			})
+			.fallbackWarning("ReaShaderProcessor");
 	}
+
 	void ReaShaderProcessor::parameterUpdate(Vst::ParamID id, Vst::ParamValue newValue)
 	{
 		// update processor param (change was made by vstui or automation)
 		rsParams[id].value = newValue;
 		// relay back to frontend to update webui
-		json j;
-		j["paramId"] = id;
-		j["value"] = newValue;
-		j["type"] = "paramUpdate";
-
-		myPluginProcessor->sendTextMessage(j.dump().c_str());
+		_webuiSendParamUpdate(id, newValue);
 	}
 	void ReaShaderProcessor::storeParamsValues(IBStream* state)
 	{
@@ -126,9 +155,6 @@ namespace ReaShader
 
 				// get track info and send it to ui
 
-				char* trackName{ nullptr };
-				double trackNumber{ 0 };
-
 				MediaTrack* track = (MediaTrack*)reaperApp->getReaperParent(1);
 
 				void* (*GetSetMediaTrackInfo)(MediaTrack * tr, const char* parmname, void* setNewValue);
@@ -136,7 +162,7 @@ namespace ReaShader
 				if (GetSetMediaTrackInfo)
 				{
 					// P_NAME : char * : track name (on master returns NULL)
-					trackName = (char*)GetSetMediaTrackInfo(track, "P_NAME", nullptr);
+					trackInfo.name = (char*)GetSetMediaTrackInfo(track, "P_NAME", nullptr);
 				}
 
 				double (*GetMediaTrackInfo_Value)(MediaTrack * tr, const char* parmname);
@@ -145,28 +171,12 @@ namespace ReaShader
 				{
 					// IP_TRACKNUMBER : int : track number 1-based, 0=not found, -1=master track (read-only, returns
 					// the int directly)
-					trackNumber = GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER");
+					trackInfo.number = GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER");
 				}
 
 				// send track info to ui
 
-				json j;
-
-				j["type"] = "trackInfo";
-
-				j["trackNumber"] = (int)trackNumber;
-
-				if (trackNumber == -1) // master track
-					j["trackName"] = "MASTER";
-				else if (trackNumber == 0)
-					j["trackName"] = "Track Not Found";
-
-				if (trackName)
-				{
-					j["trackName"] = trackName;
-				}
-
-				myPluginProcessor->sendTextMessage(j.dump().c_str());
+				_webuiSendTrackInfo(trackInfo);
 			}
 		}
 	}

@@ -1,6 +1,6 @@
 #include "vktdevices.h"
-#include "vktqueue.h"
 #include "vktcommandpool.h"
+#include "vktqueue.h"
 
 namespace vkt
 {
@@ -76,7 +76,7 @@ namespace vkt
 
 			return queueFamilyIndices;
 		}
-	
+
 		// deviceSelector
 
 		DeviceSelector& DeviceSelector::enumerate(VkInstance instance)
@@ -109,11 +109,10 @@ namespace vkt
 
 			return *this;
 		}
-	
+
 		// physicalDevice
 
-		Device::Device(deletion_queue& deletionQueue, VkInstance instance,
-											 VkPhysicalDevice vkPhysicalDevice)
+		Device::Device(deletion_queue& deletionQueue, VkInstance instance, VkPhysicalDevice vkPhysicalDevice)
 			: vkPhysicalDevice(vkPhysicalDevice), instance(instance)
 		{
 
@@ -144,8 +143,7 @@ namespace vkt
 			deletionQueue.push_function([=]() { delete (this); });
 		}
 
-		uint32_t Device::getMemoryType(uint32_t typeBits, VkMemoryPropertyFlags properties,
-									   VkBool32* memTypeFound)
+		uint32_t Device::getMemoryType(uint32_t typeBits, VkMemoryPropertyFlags properties, VkBool32* memTypeFound)
 		{
 			for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++)
 			{
@@ -201,13 +199,13 @@ namespace vkt
 
 			return supportsBlit.value();
 		}
-	}
+	} // namespace Physical
 
 	namespace Logical
 	{
 		Device::Device(deletion_queue& deletionQueue, Physical::Device* physicalDevice,
-			   VkPhysicalDeviceFeatures enabledFeatures, std::vector<const char*> enabledExtensions,
-			   bool useSwapChain)
+					   VkPhysicalDeviceFeatures enabledFeatures, std::vector<const char*> enabledExtensions,
+					   bool useSwapChain)
 			: physicalDevice(physicalDevice), pDeletionQueue(&deletionQueue)
 		{
 
@@ -232,7 +230,7 @@ namespace vkt
 		}
 
 		void Device::createLogicalDevice(void* pNext, VkPhysicalDeviceFeatures enabledFeatures,
-								 std::vector<const char*> enabledExtensions, bool useSwapChain)
+										 std::vector<const char*> enabledExtensions, bool useSwapChain)
 		{
 
 			// QUEUE FAMILIES
@@ -343,7 +341,7 @@ namespace vkt
 
 			pDeletionQueue->push_function([=]() { vkDestroyDevice(vkDevice, nullptr); });
 		}
-	
+
 		void Device::createMemoryAllocator()
 		{
 			// create memory allocator
@@ -373,5 +371,5 @@ namespace vkt
 		{
 			return transferQueue;
 		}
-	}
-}
+	} // namespace Logical
+} // namespace vkt

@@ -2,11 +2,11 @@
 
 #include "tools/fwd_decl.h"
 
-#include "vktools/vktdescriptors.h"
-#include "vktools/vktdevices.h"
-#include "vktools/vktimages.h"
-#include "vktools/vktcommon.h"
-#include "vktools/vktrendering.h"
+#include "vkt/vktcommon.h"
+#include "vkt/vktdescriptors.h"
+#include "vkt/vktdevices.h"
+#include "vkt/vktimages.h"
+#include "vkt/vktrendering.h"
 
 namespace ReaShader
 {

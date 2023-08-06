@@ -33,5 +33,4 @@ namespace vkt
 		VkQueue vkQueue = VK_NULL_HANDLE;
 		std::optional<uint32_t> queueFamilyIndex;
 	};
-}
-
+} // namespace vkt

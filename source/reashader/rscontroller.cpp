@@ -2,14 +2,16 @@
 #include "myplugincids.h"
 #include "myplugincontroller.h"
 #include "rsparams.h"
-#include "rsui/rseditor.h"
-
+#include "rsui/api.h"
+#include "rsui/vst/rsuieditor.h"
 #include <base/source/fstreamer.h>
 
 #include "tools/logging.h"
 
 namespace ReaShader
 {
+	using namespace RSUI;
+
 	void ReaShaderController::_registerUIParams()
 	{
 		ParameterContainer& parameters = myPluginController->getParameters();
@@ -21,32 +23,20 @@ namespace ReaShader
 		}
 	}
 
-	void ReaShaderController::_receiveTextFromWebUI(const std::string& msg)
+	void ReaShaderController::_receiveTextFromRSUIServer(const std::string& msg)
 	{
 		// relay message to processor
 		myPluginController->sendTextMessage(msg.c_str());
 
 		// check json
-		try
-		{
-			auto packet = json::parse(msg);
-
-			std::string type = packet["type"];
-
-			if (type == "paramUpdate")
-			{
-				myPluginController->setParamNormalized((Steinberg::Vst::ParamID)packet["paramId"],
-													   (Steinberg::Vst::ParamValue)packet["value"]);
-			}
-		}
-		catch (STDEXC e)
-		{
-			LOG(WARNING, toConsole | toFile, "ReaShaderController", "Cannot parse message from web UI",
-				std::format("Received: {} \n Error: {}", msg, e.what()));
-		}
+		RSUI::MessageHandler(msg.c_str())
+			.reacToParamUpdate([&](Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue) {
+				myPluginController->setParamNormalized(id, newValue);
+			})
+			.fallbackWarning("ReaShaderController");
 	}
 
-	void ReaShaderController::_receiveBinaryFromWebUI(const std::vector<char>& msg)
+	void ReaShaderController::_receiveBinaryFromRSUIServer(const std::vector<char>& msg)
 	{
 		// relay message to processor
 		// myPluginController->sendMessage(msg);
@@ -80,16 +70,8 @@ namespace ReaShader
 
 		// Launch UI Server Thread
 		rsuiServer = std::make_unique<RSUIServer>(
-			std::bind(&ReaShaderController::_receiveTextFromWebUI, this, std::placeholders::_1),
-			std::bind(&ReaShaderController::_receiveBinaryFromWebUI, this, std::placeholders::_1));
-	}
-
-	void ReaShaderController::sendMessageToUI(const char* text)
-	{
-		// recieved message from processor -> need to update the web ui
-		// relay ws message to frontend
-		std::string msg(text);
-		rsuiServer->sendWSTextMessage(msg);
+			std::bind(&ReaShaderController::_receiveTextFromRSUIServer, this, std::placeholders::_1),
+			std::bind(&ReaShaderController::_receiveBinaryFromRSUIServer, this, std::placeholders::_1));
 	}
 
 	void ReaShaderController::terminate()
@@ -118,12 +100,12 @@ namespace ReaShader
 
 	IPlugView* ReaShaderController::createVSTView()
 	{
-		rsEditor = new RSEditor(myPluginController, "view", "myplugineditor.uidesc");
+		rsEditor = new RSUIEditor(myPluginController, "view", "myplugineditor.uidesc");
 		return rsEditor;
 	}
-	RSUIController* ReaShaderController::createVSTViewSubController(const IUIDescription* description)
+	RSUISubController* ReaShaderController::createVSTViewSubController(const IUIDescription* description)
 	{
-		rsuiController = new RSUIController(this, rsEditor, description);
+		rsuiController = new RSUISubController(this, rsEditor, description);
 		return rsuiController;
 	}
 } // namespace ReaShader

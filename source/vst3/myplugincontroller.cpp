@@ -7,7 +7,7 @@
 #include <stdio.h>
 
 #include "rscontroller.h"
-#include "rsui/rseditor.h"
+#include "rsui/vst/rsuieditor.h"
 
 using namespace Steinberg;
 using namespace VSTGUI;
@@ -44,7 +44,10 @@ namespace ReaShader
 	{
 		if (text)
 		{
-			reaShaderController->sendMessageToUI(text);
+			// recieved message from processor -> need to update the web ui
+			// relay ws message to frontend
+			std::string msg(text);
+			reaShaderController->rsuiServer->sendWSTextMessage(msg);
 		}
 
 		return kResultOk;

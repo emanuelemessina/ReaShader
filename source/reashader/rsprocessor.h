@@ -14,6 +14,7 @@ using json = nlohmann::json;
 using namespace Steinberg;
 
 #include "rsrenderer.h"
+#include "rsui/api.h"
 
 namespace ReaShader
 {
@@ -30,6 +31,10 @@ namespace ReaShader
 		ReaShaderProcessor(MyPluginProcessor* processor, FUnknown* context);
 
 		void initialize();
+		/**
+		 * @brief Gets called when the controller has relayed a json message from the web ui
+		 * @param msg
+		 */
 		void receivedJSONFromController(json msg);
 		/**
 		 * @brief Gets called from the plugin processor when a parameter is updated from the DAW
@@ -54,6 +59,17 @@ namespace ReaShader
 		std::unique_ptr<ReaShaderRenderer> reaShaderRenderer;
 
 	  private:
+		/**
+		 * @brief Message to controller gets relayed to web ui
+		 * @param msg
+		 */
+		void _sendJSONToController(json msg);
+
+		void _webuiSendParamUpdate(Vst::ParamID id, Vst::ParamValue newValue);
+		void _webuiSendTrackInfo(ReaShader::TrackInfo trackInfo);
+
+		ReaShader::TrackInfo trackInfo;
+
 		int myColor;
 
 		IREAPERVideoProcessor* m_videoproc{ nullptr };

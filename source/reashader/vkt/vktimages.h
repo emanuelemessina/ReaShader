@@ -10,7 +10,7 @@
 
 #include "tools/strings.h"
 
-namespace vkt {
+namespace  vkt {
 
 	namespace Images
 	{

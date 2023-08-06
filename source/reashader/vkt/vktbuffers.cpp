@@ -18,22 +18,22 @@ namespace vkt
 
 		// AllocatedBuffer
 
-		AllocatedBuffer::AllocatedBuffer(vkt::Logical::Device* vktDevice, bool pushToDeletionQueue)
+		AllocatedBuffer::AllocatedBuffer(Logical::Device* vktDevice, bool pushToDeletionQueue)
 			: vktDevice(vktDevice), pushToDeletionQueue(pushToDeletionQueue)
 		{
 			if (pushToDeletionQueue)
 				vktDevice->pDeletionQueue->push_function([=]() { destroy(); });
 		}
 
-		AllocatedBuffer* AllocatedBuffer::allocate(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage)
+		AllocatedBuffer* AllocatedBuffer::allocate(size_t allocSize, VkBufferUsageFlags usage,
+												   VmaMemoryUsage memoryUsage)
 		{
 			// allocate vertex buffer
 			VkBufferCreateInfo bufferInfo = {};
 			bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 			bufferInfo.pNext = nullptr;
 
-			bufferInfo.size =
-				(VkDeviceSize)pad_uniform_buffer_size(vktDevice->physicalDevice, allocSize);
+			bufferInfo.size = (VkDeviceSize)pad_uniform_buffer_size(vktDevice->physicalDevice, allocSize);
 			bufferInfo.usage = usage;
 
 			VmaAllocationCreateInfo vmaallocInfo = {};
@@ -67,5 +67,5 @@ namespace vkt
 				VK_CHECK_RESULT(vmaFlushAllocation(vktDevice->vmaAllocator, this->allocation, 0, VK_WHOLE_SIZE));
 			delete (this);
 		}
-	}
-}
+	} // namespace Buffers
+} // namespace vkt

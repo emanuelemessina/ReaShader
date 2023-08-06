@@ -1,11 +1,12 @@
 #pragma once
 
+#include "vktbuffers.h"
 #include "vktcommon.h"
 #include "vktdevices.h"
-#include "vktbuffers.h"
 #include "vktimages.h"
 
-namespace vkt {
+namespace vkt
+{
 
 	namespace Descriptors
 	{
@@ -70,7 +71,8 @@ namespace vkt {
 			DescriptorSetWriter selectDescriptorSet(DescriptorSet descriptorSet);
 			DescriptorSetWriter selectBinding(int binding);
 
-			DescriptorSetWriter registerWriteBuffer(Buffers::AllocatedBuffer* aBuffer, size_t size, VkDeviceSize offset);
+			DescriptorSetWriter registerWriteBuffer(Buffers::AllocatedBuffer* aBuffer, size_t size,
+													VkDeviceSize offset);
 			DescriptorSetWriter registerWriteImage(Images::AllocatedImage* aImage, VkSampler sampler,
 												   VkImageLayout imageLayout);
 			void writeRegistered();
@@ -84,5 +86,5 @@ namespace vkt {
 
 			Logical::Device* vktDevice;
 		};
-	}
-}
+	} // namespace Descriptors
+} // namespace vkt

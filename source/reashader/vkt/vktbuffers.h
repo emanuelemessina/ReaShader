@@ -2,9 +2,11 @@
 
 #include "vktdevices.h"
 
-namespace vkt {
+namespace vkt
+{
 
-	namespace Buffers {
+	namespace Buffers
+	{
 
 		static size_t pad_uniform_buffer_size(Physical::Device* vktPhysicalDevice, size_t originalSize);
 
@@ -18,7 +20,7 @@ namespace vkt {
 			VmaAllocation allocation = nullptr;
 
 		  public:
-			AllocatedBuffer(vkt::Logical::Device* vktDevice, bool pushToDeletionQueue = true);
+			AllocatedBuffer(Logical::Device* vktDevice, bool pushToDeletionQueue = true);
 
 			/**
 			Does automatic padding alignment
@@ -38,7 +40,6 @@ namespace vkt {
 				return allocation;
 			}
 		};
-	};
+	}; // namespace Buffers
 
-	
-}
+} // namespace vkt
