@@ -66,7 +66,7 @@ namespace ReaShader
 		void _sendJSONToController(json msg);
 
 		void _webuiSendParamUpdate(Vst::ParamID id, Vst::ParamValue newValue);
-		void _webuiSendTrackInfo(ReaShader::TrackInfo trackInfo);
+		void _webuiSendTrackInfo();
 
 		ReaShader::TrackInfo trackInfo;
 

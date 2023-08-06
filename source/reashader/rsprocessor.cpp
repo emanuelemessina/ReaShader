@@ -37,32 +37,11 @@ namespace ReaShader
 
 	void ReaShaderProcessor::_webuiSendParamUpdate(Vst::ParamID id, Vst::ParamValue newValue)
 	{
-		json j;
-		j["paramId"] = id;
-		j["value"] = newValue;
-		j["type"] = RSUI::typeStrings[RSUI::ParamUpdate];
-
-		_sendJSONToController(j);
+		_sendJSONToController(RSUI::MessageBuilder::buildParamUpdate(id, newValue));
 	}
-	void ReaShaderProcessor::_webuiSendTrackInfo(ReaShader::TrackInfo trackInfo)
+	void ReaShaderProcessor::_webuiSendTrackInfo()
 	{
-		json j;
-
-		j["type"] = RSUI::typeStrings[RSUI::TrackInfo];
-
-		j["trackNumber"] = trackInfo.number;
-
-		if (trackInfo.number == -1) // master track
-			j["trackName"] = "MASTER";
-		else if (trackInfo.number == 0)
-			j["trackName"] = "Track Not Found";
-
-		if (trackInfo.name)
-		{
-			j["trackName"] = trackInfo.name;
-		}
-
-		_sendJSONToController(j);
+		_sendJSONToController(RSUI::MessageBuilder::buildTrackInfo(trackInfo));
 	}
 
 	void ReaShaderProcessor::receivedJSONFromController(json msg)
@@ -74,7 +53,7 @@ namespace ReaShader
 				switch (type)
 				{
 					case RSUI::RequestType::WantTrackInfo:
-						_webuiSendTrackInfo(trackInfo);
+						_webuiSendTrackInfo();
 						break;
 				}
 			})
@@ -173,10 +152,6 @@ namespace ReaShader
 					// the int directly)
 					trackInfo.number = GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER");
 				}
-
-				// send track info to ui
-
-				_webuiSendTrackInfo(trackInfo);
 			}
 		}
 	}
