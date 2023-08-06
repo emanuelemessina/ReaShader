@@ -25,13 +25,26 @@ namespace ReaShader
 
 	void ReaShaderController::_receiveTextFromRSUIServer(const std::string& msg)
 	{
-		// relay message to processor
-		myPluginController->sendTextMessage(msg.c_str());
+		// relay messages to processor if needed
 
 		// check json
 		RSUI::MessageHandler(msg.c_str())
 			.reacToParamUpdate([&](Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue) {
 				myPluginController->setParamNormalized(id, newValue);
+				myPluginController->sendTextMessage(msg.c_str()); // relay to processor to update params
+			})
+			.reactToRequest([&](RSUI::RequestType type) {
+				switch (type)
+				{
+					case RSUI::RequestType::WantParamsList: {
+						std::string resp = RSUI::MessageBuilder::buildParametersList(rsParams).dump();
+						rsuiServer->sendWSTextMessage(resp);
+						break;
+					}
+					default: // relay to processor to handle request
+						myPluginController->sendTextMessage(msg.c_str());
+						break;
+				}
 			})
 			.fallbackWarning("ReaShaderController");
 	}

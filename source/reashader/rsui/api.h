@@ -1,5 +1,6 @@
 #pragma once
 
+#include "rsparams.h"
 #include "tools/logging.h"
 
 #include <nlohmann/json.hpp>
@@ -20,20 +21,20 @@ namespace ReaShader
 			ParamUpdate,
 			TrackInfo,
 			Request,
+			ParamsList,
 
 			numMessageTypes
 		};
 
-		static const std::string typeStrings[] = { "paramUpdate", "trackInfo", "request" };
+		static const std::string typeStrings[] = { "paramUpdate", "trackInfo", "request", "paramsList" };
 
 		enum RequestType
 		{
 			WantTrackInfo,
+			WantParamsList,
 
 			numRequestTypes
 		};
-
-		static const std::string requestTypeStrings[] = { "trackInfo" };
 
 		//--------------------------------------
 
@@ -83,7 +84,7 @@ namespace ReaShader
 			MessageHandler& reactToRequest(const std::function<void(RequestType)>& callback)
 			{
 				std::string what(msg["what"]);
-				for (size_t i = 0; i < numRequestTypes; ++i)
+				for (size_t i = 0; i < numMessageTypes; ++i)
 				{
 					if (typeStrings[i] == what)
 					{
@@ -152,5 +153,55 @@ namespace ReaShader
 			}
 		};
 
+		class MessageBuilder
+		{
+		  public:
+			static json buildParamUpdate(Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue)
+			{
+				json j;
+				j["type"] = typeStrings[ParamUpdate];
+				j["paramId"] = id;
+				j["value"] = newValue;
+				return j;
+			}
+			static json buildTrackInfo(ReaShader::TrackInfo trackInfo)
+			{
+				json j;
+
+				j["type"] = typeStrings[RSUI::TrackInfo];
+
+				j["trackNumber"] = trackInfo.number;
+
+				if (trackInfo.number == -1) // master track
+					j["trackName"] = "MASTER";
+				else if (trackInfo.number == 0)
+					j["trackName"] = "Track Not Found";
+
+				if (trackInfo.name)
+				{
+					j["trackName"] = trackInfo.name;
+				}
+
+				return j;
+			}
+			static json buildParametersList(ReaShaderParameter (&rsParams)[uNumParams])
+			{
+				json j;
+				j["type"] = typeStrings[RSUI::ParamsList];
+
+				for (int i; i < uNumParams; i++)
+				{
+					json paramProps;
+					paramProps["title"] = rsParams[i].title;
+					paramProps["units"] = rsParams[i].units;
+					paramProps["defaultValue"] = rsParams[i].defaultValue;
+					paramProps["value"] = rsParams[i].value;
+
+					j["params"][rsParams->id] = paramProps;
+				}
+
+				return j;
+			}
+		};
 	} // namespace RSUI
 } // namespace ReaShader
