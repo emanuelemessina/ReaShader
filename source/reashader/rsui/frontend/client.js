@@ -22,9 +22,11 @@ socket.addEventListener('message', (event) => {
                 window.close();
             })
             .handleParamUpdate((json) => {
-                const receivedValue = parseFloat(json.value);
-                slider.value = receivedValue; // Convert to slider range
-                sliderValueElement.textContent = receivedValue.toFixed(3);
+                const newValue = parseFloat(json.value);
+                const slider = document.getElementById(json.paramId);
+                slider.value = newValue; // Convert to slider range
+                const valueLabel = document.getElementById(`value_${json.paramId}`);
+                valueLabel.textContent = newValue.toFixed(3);
             })
             .handleTrackInfo((json) => {
                 document.title = `${json.trackNumber} | ${json.trackName}`;
@@ -43,25 +45,29 @@ socket.addEventListener('message', (event) => {
 
                     const titleLabel = document.createElement('label');
                     titleLabel.textContent = utf8_to_utf16(param.title);
-                    titleLabel.for = paramId;
+                    titleLabel.setAttribute('for', `${paramId}`);
 
                     const valueLabel = document.createElement('label');
-                    valueLabel.textContent = `${param.value} ${utf8_to_utf16(param.units)}`;
+                    valueLabel.textContent = `${param.value}`;
+                    valueLabel.id = `value_${paramId}`;
+
+                    const unitsLabel = document.createElement('label');
+                    unitsLabel.textContent = `${utf8_to_utf16(param.units)}`;
 
                     const slider = document.createElement('input');
+                    slider.id = paramId
                     slider.type = 'range';
                     slider.min = 0; // Set your minimum value
                     slider.max = 1; // Set your maximum value
                     slider.value = param.value;
                     slider.step = '0.001';
-                    slider.id = paramId
 
                     // Add event listener to send paramUpdate message on slider change
                     slider.addEventListener('input', (event) => {
                         const newValue = parseFloat(event.target.value);
 
                         // Update value label
-                        valueLabel.textContent = `${newValue} ${utf8_to_utf16(param.units)}`;
+                        valueLabel.textContent = `${newValue}`;
 
                         messager
                             .sendParamUpdate(paramId, newValue);
