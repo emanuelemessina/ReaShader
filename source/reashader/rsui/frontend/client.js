@@ -77,6 +77,8 @@ socket.addEventListener('message', (event) => {
                     sliderContainer.appendChild(titleLabel);
                     sliderContainer.appendChild(slider);
                     sliderContainer.appendChild(valueLabel);
+                    sliderContainer.appendChild(unitsLabel);
+
                     paramsContainer.appendChild(sliderContainer);
                 }
             });
