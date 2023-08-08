@@ -37,7 +37,7 @@ namespace ReaShader
 				switch (type)
 				{
 					case RSUI::RequestType::WantParamsList: {
-						std::string resp = RSUI::MessageBuilder::buildParametersList(rsParams).dump();
+						std::string resp = RSUI::MessageBuilder::buildParamsList(rsParams).dump();
 						rsuiServer->sendWSTextMessage(resp);
 						break;
 					}
@@ -89,6 +89,9 @@ namespace ReaShader
 
 	void ReaShaderController::terminate()
 	{
+		// send death message to frontend
+		std::string death = RSUI::MessageBuilder::buildServerShutdown().dump();
+		rsuiServer->sendWSTextMessage(death);
 	}
 
 	void ReaShaderController::loadParamsUIValues(IBStream* state)

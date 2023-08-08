@@ -1,3 +1,54 @@
+export function utf8_to_utf16(utf8) {
+    return decodeURIComponent(escape(utf8))
+}
+export function utf16_to_utf8(utf16) {
+    return unescape(encodeURIComponent(value))
+}
+
+function decodeJSONFromUTF8(json) {
+    function decodeValue(value) {
+        if (typeof value === 'string') {
+            return utf8_to_utf16(value);
+        } else if (Array.isArray(value)) {
+            return value.map(decodeValue);
+        } else if (typeof value === 'object' && value !== null) {
+            const decodedObject = {};
+            for (const key in value) {
+                if (value.hasOwnProperty(key)) {
+                    decodedObject[key] = decodeValue(value[key]);
+                }
+            }
+            return decodedObject;
+        } else {
+            return value;
+        }
+    }
+
+    return decodeValue(json);
+}
+function encodeJSONToUTF8(json) {
+    function encodeValue(value) {
+        if (typeof value === 'string') {
+            return utf8_to_utf16(value);
+        } else if (Array.isArray(value)) {
+            return value.map(encodeValue);
+        } else if (typeof value === 'object' && value !== null) {
+            const encodedObject = {};
+            for (const key in value) {
+                if (value.hasOwnProperty(key)) {
+                    encodedObject[key] = encodeValue(value[key]);
+                }
+            }
+            return encodedObject;
+        } else {
+            return value;
+        }
+    }
+
+    return encodeValue(json);
+}
+
+
 /**
  * Provide a callback to the handlers that accepts a jsonObject
  */
@@ -7,12 +58,22 @@ export class MessageHandler {
     }
 
     handleParamUpdate(callback) {
-        this._reactTo("paramUpdate", callback);
+        this.#_reactTo("paramUpdate", callback);
         return this;
     }
 
     handleTrackInfo(callback) {
-        this._reactTo("trackInfo", callback);
+        this.#_reactTo("trackInfo", callback);
+        return this;
+    }
+
+    handleParamsList(callback) {
+        this.#_reactTo("paramsList", callback);
+        return this;
+    }
+
+    handleServerShutdown(callback) {
+        this.#_reactTo("serverShutdown", callback);
         return this;
     }
 
@@ -28,7 +89,7 @@ export class MessageHandler {
         }
     }
 
-    _reactTo(type, callback) {
+    #_reactTo(type, callback) {
         if (this.jsonObject.type == type) {
             this.reacted = true;
             callback(this.jsonObject);
@@ -43,41 +104,41 @@ export class Messager {
     }
 
     sendParamUpdate(paramId, value) {
-        msg = {
+        let msg = {
             type: "paramUpdate",
             paramId: paramId,
             value: value
         };
 
-        _send(msg);
+        this.#_send(msg);
 
         return this;
     }
 
     sendRequestTrackInfo() {
-        msg = {
+        let msg = {
             type: "request",
             what: "trackInfo"
         };
 
-        _send(msg);
+        this.#_send(msg);
 
         return this;
     }
 
     sendRequestParamsList() {
-        msg = {
+        let msg = {
             type: "request",
             what: "paramsList"
         };
 
-        _send(msg);
+        this.#_send(msg);
 
         return this;
     }
 
-    _send(json) {
-        socket.send(JSON.stringify(msg))
+    #_send(json) {
+        this.socket.send(JSON.stringify(json))
     }
 
     // Add more message builders as needed
