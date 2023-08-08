@@ -2,9 +2,12 @@
 
 #include "rsparams.h"
 #include "tools/logging.h"
+#include "tools/strings.h"
 
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
+
+#include <unordered_map>
 
 namespace ReaShader
 {
@@ -22,18 +25,28 @@ namespace ReaShader
 			TrackInfo,
 			Request,
 			ParamsList,
+			ServerShutdown,
 
 			numMessageTypes
 		};
 
-		static const std::string typeStrings[] = { "paramUpdate", "trackInfo", "request", "paramsList" };
+		// respect the messagetype enum order and size
+		static const std::string typeStrings[] = { "paramUpdate", "trackInfo", "request", "paramsList",
+												   "serverShutdown" };
 
+		/**
+		 Incoming requests from frontend
+		 */
 		enum RequestType
 		{
 			WantTrackInfo,
 			WantParamsList,
 
 			numRequestTypes
+		};
+
+		static const std::unordered_map<std::string, RequestType> requestTypeMap = {
+			{ typeStrings[TrackInfo], WantTrackInfo }, { typeStrings[ParamsList], WantParamsList }
 		};
 
 		//--------------------------------------
@@ -84,13 +97,11 @@ namespace ReaShader
 			MessageHandler& reactToRequest(const std::function<void(RequestType)>& callback)
 			{
 				std::string what(msg["what"]);
-				for (size_t i = 0; i < numMessageTypes; ++i)
+
+				if (requestTypeMap.find(what) != requestTypeMap.end())
 				{
-					if (typeStrings[i] == what)
-					{
-						_reactTo(MessageType::Request, [&](const json& msg) { callback(static_cast<RequestType>(i)); });
-						break;
-					}
+					RequestType requestType = requestTypeMap.at(what);
+					_reactTo(MessageType::Request, [&](const json& msg) { callback(requestType); });
 				}
 
 				return *this;
@@ -184,22 +195,28 @@ namespace ReaShader
 
 				return j;
 			}
-			static json buildParametersList(ReaShaderParameter (&rsParams)[uNumParams])
+			static json buildParamsList(ReaShaderParameter (&rsParams)[uNumParams])
 			{
 				json j;
 				j["type"] = typeStrings[RSUI::ParamsList];
 
-				for (int i; i < uNumParams; i++)
+				for (int i = 0; i < uNumParams; i++)
 				{
 					json paramProps;
-					paramProps["title"] = rsParams[i].title;
-					paramProps["units"] = rsParams[i].units;
+					paramProps["title"] = tools::strings::ws2s(rsParams[i].title);
+					paramProps["units"] = tools::strings::ws2s(rsParams[i].units);
 					paramProps["defaultValue"] = rsParams[i].defaultValue;
 					paramProps["value"] = rsParams[i].value;
 
-					j["params"][rsParams->id] = paramProps;
+					j["params"][rsParams[i].id] = paramProps;
 				}
 
+				return j;
+			}
+			static json buildServerShutdown()
+			{
+				json j;
+				j["type"] = typeStrings[ServerShutdown];
 				return j;
 			}
 		};

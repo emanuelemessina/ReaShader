@@ -70,7 +70,7 @@ namespace vkt
 
 			int texWidth, texHeight, texChannels;
 
-			const char* file = tools::strings::s2cptr(filePath);
+			const char* file = tools::strings::cp_to_cptr(filePath);
 
 			stbi_uc* pixels = stbi_load(file, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 

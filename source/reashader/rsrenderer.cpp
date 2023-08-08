@@ -1,9 +1,12 @@
 #include "rsrenderer.h"
 #include "rsparams.h"
 #include "rsprocessor.h"
+#include "tools/compiler_codes.h"
+
 /* lice */
 #pragma warning(push)
-#pragma warning(disable : 26451)
+#pragma warning(disable : W_RESULT_OF_ARITHMETIC_OPERATION_CAST_TO_LARGER_SIZE)
+#pragma warning(disable : W_FUNC_MAY_BE_UNSAFE)
 
 #include "lice/lice.h"
 
@@ -286,7 +289,7 @@ namespace ReaShader
 			constants.videoParam = pushConstants[2];
 
 			// upload the mesh to the GPU via push constants
-#pragma warning(suppress : w_ptr_m_null) // assert material is not nullptr
+#pragma warning(suppress : W_PTR_MIGHT_BE_NULL) // assert material is not nullptr
 			vkCmdPushConstants(commandBuffer, object.material->pipelineLayout,
 							   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(MeshPushConstants),
 							   &constants);

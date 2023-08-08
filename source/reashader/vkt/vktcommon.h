@@ -238,7 +238,3 @@ namespace vkt
 #define arr_length(arr) (*(&arr + 1) - arr)
 
 #define vkt_size2count(size) static_cast<uint32_t>(size)
-
-/* COMPILER WARNING CODES*/
-
-#define w_ptr_m_null 6011
