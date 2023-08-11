@@ -71,22 +71,26 @@ void show_box(LogLevel level, const char* sender, const char* title, const char*
 				std::format("[{}] ({})", logLevelStrings[level], sender).c_str(), style);
 }
 
-void LOG(LogLevel level, LogDestFlags flags, std::string&& sender, std::string&& title, std::string&& message)
+void _LOG(LogLevel level, LogDestFlags flags, const char* sender, const char* title, const char* message)
 {
 	if (flags & toFile)
 	{
-		log_to_file(level, sender.c_str(), title.c_str(), message.c_str());
+		log_to_file(level, sender, title, message);
 	}
 	if (flags & toConsole)
 	{
-		console_log(level, sender.c_str(), title.c_str(), message.c_str());
+		console_log(level, sender, title, message);
 	}
 	if (flags & toBox)
 	{
-		show_box(level, sender.c_str(), title.c_str(), message.c_str());
+		show_box(level, sender, title, message);
 	}
+}
+void LOG(LogLevel level, LogDestFlags flags, std::string&& sender, std::string&& title, std::string&& message)
+{
+	_LOG(level, flags, sender.c_str(), title.c_str(), message.c_str());
 }
 void LOG(STDEXC e, LogDestFlags flags, std::string&& sender, std::string&& title, std::string&& message)
 {
-	LOG(EXCEPTION, flags, std::move(sender), std::move(title), e.what());
+	LOG(EXCEPTION, flags, std::move(sender), std::move(title), std::format("{} | {}", message, e.what()));
 }

@@ -41,7 +41,7 @@ namespace ReaShader
 	
 	void ReaShaderRenderer::_initVulkanGuarded()
 	{
-		WRAP_LOW_LEVEL_FAULTS(_initVulkan();)
+		WRAP_LOW_LEVEL_FAULTS(_initVulkan();, "ReaShaderRenderer", "Fatal Error", "Caught during initVulkan")
 	}
 
 	void ReaShaderRenderer::init()
@@ -62,7 +62,7 @@ namespace ReaShader
 
 	void ReaShaderRenderer::_cleanupVulkanGuarded()
 	{
-		WRAP_LOW_LEVEL_FAULTS(_cleanupVulkan();)
+		WRAP_LOW_LEVEL_FAULTS(_cleanupVulkan();, "ReaShaderError", "Fatal Error", "Caught in cleanupVulkan")
 	}
 
 	void ReaShaderRenderer::shutdown()
