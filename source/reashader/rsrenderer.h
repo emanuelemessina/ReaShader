@@ -23,6 +23,7 @@ namespace ReaShader
 	  public:
 		ReaShaderRenderer(ReaShaderProcessor* reaShaderProcessor);
 
+
 		void init();
 		void shutdown();
 
@@ -36,7 +37,9 @@ namespace ReaShader
 
 		// wrap low level faults and circumvent seh object unwinding
 
+		void _initVulkanGuarded();
 		void _initVulkan();
+		void _cleanupVulkanGuarded();
 		void _cleanupVulkan();
 
 		//-----------------------------------------------
