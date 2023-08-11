@@ -88,5 +88,5 @@ void LOG(LogLevel level, LogDestFlags flags, std::string&& sender, std::string&&
 }
 void LOG(STDEXC e, LogDestFlags flags, std::string&& sender, std::string&& title, std::string&& message)
 {
-	LOG(EXCEPTION, flags, std::move(sender), std::move(title), std::move(message));
+	LOG(EXCEPTION, flags, std::move(sender), std::move(title), e.what());
 }

@@ -1,11 +1,14 @@
 #pragma once
 
 #include "boxer/boxer.h"
-#include "tools/exceptions.h"
+
 #include "tools/flagoperators.h"
 #include <chrono>
 #include <format>
 #include <iostream>
+
+#define STDEXC const std::exception&
+
 
 enum LogLevel
 {

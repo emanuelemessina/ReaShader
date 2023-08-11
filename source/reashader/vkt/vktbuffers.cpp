@@ -50,7 +50,7 @@ namespace vkt
 		{
 			// copy vertex data
 			void* mapped;
-			vmaMapMemory(vktDevice->vmaAllocator, allocation, &mapped);
+			VK_CHECK_RESULT(vmaMapMemory(vktDevice->vmaAllocator, allocation, &mapped));
 
 			memcpy(mapped, data, size);
 

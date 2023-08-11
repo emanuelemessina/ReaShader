@@ -103,7 +103,7 @@ namespace vkt
 
 			vktDevice->getGraphicsCommandPool()->submit(cmd, fence, VK_NULL_HANDLE, VK_NULL_HANDLE);
 
-			vkWaitForFences(vktDevice->vk(), 1, &fence, VK_TRUE, UINT64_MAX);
+			VK_CHECK_RESULT(vkWaitForFences(vktDevice->vk(), 1, &fence, VK_TRUE, UINT64_MAX));
 
 			// cleanup
 
@@ -141,7 +141,7 @@ namespace vkt
 				vmaDestroyImage(vktDevice->vmaAllocator, image, nullptr);
 			}
 			vmaFreeMemory(vktDevice->vmaAllocator, allocation);
-			vmaFlushAllocation(vktDevice->vmaAllocator, allocation, 0, VK_WHOLE_SIZE);
+			VK_CHECK_RESULT(vmaFlushAllocation(vktDevice->vmaAllocator, allocation, 0, VK_WHOLE_SIZE));
 		}
 
 	} // namespace Images
