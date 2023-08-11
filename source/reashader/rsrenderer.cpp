@@ -38,6 +38,11 @@ namespace ReaShader
 		: reaShaderProcessor(reaShaderProcessor)
 	{
 	}
+	
+	void ReaShaderRenderer::_initVulkanGuarded()
+	{
+		WRAP_LOW_LEVEL_FAULTS(_initVulkan();)
+	}
 
 	void ReaShaderRenderer::init()
 	{
@@ -45,13 +50,19 @@ namespace ReaShader
 
 		try
 		{
-			_initVulkan();
+			_initVulkanGuarded();
+			
 		}
 		catch (STDEXC e)
 		{
 			exceptionOnInitialize = true;
 			LOG(e, toFile | toConsole | toBox, "ReaShaderRenderer", "Exception: ", "ReaShader crashed...");
 		}
+	}
+
+	void ReaShaderRenderer::_cleanupVulkanGuarded()
+	{
+		WRAP_LOW_LEVEL_FAULTS(_cleanupVulkan();)
 	}
 
 	void ReaShaderRenderer::shutdown()

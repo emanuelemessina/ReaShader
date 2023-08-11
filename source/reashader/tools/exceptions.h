@@ -9,6 +9,17 @@
 // Windows SEH Try-Catch
 #include <windows.h>
 
+static inline void win_seh_thrower(DWORD code, LPVOID msgBuff)
+{
+	std::ostringstream what;
+	what << "SEH Exception (Code: 0x" << std::hex << code << "): ";
+	std::wstring wideErrorMsg(static_cast<const wchar_t*>(msgBuff));
+	std::string errorMsg(wideErrorMsg.begin(), wideErrorMsg.end());
+	what << errorMsg;
+	std::exception e = std::runtime_error(what.str());
+	throw e;
+}
+
 #define WRAP_LOW_LEVEL_FAULTS(block)                                                                                   \
 	__try                                                                                                              \
 	{                                                                                                                  \
@@ -16,27 +27,12 @@
 	}                                                                                                                  \
 	__except (EXCEPTION_EXECUTE_HANDLER)                                                                               \
 	{                                                                                                                  \
-		DWORD exceptionCode;                                                                                           \
+		DWORD exceptionCode = GetExceptionCode();                                                                      \
 		LPVOID errorMsgBuff;                                                                                           \
-		EXCEPTION_POINTERS* exceptionInfo = GetExceptionInformation();                                                 \
-		if (exceptionInfo)                                                                                             \
-		{                                                                                                              \
-			EXCEPTION_RECORD* exceptionRecord = exceptionInfo->ExceptionRecord;                                        \
-			if (exceptionRecord)                                                                                       \
-			{                                                                                                          \
-				exceptionCode = exceptionRecord->ExceptionCode;                                                        \
-				FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, NULL, exceptionCode, 0,     \
-							  (LPWSTR)&errorMsgBuff, 0, NULL);                                                         \
-			}                                                                                                          \
-		}                                                                                                              \
-		std::ostringstream what;                                                                                       \
-		what << "SEH Exception (Code: 0x" << std::hex << exceptionCode << "): ";                                       \
-		std::wstring wideErrorMsg(static_cast<const wchar_t*>(errorMsgBuff));                                          \
-		std::string errorMsg(wideErrorMsg.begin(), wideErrorMsg.end());                                                \
-		what << errorMsg;                                                                                              \
-		std::exception e = std::runtime_error(what.str());                                                             \
+		FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, NULL, exceptionCode, 0,             \
+					  (LPWSTR)&errorMsgBuff, 0, NULL);                                                                 \
+		win_seh_thrower(exceptionCode, errorMsgBuff);                                                                  \
 		LocalFree(errorMsgBuff);                                                                                       \
-		throw e;                                                                                                       \
 	}
 
 #else // UNIX
