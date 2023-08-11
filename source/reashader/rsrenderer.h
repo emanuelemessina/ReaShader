@@ -34,8 +34,12 @@ namespace ReaShader
 	  private:
 		bool exceptionOnInitialize{ false };
 
+		// wrap low level faults and circumvent seh object unwinding
+
 		void _initVulkan();
 		void _cleanupVulkan();
+
+		//-----------------------------------------------
 
 		void _createRenderTargets();
 

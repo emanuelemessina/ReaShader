@@ -126,7 +126,7 @@ namespace vkt
 	CommandPool* CommandPool::restartCommandBuffer(const VkCommandBuffer& previousCommandBuffer)
 	{
 
-		vkResetCommandBuffer(previousCommandBuffer, 0);
+		VK_CHECK_RESULT(vkResetCommandBuffer(previousCommandBuffer, 0));
 
 		VkCommandBufferBeginInfo beginInfo{};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;

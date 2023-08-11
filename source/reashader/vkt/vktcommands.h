@@ -45,7 +45,7 @@ namespace vkt
 			// copy pixels to staging buffer
 
 			void* data;
-			vmaMapMemory(vktDevice->vmaAllocator, srcBuff->getAllocation(), &data);
+			VK_CHECK_RESULT(vmaMapMemory(vktDevice->vmaAllocator, srcBuff->getAllocation(), &data))
 
 			memcpy(data, pixelsSrc, buffSize);
 

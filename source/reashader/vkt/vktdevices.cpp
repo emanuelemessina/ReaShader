@@ -82,7 +82,7 @@ namespace vkt
 		DeviceSelector& DeviceSelector::enumerate(VkInstance instance)
 		{
 			uint32_t deviceCount = 0;
-			vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+			VK_CHECK_RESULT(vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr))
 
 			if (deviceCount == 0)
 			{
@@ -91,7 +91,7 @@ namespace vkt
 
 			m_physicalDevices.resize(deviceCount);
 
-			vkEnumeratePhysicalDevices(instance, &deviceCount, m_physicalDevices.data());
+			VK_CHECK_RESULT(vkEnumeratePhysicalDevices(instance, &deviceCount, m_physicalDevices.data()));
 
 			return *this;
 		}
@@ -126,7 +126,7 @@ namespace vkt
 
 			// Get list of supported extensions
 			uint32_t extCount = 0;
-			vkEnumerateDeviceExtensionProperties(vkPhysicalDevice, nullptr, &extCount, nullptr);
+			VK_CHECK_RESULT(vkEnumerateDeviceExtensionProperties(vkPhysicalDevice, nullptr, &extCount, nullptr));
 			if (extCount > 0)
 			{
 				std::vector<VkExtensionProperties> extensions(extCount);
@@ -349,7 +349,7 @@ namespace vkt
 			allocatorInfo.physicalDevice = physicalDevice->vk();
 			allocatorInfo.device = vkDevice;
 			allocatorInfo.instance = physicalDevice->instance;
-			vmaCreateAllocator(&allocatorInfo, &vmaAllocator);
+			VK_CHECK_RESULT(vmaCreateAllocator(&allocatorInfo, &vmaAllocator));
 
 			pDeletionQueue->push_function([=]() { vmaDestroyAllocator(vmaAllocator); });
 		}

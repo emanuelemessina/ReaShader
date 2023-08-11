@@ -40,10 +40,10 @@ namespace  vkt {
 
 	bool checkValidationLayerSupport() {
 		uint32_t layerCount;
-		vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+		VK_CHECK_RESULT(vkEnumerateInstanceLayerProperties(&layerCount, nullptr))
 
 		std::vector<VkLayerProperties> availableLayers(layerCount);
-		vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+		VK_CHECK_RESULT(vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data()))
 
 		for (const char* layerName : vkValidationLayers) {
 			bool layerFound = false;

@@ -2,6 +2,7 @@
 #include "rsparams.h"
 #include "rsprocessor.h"
 #include "tools/compiler_codes.h"
+#include "tools/exceptions.h"
 
 /* lice */
 #pragma warning(push)
@@ -41,6 +42,7 @@ namespace ReaShader
 	void ReaShaderRenderer::init()
 	{
 		// init vulkan
+
 		try
 		{
 			_initVulkan();
@@ -209,13 +211,13 @@ namespace ReaShader
 
 		// and copy it to the buffer
 		int* data{ nullptr };
-		vmaMapMemory(vktDevice->vmaAllocator, frameData.cameraBuffer->getAllocation(), (void**)&data);
+		VK_CHECK_RESULT(vmaMapMemory(vktDevice->vmaAllocator, frameData.cameraBuffer->getAllocation(), (void**)&data));
 
 		memcpy(data, &camData, sizeof(GPUCameraData));
 
 		vmaUnmapMemory(vktDevice->vmaAllocator, frameData.cameraBuffer->getAllocation());
 
-		vmaMapMemory(vktDevice->vmaAllocator, frameData.sceneBuffer->getAllocation(), (void**)&data);
+		VK_CHECK_RESULT(vmaMapMemory(vktDevice->vmaAllocator, frameData.sceneBuffer->getAllocation(), (void**)&data));
 
 		data += 0; // dynamic buffer offset
 
@@ -230,7 +232,7 @@ namespace ReaShader
 		glm::mat4 modelTransform = glm::rotate(glm::mat4{ 1.0f }, (float)glm::radians(frameNumber * 1.f),
 											   glm::vec3(0.1f * sin(proj_time), 1, 0.05f * cos(proj_time)));
 
-		vmaMapMemory(vktDevice->vmaAllocator, frameData.objectBuffer->getAllocation(), (void**)&data);
+		VK_CHECK_RESULT(vmaMapMemory(vktDevice->vmaAllocator, frameData.objectBuffer->getAllocation(), (void**)&data));
 
 		GPUObjectData* objectSSBO = (GPUObjectData*)data;
 
@@ -338,7 +340,7 @@ namespace ReaShader
 		VkCommandBuffer commandBuffer = vkTransferCommandBuffer;
 		vkt::CommandPool* commandPool = vktDevice->getGraphicsCommandPool();
 
-		vkQueueWaitIdle(vktDevice->getGraphicsQueue()->vk());
+		VK_CHECK_RESULT(vkQueueWaitIdle(vktDevice->getGraphicsQueue()->vk()));
 
 		commandPool->restartCommandBuffer(commandBuffer);
 
@@ -404,8 +406,8 @@ namespace ReaShader
 
 		// wait fence since now we are on cpu
 
-		vkWaitForFences(vktDevice->vk(), 1, &vkInFlightFence, VK_TRUE, UINT64_MAX);
-		vkResetFences(vktDevice->vk(), 1, &vkInFlightFence);
+		VK_CHECK_RESULT(vkWaitForFences(vktDevice->vk(), 1, &vkInFlightFence, VK_TRUE, UINT64_MAX))
+		VK_CHECK_RESULT(vkResetFences(vktDevice->vk(), 1, &vkInFlightFence))
 
 		// Get layout of the image (including row pitch)
 		VkImageSubresource subResource{};
@@ -428,7 +430,7 @@ namespace ReaShader
 		vkt::Queue* queue = vktDevice->getGraphicsQueue();
 		VkCommandBuffer commandBuffer = vkTransferCommandBuffer;
 
-		vkQueueWaitIdle(queue->vk());
+		VK_CHECK_RESULT(vkQueueWaitIdle(queue->vk()))
 
 		commandPool->restartCommandBuffer(vkTransferCommandBuffer);
 
@@ -488,8 +490,8 @@ namespace ReaShader
 
 		// write descriptor for post process source
 
-		vkWaitForFences(vktDevice->vk(), 1, &vkInFlightFence, VK_TRUE, UINT64_MAX);
-		vkResetFences(vktDevice->vk(), 1, &vkInFlightFence);
+		VK_CHECK_RESULT(vkWaitForFences(vktDevice->vk(), 1, &vkInFlightFence, VK_TRUE, UINT64_MAX))
+		VK_CHECK_RESULT(vkResetFences(vktDevice->vk(), 1, &vkInFlightFence))
 
 		vkt::Descriptors::DescriptorSetWriter(vktDevice)
 			.selectDescriptorSet(frameData.textureSet)
@@ -1336,4 +1338,5 @@ namespace ReaShader
 		vktFrameResizedDeletionQueue.flush();
 		vktMainDeletionQueue.flush();
 	}
+	
 } // namespace ReaShader
