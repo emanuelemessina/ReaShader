@@ -9,7 +9,6 @@
 
 #define STDEXC const std::exception&
 
-
 enum LogLevel
 {
 	INFO,
@@ -26,6 +25,7 @@ enum LogDestFlags : int8_t
 	toBox = 0b100
 };
 
+void _LOG(LogLevel level, LogDestFlags flags, const char* sender, const char* title, const char* message);
 void LOG(LogLevel level, LogDestFlags flags, std::string&& sender, std::string&& title, std::string&& message);
 void LOG(STDEXC e, LogDestFlags flags, std::string&& sender, std::string&& title, std::string&& message);
 

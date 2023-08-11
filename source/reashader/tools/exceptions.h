@@ -2,37 +2,31 @@
 
 #include "logging.h"
 
+#ifndef STDEXC
 #define STDEXC const std::exception&
+#endif
 
 #if defined(_WIN32) || defined(_WIN64) // WINDOWS
 
 // Windows SEH Try-Catch
 #include <windows.h>
 
-static inline void win_seh_thrower(DWORD code, LPVOID msgBuff)
+static inline void win_seh_thrower(DWORD code, const char* err_sender, const char* err_title, const char* err_message)
 {
-	std::ostringstream what;
-	what << "SEH Exception (Code: 0x" << std::hex << code << "): ";
-	std::wstring wideErrorMsg(static_cast<const wchar_t*>(msgBuff));
-	std::string errorMsg(wideErrorMsg.begin(), wideErrorMsg.end());
-	what << errorMsg;
-	std::exception e = std::runtime_error(what.str());
-	throw e;
+	char completeMessage[256];
+	sprintf(completeMessage, "%s | SEH Exception (Code: 0x%08X)", err_message, code);
+	_LOG(EXCEPTION, toConsole | toFile | toBox, err_sender, err_title, completeMessage);
 }
 
-#define WRAP_LOW_LEVEL_FAULTS(block)                                                                                   \
+#define WRAP_LOW_LEVEL_FAULTS(try_block, err_sender, err_title, err_message)                                           \
 	__try                                                                                                              \
 	{                                                                                                                  \
-		block                                                                                                          \
+		try_block                                                                                                      \
 	}                                                                                                                  \
 	__except (EXCEPTION_EXECUTE_HANDLER)                                                                               \
 	{                                                                                                                  \
 		DWORD exceptionCode = GetExceptionCode();                                                                      \
-		LPVOID errorMsgBuff;                                                                                           \
-		FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, NULL, exceptionCode, 0,             \
-					  (LPWSTR)&errorMsgBuff, 0, NULL);                                                                 \
-		win_seh_thrower(exceptionCode, errorMsgBuff);                                                                  \
-		LocalFree(errorMsgBuff);                                                                                       \
+		win_seh_thrower(exceptionCode, err_sender, err_title, err_message);                                            \
 	}
 
 #else // UNIX
@@ -54,17 +48,15 @@ void signalHandler(int signal)
 
 // register other signals if needed
 
-#define WRAP_LOW_LEVEL_FAULTS(block)                                                                                   \
+#define WRAP_LOW_LEVEL_FAULTS(try_block, err_sender, err_title, err_message)                                           \
 	signal(SIGSEGV, signalHandler);                                                                                    \
-	block                                                                                                              \
-                                                                                                                       \
-		if (signal_called)                                                                                             \
+	block if (signal_called)                                                                                           \
 	{                                                                                                                  \
 		signal_called = false;                                                                                         \
 		std::ostringstream what;                                                                                       \
 		what << "Signal " << unix_last_signal_code << ": " << unix_last_signal_message;                                \
 		std::exception e = std::runtime_error(what.str());                                                             \
-		throw e;                                                                                                       \
+		LOG(e, toConsole | toFile | toBox, err_sender, err_title, err_message);                                        \
 	}
 
 #endif
