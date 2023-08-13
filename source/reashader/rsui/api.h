@@ -3,6 +3,7 @@
 #include "rsparams.h"
 #include "tools/logging.h"
 #include "tools/strings.h"
+#include "vkt/vktcommon.h"
 
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
@@ -24,15 +25,24 @@ namespace ReaShader
 			ParamUpdate,
 			TrackInfo,
 			Request,
+			ParamGroupsList,
 			ParamsList,
 			ServerShutdown,
+			RenderingDevicesList,
+			RenderingDeviceChange,
 
 			numMessageTypes
 		};
 
 		// respect the messagetype enum order and size
-		static const std::string typeStrings[] = { "paramUpdate", "trackInfo", "request", "paramsList",
-												   "serverShutdown" };
+		static const std::string typeStrings[] = { "paramUpdate",
+												   "trackInfo",
+												   "request",
+												   "paramGroupsList",
+												   "paramsList",
+												   "serverShutdown",
+												   "renderingDevicesList",
+												   "renderingDeviceChange" };
 
 		/**
 		 Incoming requests from frontend
@@ -40,13 +50,18 @@ namespace ReaShader
 		enum RequestType
 		{
 			WantTrackInfo,
+			WantParamGroupsList,
 			WantParamsList,
+			WantRenderingDevicesList,
 
 			numRequestTypes
 		};
 
 		static const std::unordered_map<std::string, RequestType> requestTypeMap = {
-			{ typeStrings[TrackInfo], WantTrackInfo }, { typeStrings[ParamsList], WantParamsList }
+			{ typeStrings[TrackInfo], WantTrackInfo },
+			{ typeStrings[ParamGroupsList], WantParamGroupsList },
+			{ typeStrings[ParamsList], WantParamsList },
+			{ typeStrings[RenderingDevicesList], WantRenderingDevicesList }
 		};
 
 		//--------------------------------------
@@ -77,7 +92,7 @@ namespace ReaShader
 				}
 			}
 
-			MessageHandler& reacToParamUpdate(
+			MessageHandler& reactToParamUpdate(
 				const std::function<void(Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue)>& callback)
 			{
 				_reactTo(MessageType::ParamUpdate, [&](const json& msg) { callback(msg["paramId"], msg["value"]); });
@@ -85,17 +100,18 @@ namespace ReaShader
 				return *this;
 			}
 
-			MessageHandler& reacToTrackInfo(const std::function<void(const ReaShader::TrackInfo)>& callback)
+			MessageHandler& reactToRenderingDeviceChange(const std::function<void(uint32_t)>& callback)
 			{
-				_reactTo(MessageType::TrackInfo, [&](const json& msg) {
-					callback(ReaShader::TrackInfo(msg["trackNumber"], ((std::string)msg["trackName"]).c_str()));
-				});
+				_reactTo(MessageType::RenderingDeviceChange, [&](const json& msg) { callback(msg["id"]); });
 
 				return *this;
 			}
 
 			MessageHandler& reactToRequest(const std::function<void(RequestType)>& callback)
 			{
+				if (!(_hasField("what")))
+					return *this;
+
 				std::string what(msg["what"]);
 
 				if (requestTypeMap.find(what) != requestTypeMap.end())
@@ -151,6 +167,10 @@ namespace ReaShader
 					error = true;
 				}
 			}
+			bool _hasField(const char* field)
+			{
+				return msg.contains(field);
+			}
 			void _reactTo(MessageType type, const std::function<void(const json&)>& callback)
 			{
 				if (error)
@@ -195,7 +215,22 @@ namespace ReaShader
 
 				return j;
 			}
-			static json buildParamsList(ReaShaderParameter (&rsParams)[uNumParams])
+			static json buildParamGroupsList()
+			{
+				json j;
+				j["type"] = typeStrings[RSUI::ParamGroupsList];
+
+				for (int i = 0; i < (int)ReaShader::ReaShaderParamGroup::numParamGroups; i++)
+				{
+					json groupProps;
+					groupProps["name"] = ReaShader::paramGroupStrings[i];
+
+					j["groups"][i] = groupProps;
+				}
+
+				return j;
+			}
+			static json buildParamsList()
 			{
 				json j;
 				j["type"] = typeStrings[RSUI::ParamsList];
@@ -207,6 +242,8 @@ namespace ReaShader
 					paramProps["units"] = tools::strings::ws2s(rsParams[i].units);
 					paramProps["defaultValue"] = rsParams[i].defaultValue;
 					paramProps["value"] = rsParams[i].value;
+					paramProps["group"] = ReaShader::paramGroupStrings[(int)rsParams[i].group];
+					paramProps["type"] = ReaShader::paramTypeStrings[(int)rsParams[i].type];
 
 					j["params"][rsParams[i].id] = paramProps;
 				}
@@ -217,6 +254,22 @@ namespace ReaShader
 			{
 				json j;
 				j["type"] = typeStrings[ServerShutdown];
+				return j;
+			}
+			static json buildRenderingDevicesList(std::vector<VkPhysicalDeviceProperties>& properties)
+			{
+				json j;
+				j["type"] = typeStrings[RSUI::RenderingDevicesList];
+
+				j["selected"] = (int)ReaShader::rsParams[ReaShader::uRenderingDevice].value;
+
+				for (size_t i = 0; i < properties.size(); i++)
+				{
+					json deviceProps;
+					deviceProps["name"] = properties[i].deviceName;
+
+					j["devices"][i] = deviceProps;
+				}
 				return j;
 			}
 		};

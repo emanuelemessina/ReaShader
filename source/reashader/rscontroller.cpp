@@ -19,7 +19,7 @@ namespace ReaShader
 		for (int i = 0; i < uNumParams; i++)
 		{
 			parameters.addParameter(rsParams[i].title, rsParams[i].units, 0, rsParams[i].defaultValue,
-									rsParams[i].flags, rsParams[i].id);
+									rsParams[i].steinbergFlags, rsParams[i].id);
 		}
 	}
 
@@ -29,7 +29,7 @@ namespace ReaShader
 
 		// check json
 		RSUI::MessageHandler(msg.c_str())
-			.reacToParamUpdate([&](Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue) {
+			.reactToParamUpdate([&](Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue) {
 				myPluginController->setParamNormalized(id, newValue);
 				myPluginController->sendTextMessage(msg.c_str()); // relay to processor to update params
 			})
@@ -37,16 +37,23 @@ namespace ReaShader
 				switch (type)
 				{
 					case RSUI::RequestType::WantParamsList: {
-						std::string resp = RSUI::MessageBuilder::buildParamsList(rsParams).dump();
+						std::string resp = RSUI::MessageBuilder::buildParamsList().dump();
 						rsuiServer->sendWSTextMessage(resp);
 						break;
 					}
-					default: // relay to processor to handle request
+					case RSUI::RequestType::WantParamGroupsList: {
+						std::string resp = RSUI::MessageBuilder::buildParamGroupsList().dump();
+						rsuiServer->sendWSTextMessage(resp);
+						break;
+					}
+					default: // relay to processor to handle unknown request
 						myPluginController->sendTextMessage(msg.c_str());
 						break;
 				}
 			})
-			.fallbackWarning("ReaShaderController");
+			.fallback([&](const json& parsedMsg) {
+				myPluginController->sendTextMessage(msg.c_str()); // relay to processor in the default react case
+			});
 	}
 
 	void ReaShaderController::_receiveBinaryFromRSUIServer(const std::vector<char>& msg)
@@ -106,8 +113,9 @@ namespace ReaShader
 			float savedParam = 0.f;
 			if (streamer.readFloat((float&)savedParam) == false)
 			{
+				std::wstring title(rsParams[uParamId].title);
 				LOG(WARNING, toConsole | toFile | toBox, "ReaShaderController", "IBStreamer read error",
-					std::format("Cannot read param w/ id {}", uParamId));
+					std::format("Cannot read param {} with id {}", tools::strings::ws2s(title), uParamId));
 			}
 			// in the processor: rParams.at(uParamId) = savedParam;
 			myPluginController->setParamNormalized(uParamId, savedParam);

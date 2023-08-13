@@ -1,6 +1,10 @@
 #ifndef _WDLTYPES_
 #define _WDLTYPES_
 
+#pragma warning(push)
+#pragma warning(disable : 26451)
+#pragma warning(disable : 4996)
+
 #ifdef _MSC_VER
 
 typedef __int64 WDL_INT64;

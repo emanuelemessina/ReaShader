@@ -93,14 +93,32 @@ namespace vkt
 
 			VK_CHECK_RESULT(vkEnumeratePhysicalDevices(instance, &deviceCount, m_physicalDevices.data()));
 
+			for (const auto& physicalDevice : m_physicalDevices)
+			{
+				VkPhysicalDeviceProperties deviceProperties;
+				vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
+
+				properties.emplace_back(deviceProperties);
+			}
+
 			return *this;
 		}
 
 		DeviceSelector& DeviceSelector::removeUnsuitable(bool (*isDeviceSuitable)(VkPhysicalDevice))
 		{
-			m_physicalDevices.erase(std::remove_if(m_physicalDevices.begin(), m_physicalDevices.end(),
-												   [&](const VkPhysicalDevice pD) { return !isDeviceSuitable(pD); }),
-									m_physicalDevices.end());
+			 // Define the condition for removal
+			auto condition = [&](const VkPhysicalDevice pD) { return !isDeviceSuitable(pD); };
+
+			// Erase elements from both vectors using the same indices
+			for (size_t i = 0; i < m_physicalDevices.size(); ++i)
+			{
+				if (condition(m_physicalDevices[i]))
+				{
+					m_physicalDevices.erase(m_physicalDevices.begin() + i);
+					properties.erase(properties.begin() + i);
+					--i; // Decrement index after erasing
+				}
+			}
 
 			if (m_physicalDevices.empty())
 			{
