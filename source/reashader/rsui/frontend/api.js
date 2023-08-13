@@ -5,6 +5,11 @@ export function utf16_to_utf8(utf16) {
     return unescape(encodeURIComponent(value))
 }
 
+export function camelCaseToTitleCase(input) {
+    return input.replace(/([A-Z])/g, ' $1')
+        .replace(/^./, function (str) { return str.toUpperCase(); });
+}
+
 function decodeJSONFromUTF8(json) {
     function decodeValue(value) {
         if (typeof value === 'string') {
@@ -67,6 +72,11 @@ export class MessageHandler {
         return this;
     }
 
+    handleParamGroupsList(callback) {
+        this.#_reactTo("paramGroupsList", callback);
+        return this;
+    }
+
     handleParamsList(callback) {
         this.#_reactTo("paramsList", callback);
         return this;
@@ -74,6 +84,11 @@ export class MessageHandler {
 
     handleServerShutdown(callback) {
         this.#_reactTo("serverShutdown", callback);
+        return this;
+    }
+
+    handleRenderingDevicesList(callback) {
+        this.#_reactTo("renderingDevicesList", callback);
         return this;
     }
 
@@ -126,10 +141,43 @@ export class Messager {
         return this;
     }
 
+    sendRequestParamGroupsList() {
+        let msg = {
+            type: "request",
+            what: "paramGroupsList"
+        };
+
+        this.#_send(msg);
+
+        return this;
+    }
+
     sendRequestParamsList() {
         let msg = {
             type: "request",
             what: "paramsList"
+        };
+
+        this.#_send(msg);
+
+        return this;
+    }
+
+    sendRequestRenderingDevicesList() {
+        let msg = {
+            type: "request",
+            what: "renderingDevicesList"
+        };
+
+        this.#_send(msg);
+
+        return this;
+    }
+
+    sendRenderingDeviceChange(deviceId) {
+        let msg = {
+            type: "renderingDeviceChange",
+            id: deviceId
         };
 
         this.#_send(msg);

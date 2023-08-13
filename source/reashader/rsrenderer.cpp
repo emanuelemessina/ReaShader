@@ -38,7 +38,7 @@ namespace ReaShader
 		: reaShaderProcessor(reaShaderProcessor)
 	{
 	}
-	
+
 	void ReaShaderRenderer::_initVulkanGuarded()
 	{
 		WRAP_LOW_LEVEL_FAULTS(_initVulkan();, "ReaShaderRenderer", "Fatal Error", "Caught during initVulkan")
@@ -51,7 +51,6 @@ namespace ReaShader
 		try
 		{
 			_initVulkanGuarded();
-			
 		}
 		catch (STDEXC e)
 		{
@@ -531,10 +530,9 @@ namespace ReaShader
 
 		return
 #ifdef DEBUG
-			deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
+			//deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
 #endif
 			indices.graphicsFamily.has_value();
-		;
 	}
 
 	// RENDER PASS
@@ -1092,19 +1090,54 @@ namespace ReaShader
 
 	void ReaShaderRenderer::_initVulkan()
 	{
-		// instance , device
+		// instance
 		{
 			myVkInstance = vkt::createVkInstance(vktMainDeletionQueue, "ReaShader Effect", "No Engine");
+		}
 
-			std::vector<VkPhysicalDevice> vkSuitablePhysicalDevices = vkt::Physical::DeviceSelector()
-																		  .enumerate(myVkInstance)
-																		  .removeUnsuitable(&isPhysicalDeviceSuitable)
-																		  .get();
+		// device
 
-			vktPhysicalDevice = new vkt::Physical::Device(vktMainDeletionQueue, myVkInstance,
-														  vkSuitablePhysicalDevices[0]); // choose the first suitable
+		{
+			vkt::Physical::DeviceSelector deviceSelector =
+				vkt::Physical::DeviceSelector().enumerate(myVkInstance).removeUnsuitable(&isPhysicalDeviceSuitable);
 
-			vktDevice = new vkt::Logical::Device(vktMainDeletionQueue, vktPhysicalDevice);
+			reaShaderProcessor->setRenderingDevicesList(deviceSelector.getProperties());
+
+			vkSuitablePhysicalDevices = deviceSelector.getDevices();
+
+			// choose stored rendering device index
+			int renderingDeviceIndex = (int)(rsParams[uRenderingDevice].value);
+			if (renderingDeviceIndex >=
+				vkSuitablePhysicalDevices.size()) // fall back to 0 if out of index (device list changed)
+			{
+				renderingDeviceIndex = 0;
+				rsParams[uRenderingDevice].value = 0;
+			}
+
+			_setUpDevice(renderingDeviceIndex);
+		}
+	}
+
+	void ReaShaderRenderer::changeRenderingDevice(int renderingDeviceIndex)
+	{
+		vktDevice->waitIdle();
+		
+		vktFrameResizedDeletionQueue.flush();
+		vktPhysicalDeviceChangedDeletionQueue.flush();
+
+		_setUpDevice(renderingDeviceIndex);
+	}
+
+	void ReaShaderRenderer::_setUpDevice(int renderingDeviceIndex)
+	{
+
+		// device
+
+		{
+			vktPhysicalDevice = new vkt::Physical::Device(vktPhysicalDeviceChangedDeletionQueue, myVkInstance,
+														  vkSuitablePhysicalDevices[renderingDeviceIndex]);
+
+			vktDevice = new vkt::Logical::Device(vktPhysicalDeviceChangedDeletionQueue, vktPhysicalDevice);
 		}
 
 		// meshes
@@ -1346,8 +1379,10 @@ namespace ReaShader
 	void ReaShaderRenderer::_cleanupVulkan()
 	{
 		vktDevice->waitIdle();
+		// flush deletion queues in reverse order
 		vktFrameResizedDeletionQueue.flush();
+		vktPhysicalDeviceChangedDeletionQueue.flush();
 		vktMainDeletionQueue.flush();
 	}
-	
+
 } // namespace ReaShader

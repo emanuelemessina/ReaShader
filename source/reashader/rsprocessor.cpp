@@ -47,7 +47,7 @@ namespace ReaShader
 	void ReaShaderProcessor::receivedJSONFromController(json msg)
 	{
 		RSUI::MessageHandler(msg)
-			.reacToParamUpdate(
+			.reactToParamUpdate(
 				[&](Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue) { rsParams[id].value = newValue; })
 			.reactToRequest([&](RSUI::RequestType type) {
 				switch (type)
@@ -55,7 +55,18 @@ namespace ReaShader
 					case RSUI::RequestType::WantTrackInfo:
 						_webuiSendTrackInfo();
 						break;
+					case RSUI::RequestType::WantRenderingDevicesList:
+						_webuiSendRenderingDevicesList();
+						break;
+					default:
+						LOG(WARNING, toConsole | toFile, "ReaShaderProcessor", "Unexpectd Request type from controller",
+							std::format("Received: {}", msg.dump()));
+						break;
 				}
+			})
+			.reactToRenderingDeviceChange([&](int newIndex) {
+				rsParams[uRenderingDevice].value = (Steinberg::Vst::ParamValue)newIndex;
+				reaShaderRenderer->changeRenderingDevice(newIndex);
 			})
 			.fallbackWarning("ReaShaderProcessor");
 	}
@@ -78,8 +89,9 @@ namespace ReaShader
 		{
 			if (streamer.writeFloat(rsParams[i].value) == false)
 			{
+				std::wstring title(rsParams[i].title);
 				LOG(WARNING, toConsole | toFile | toBox, "ReaShaderProcessor", "IBStreamer write error",
-					std::format("Cannot write param w/ id {}", i));
+					std::format("Cannot write param {} with id {}", tools::strings::ws2s(title), i));
 			}
 		}
 	}
@@ -94,8 +106,9 @@ namespace ReaShader
 			float savedParam = 0.f;
 			if (streamer.readFloat(savedParam) == false)
 			{
+				std::wstring title(rsParams[i].title);
 				LOG(WARNING, toConsole | toFile | toBox, "ReaShaderProcessor", "IBStreamer read error",
-					std::format("Cannot read param w/ id {}", i));
+					std::format("Cannot read param {} with id {}", tools::strings::ws2s(title), i));
 			}
 			rsParams[i].value = savedParam;
 		}
@@ -136,7 +149,7 @@ namespace ReaShader
 
 				MediaTrack* track = (MediaTrack*)reaperApp->getReaperParent(1);
 
-				void* (*GetSetMediaTrackInfo)(MediaTrack * tr, const char* parmname, void* setNewValue);
+				void* (*GetSetMediaTrackInfo)(MediaTrack* tr, const char* parmname, void* setNewValue);
 				*(void**)&GetSetMediaTrackInfo = reaperApp->getReaperApi("GetSetMediaTrackInfo");
 				if (GetSetMediaTrackInfo)
 				{
@@ -144,7 +157,7 @@ namespace ReaShader
 					trackInfo.name = (char*)GetSetMediaTrackInfo(track, "P_NAME", nullptr);
 				}
 
-				double (*GetMediaTrackInfo_Value)(MediaTrack * tr, const char* parmname);
+				double (*GetMediaTrackInfo_Value)(MediaTrack* tr, const char* parmname);
 				*(void**)&GetMediaTrackInfo_Value = reaperApp->getReaperApi("GetMediaTrackInfo_Value");
 				if (GetMediaTrackInfo_Value)
 				{
@@ -166,6 +179,16 @@ namespace ReaShader
 		reaShaderRenderer->shutdown();
 	}
 
+	void ReaShaderProcessor::setRenderingDevicesList(std::vector<VkPhysicalDeviceProperties>&& properties)
+	{
+		renderingDevicesList = properties;
+	}
+
+	void ReaShaderProcessor::_webuiSendRenderingDevicesList()
+	{
+		_sendJSONToController(RSUI::MessageBuilder::buildRenderingDevicesList(renderingDevicesList));
+	}
+
 	//-----------------------------------------
 
 	/* video */
@@ -176,8 +199,8 @@ namespace ReaShader
 
 		if (idx >= 0 && idx < uNumParams)
 		{
-			ReaShaderProcessor* reaShaderProcessor = (ReaShaderProcessor*)vproc->userdata;
-			// directly pass parameters to the video processor
+			// ReaShaderProcessor* reaShaderProcessor = (ReaShaderProcessor*)vproc->userdata;
+			//  directly pass parameters to the video processor
 			//*valueOut = (*((std::map<Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue>*)
 			//(((int**)vproc->userdata)[0]))).at(idx);
 			*valueOut = rsParams[idx].value;

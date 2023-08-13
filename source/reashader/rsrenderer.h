@@ -31,6 +31,7 @@ namespace ReaShader
 		void loadBitsToImage(int* srcBuffer);
 		void drawFrame(double pushConstants[]);
 		void transferFrame(int*& destBuffer);
+		void changeRenderingDevice(int renderingDeviceIndex);
 
 	  private:
 		bool exceptionOnInitialize{ false };
@@ -44,11 +45,15 @@ namespace ReaShader
 
 		//-----------------------------------------------
 
+		void _setUpDevice(int renderingDeviceIndex);
 		void _createRenderTargets();
+
+		std::vector<VkPhysicalDevice> vkSuitablePhysicalDevices;
 
 		VkInstance myVkInstance;
 		vkt::deletion_queue vktMainDeletionQueue{};
 		vkt::deletion_queue vktFrameResizedDeletionQueue{};
+		vkt::deletion_queue vktPhysicalDeviceChangedDeletionQueue{};
 
 		vkt::Physical::Device* vktPhysicalDevice;
 		vkt::Logical::Device* vktDevice;

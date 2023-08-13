@@ -1,6 +1,7 @@
 /* CUSTOM: disable warnings */
 #pragma warning(push)
-#pragma warning(disable : 26451 26451)
+#pragma warning(disable : 26451)
+#pragma warning(disable : 4996)
 /* ---- */
 
 /*

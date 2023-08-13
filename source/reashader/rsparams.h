@@ -1,7 +1,7 @@
 #pragma once
 #include <pluginterfaces/vst/vsttypes.h>
 
-// Params index list
+#include <string>
 
 namespace ReaShader
 {
@@ -9,9 +9,32 @@ namespace ReaShader
 	{
 		uAudioGain,
 		uVideoParam,
+		uRenderingDevice,
 
 		uNumParams
 	};
+
+	enum class ReaShaderParamType
+	{
+		Slider,
+		RadioButton,
+		CheckBox,
+		Hidden,
+
+		numParamTypes
+	};
+
+	static const std::string paramTypeStrings[] = { "slider", "radioButton", "checkBox", "hidden" };
+
+	enum class ReaShaderParamGroup
+	{
+		Main,
+		RenderingDeviceSelect,
+
+		numParamGroups
+	};
+
+	static const std::string paramGroupStrings[] = { "main", "renderingDeviceSelect" };
 
 #define PARAM_TITLE_MAX_LEN 25
 #define PARAM_UNITS_MAX_LEN 8
@@ -20,10 +43,14 @@ namespace ReaShader
 	{
 		const Steinberg::Vst::TChar title[PARAM_TITLE_MAX_LEN];
 		const Steinberg::Vst::TChar units[PARAM_UNITS_MAX_LEN];
-		const Steinberg::Vst::ParamValue defaultValue = 0.5f;
-		Steinberg::int32 flags;
-		const Steinberg::Vst::ParamID id;
 
+		const Steinberg::Vst::ParamValue defaultValue = 0.5f;
+		Steinberg::int32 steinbergFlags;
+
+		const ReaShaderParamType type;
+		const ReaShaderParamGroup group;
+
+		const Steinberg::Vst::ParamID id;
 		Steinberg::Vst::ParamValue value = defaultValue;
 	};
 

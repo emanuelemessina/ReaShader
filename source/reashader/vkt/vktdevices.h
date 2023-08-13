@@ -25,13 +25,18 @@ namespace  vkt {
 
 			DeviceSelector& removeUnsuitable(bool (*isDeviceSuitable)(VkPhysicalDevice));
 			
-			std::vector<VkPhysicalDevice> get()
+			std::vector<VkPhysicalDevice> getDevices()
 			{
 				return m_physicalDevices;
+			}
+			std::vector<VkPhysicalDeviceProperties> getProperties()
+			{
+				return properties;
 			}
 
 		  private:
 			std::vector<VkPhysicalDevice> m_physicalDevices{};
+			std::vector<VkPhysicalDeviceProperties> properties;
 		};
 
 		/**

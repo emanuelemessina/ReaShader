@@ -48,6 +48,8 @@ namespace ReaShader
 		void deactivate();
 		void terminate();
 
+		void setRenderingDevicesList(std::vector<VkPhysicalDeviceProperties>&&);
+
 	  protected:
 		MyPluginProcessor* myPluginProcessor;
 		FUnknown* context;
@@ -67,7 +69,9 @@ namespace ReaShader
 
 		void _webuiSendParamUpdate(Vst::ParamID id, Vst::ParamValue newValue);
 		void _webuiSendTrackInfo();
+		void _webuiSendRenderingDevicesList();
 
+		std::vector<VkPhysicalDeviceProperties> renderingDevicesList;
 		ReaShader::TrackInfo trackInfo;
 
 		int myColor;
