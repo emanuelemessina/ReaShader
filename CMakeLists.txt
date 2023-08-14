@@ -102,6 +102,8 @@ file(GLOB_RECURSE SOURCE_FILES
     "source/*.html"
     "source/*.css"
     "source/*.js"
+    "source/*.scss"
+    "source/*.json"
 
     "doc/*.md"
 
@@ -115,8 +117,6 @@ file(GLOB_RECURSE SOURCE_FILES
     "external/boxer/src/*.mm"
 
     "sln-make.inix"
-
-    ".vscode/ReaShader.code-workspace"
 )
 # specific files
 file (GLOB SOURCE_FILES_2 LIST_DIRECTORIES FALSE
