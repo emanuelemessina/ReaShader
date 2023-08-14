@@ -1,0 +1,14 @@
+$c_background: #120335;
+
+$img_background: "../../images/background.png";
+
+body {
+    display: flex;
+    flex-direction: column;
+    align-content: center;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+    background-image: url($img_background);
+}

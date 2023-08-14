@@ -66,6 +66,6 @@ cmake -E copy_directory "$($env:project_root_dir)\resource\meshes" "$($env:asset
 if(-not $?){ end }
 log "Copied meshes"
 
-cmake -E copy_directory "$($env:project_root_dir)\source\reashader\rsui\frontend" "$($env:rsui_out_dir)"
+cmake -E copy_directory "$($env:project_root_dir)\source\reashader\rsui\frontend" "$($env:rsui_out_dir)" --exclude "styles"
 if(-not $?){ end }
 log "Copied rsui"
