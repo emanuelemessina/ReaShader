@@ -18,8 +18,9 @@ namespace ReaShader
 
 		for (int i = 0; i < uNumParams; i++)
 		{
-			parameters.addParameter(rsParams[i].title, rsParams[i].units, 0, rsParams[i].defaultValue,
-									rsParams[i].steinbergFlags, rsParams[i].id);
+			parameters.addParameter(controller_rsParams[i].title.c_str(), controller_rsParams[i].units.c_str(), 0,
+									controller_rsParams[i].defaultValue, controller_rsParams[i].steinbergFlags,
+									controller_rsParams[i].id);
 		}
 	}
 
@@ -30,14 +31,15 @@ namespace ReaShader
 		// check json
 		RSUI::MessageHandler(msg.c_str())
 			.reactToParamUpdate([&](Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue) {
+				controller_rsParams[id].value = newValue;
 				myPluginController->setParamNormalized(id, newValue);
-				myPluginController->sendTextMessage(msg.c_str()); // relay to processor to update params
+				myPluginController->sendTextMessage(msg.c_str()); // relay to processor to update processor params
 			})
 			.reactToRequest([&](RSUI::RequestType type) {
 				switch (type)
 				{
 					case RSUI::RequestType::WantParamsList: {
-						std::string resp = RSUI::MessageBuilder::buildParamsList().dump();
+						std::string resp = RSUI::MessageBuilder::buildParamsList(controller_rsParams).dump();
 						rsuiServer->sendWSTextMessage(resp);
 						break;
 					}
@@ -50,6 +52,11 @@ namespace ReaShader
 						myPluginController->sendTextMessage(msg.c_str());
 						break;
 				}
+			})
+			.reactToRenderingDeviceChange([&](int newIndex) {
+				// update rendering device controller parameter
+				controller_rsParams[uRenderingDevice].value = (Steinberg::Vst::ParamValue)newIndex;
+				myPluginController->sendTextMessage(msg.c_str()); // relay to processor to actually perform the change
 			})
 			.fallback([&](const json& parsedMsg) {
 				myPluginController->sendTextMessage(msg.c_str()); // relay to processor in the default react case
@@ -85,6 +92,9 @@ namespace ReaShader
 
 	void ReaShaderController::initialize()
 	{
+		// populate default params
+		controller_rsParams.assign(defaultRSParams, std::end(defaultRSParams));
+
 		// Here you register parameters for the vst ui (used for automation)
 		_registerUIParams();
 
@@ -113,7 +123,7 @@ namespace ReaShader
 			float savedParam = 0.f;
 			if (streamer.readFloat((float&)savedParam) == false)
 			{
-				std::wstring title(rsParams[uParamId].title);
+				std::wstring title(controller_rsParams[uParamId].title);
 				LOG(WARNING, toConsole | toFile | toBox, "ReaShaderController", "IBStreamer read error",
 					std::format("Cannot read param {} with id {}", tools::strings::ws2s(title), uParamId));
 			}

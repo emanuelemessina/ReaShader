@@ -230,7 +230,7 @@ namespace ReaShader
 
 				return j;
 			}
-			static json buildParamsList()
+			static json buildParamsList(std::vector<ReaShaderParameter>& rsParams)
 			{
 				json j;
 				j["type"] = typeStrings[RSUI::ParamsList];
@@ -256,17 +256,17 @@ namespace ReaShader
 				j["type"] = typeStrings[ServerShutdown];
 				return j;
 			}
-			static json buildRenderingDevicesList(std::vector<VkPhysicalDeviceProperties>& properties)
+			static json buildRenderingDevicesList(int currentSelectedDevice, std::vector<VkPhysicalDeviceProperties>& suitableDevicesProperties)
 			{
 				json j;
 				j["type"] = typeStrings[RSUI::RenderingDevicesList];
 
-				j["selected"] = (int)ReaShader::rsParams[ReaShader::uRenderingDevice].value;
+				j["selected"] = currentSelectedDevice;
 
-				for (size_t i = 0; i < properties.size(); i++)
+				for (size_t i = 0; i < suitableDevicesProperties.size(); i++)
 				{
 					json deviceProps;
-					deviceProps["name"] = properties[i].deviceName;
+					deviceProps["name"] = suitableDevicesProperties[i].deviceName;
 
 					j["devices"][i] = deviceProps;
 				}

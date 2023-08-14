@@ -181,7 +181,7 @@ namespace ReaShader
 		data.outputs[0].silenceFlags = 0;
 
 		// optionally derive another value from param default range [0,1]
-		float gain = rsParams[uAudioGain].value;
+		float gain = reaShaderProcessor->processor_rsParams[uAudioGain].value;
 		// for each channel (left and right)
 		for (int32 i = 0; i < numChannels; i++)
 		{

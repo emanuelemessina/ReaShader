@@ -26,6 +26,8 @@ namespace ReaShader
 
 		myColor = rand() % 0xffffff | (0xff0000);
 
+		processor_rsParams.assign(defaultRSParams, std::end(defaultRSParams));
+
 		reaShaderRenderer = std::make_unique<ReaShaderRenderer>(this);
 		reaShaderRenderer->init();
 	}
@@ -47,8 +49,9 @@ namespace ReaShader
 	void ReaShaderProcessor::receivedJSONFromController(json msg)
 	{
 		RSUI::MessageHandler(msg)
-			.reactToParamUpdate(
-				[&](Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue) { rsParams[id].value = newValue; })
+			.reactToParamUpdate([&](Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue) {
+				processor_rsParams[id].value = newValue;
+			})
 			.reactToRequest([&](RSUI::RequestType type) {
 				switch (type)
 				{
@@ -65,7 +68,7 @@ namespace ReaShader
 				}
 			})
 			.reactToRenderingDeviceChange([&](int newIndex) {
-				rsParams[uRenderingDevice].value = (Steinberg::Vst::ParamValue)newIndex;
+				processor_rsParams[uRenderingDevice].value = (Steinberg::Vst::ParamValue)newIndex;
 				reaShaderRenderer->changeRenderingDevice(newIndex);
 			})
 			.fallbackWarning("ReaShaderProcessor");
@@ -74,7 +77,7 @@ namespace ReaShader
 	void ReaShaderProcessor::parameterUpdate(Vst::ParamID id, Vst::ParamValue newValue)
 	{
 		// update processor param (change was made by vstui or automation)
-		rsParams[id].value = newValue;
+		processor_rsParams[id].value = newValue;
 		// relay back to frontend to update webui
 		_webuiSendParamUpdate(id, newValue);
 	}
@@ -87,9 +90,9 @@ namespace ReaShader
 
 		for (int i = 0; i < uNumParams; i++)
 		{
-			if (streamer.writeFloat(rsParams[i].value) == false)
+			if (streamer.writeFloat(processor_rsParams[i].value) == false)
 			{
-				std::wstring title(rsParams[i].title);
+				std::wstring title(processor_rsParams[i].title);
 				LOG(WARNING, toConsole | toFile | toBox, "ReaShaderProcessor", "IBStreamer write error",
 					std::format("Cannot write param {} with id {}", tools::strings::ws2s(title), i));
 			}
@@ -106,11 +109,11 @@ namespace ReaShader
 			float savedParam = 0.f;
 			if (streamer.readFloat(savedParam) == false)
 			{
-				std::wstring title(rsParams[i].title);
+				std::wstring title(processor_rsParams[i].title);
 				LOG(WARNING, toConsole | toFile | toBox, "ReaShaderProcessor", "IBStreamer read error",
 					std::format("Cannot read param {} with id {}", tools::strings::ws2s(title), i));
 			}
-			rsParams[i].value = savedParam;
+			processor_rsParams[i].value = savedParam;
 		}
 	}
 	void ReaShaderProcessor::activate()
@@ -186,7 +189,8 @@ namespace ReaShader
 
 	void ReaShaderProcessor::_webuiSendRenderingDevicesList()
 	{
-		_sendJSONToController(RSUI::MessageBuilder::buildRenderingDevicesList(renderingDevicesList));
+		_sendJSONToController(RSUI::MessageBuilder::buildRenderingDevicesList(
+			(int)processor_rsParams[ReaShader::uRenderingDevice].value, renderingDevicesList));
 	}
 
 	//-----------------------------------------
@@ -199,11 +203,11 @@ namespace ReaShader
 
 		if (idx >= 0 && idx < uNumParams)
 		{
-			// ReaShaderProcessor* reaShaderProcessor = (ReaShaderProcessor*)vproc->userdata;
+			ReaShaderProcessor* reaShaderProcessor = (ReaShaderProcessor*)vproc->userdata;
 			//  directly pass parameters to the video processor
 			//*valueOut = (*((std::map<Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue>*)
 			//(((int**)vproc->userdata)[0]))).at(idx);
-			*valueOut = rsParams[idx].value;
+			*valueOut = reaShaderProcessor->processor_rsParams[idx].value;
 
 			return true;
 		}
