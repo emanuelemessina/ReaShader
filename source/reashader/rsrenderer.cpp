@@ -1106,12 +1106,12 @@ namespace ReaShader
 			vkSuitablePhysicalDevices = deviceSelector.getDevices();
 
 			// choose stored rendering device index
-			int renderingDeviceIndex = (int)(rsParams[uRenderingDevice].value);
+			int renderingDeviceIndex = (int)(reaShaderProcessor->processor_rsParams[uRenderingDevice].value);
 			if (renderingDeviceIndex >=
 				vkSuitablePhysicalDevices.size()) // fall back to 0 if out of index (device list changed)
 			{
 				renderingDeviceIndex = 0;
-				rsParams[uRenderingDevice].value = 0;
+				reaShaderProcessor->processor_rsParams[uRenderingDevice].value = 0;
 			}
 
 			_setUpDevice(renderingDeviceIndex);

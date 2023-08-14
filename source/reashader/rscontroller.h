@@ -6,6 +6,7 @@
 #include "tools/fwd_decl.h"
 
 #include "rsui/vst/rsuieditor.h"
+#include "rsparams.h"
 
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
@@ -37,6 +38,8 @@ namespace ReaShader
 		void terminate();
 
 		std::unique_ptr<RSUIServer> rsuiServer;
+
+		std::vector<ReaShaderParameter> controller_rsParams;
 
 	  private:
 		MyPluginController* myPluginController;

@@ -1,7 +1,10 @@
 #pragma once
+#include <pluginterfaces/base/fstrdefs.h>
+#include <pluginterfaces/vst/ivsteditcontroller.h>
 #include <pluginterfaces/vst/vsttypes.h>
-
 #include <string>
+
+using namespace Steinberg;
 
 namespace ReaShader
 {
@@ -36,24 +39,28 @@ namespace ReaShader
 
 	static const std::string paramGroupStrings[] = { "main", "renderingDeviceSelect" };
 
-#define PARAM_TITLE_MAX_LEN 25
-#define PARAM_UNITS_MAX_LEN 8
-
 	struct ReaShaderParameter
 	{
-		const Steinberg::Vst::TChar title[PARAM_TITLE_MAX_LEN];
-		const Steinberg::Vst::TChar units[PARAM_UNITS_MAX_LEN];
+		std::wstring title;
+		std::wstring units;
 
-		const Steinberg::Vst::ParamValue defaultValue = 0.5f;
+		Steinberg::Vst::ParamValue defaultValue = 0.5f;
 		Steinberg::int32 steinbergFlags;
 
-		const ReaShaderParamType type;
-		const ReaShaderParamGroup group;
+		ReaShaderParamType type;
+		ReaShaderParamGroup group;
 
-		const Steinberg::Vst::ParamID id;
+		Steinberg::Vst::ParamID id;
 		Steinberg::Vst::ParamValue value = defaultValue;
 	};
 
 	// params objects list
-	extern ReaShaderParameter rsParams[uNumParams];
+	static const ReaShaderParameter defaultRSParams[uNumParams] = {
+		{ STR16("Audio Gain"), STR16("%"), 0.5f, Vst::ParameterInfo::kCanAutomate, ReaShaderParamType::Slider,
+		  ReaShaderParamGroup::Main, uAudioGain },
+		{ STR16("Video Param"), STR16("%"), 0.5f, Vst::ParameterInfo::kCanAutomate, ReaShaderParamType::Slider,
+		  ReaShaderParamGroup::Main, uVideoParam },
+		{ STR16("Rendering Device"), STR16(""), 0, Vst::ParameterInfo::kIsReadOnly, ReaShaderParamType::Hidden,
+		  ReaShaderParamGroup::RenderingDeviceSelect, uRenderingDevice }
+	};
 } // namespace ReaShader

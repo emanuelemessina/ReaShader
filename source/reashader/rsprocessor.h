@@ -50,6 +50,9 @@ namespace ReaShader
 
 		void setRenderingDevicesList(std::vector<VkPhysicalDeviceProperties>&&);
 
+		std::vector<ReaShaderParameter> processor_rsParams;
+		std::unique_ptr<ReaShaderRenderer> reaShaderRenderer;
+
 	  protected:
 		MyPluginProcessor* myPluginProcessor;
 		FUnknown* context;
@@ -57,8 +60,6 @@ namespace ReaShader
 		// bind reaper processvideoframe to reashaderprocessor class
 		friend IVideoFrame* processVideoFrame(IREAPERVideoProcessor* vproc, const double* parmlist, int nparms,
 											  double project_time, double frate, int force_format);
-
-		std::unique_ptr<ReaShaderRenderer> reaShaderRenderer;
 
 	  private:
 		/**
