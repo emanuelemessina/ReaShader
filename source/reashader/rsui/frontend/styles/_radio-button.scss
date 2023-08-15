@@ -1,0 +1,25 @@
+@use './palette' as c;
+
+input[type=radio] {
+    display:none;
+}
+input[type=radio] + label:before {
+    content: "";  
+    display: inline-block;
+    width: 15px;
+    height: 15px;
+    vertical-align: middle;
+    margin-right: 10px;
+    border-radius: 10px;
+    border: 2px solid;
+    color: c.$accent;
+    transition-duration: 0.2s;
+}
+
+input[type=radio]:checked + label:before {
+    content: "\2022";
+    background-color: transparent;
+    font-size: 1.8em;
+    text-align: center;
+    line-height: 14px;
+}

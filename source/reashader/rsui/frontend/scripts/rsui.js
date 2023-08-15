@@ -49,7 +49,7 @@ export function uiCreateParamGroups(groups) {
     }
 }
 
-export function uiCreateParam(paramId, param) {
+export function uiCreateParam(messager, paramId, param) {
     const groupContainer = document.getElementById(param.group);
 
     // create ui based on type
@@ -83,7 +83,7 @@ export function uiCreateParam(paramId, param) {
                 const newValue = parseFloat(event.target.value);
 
                 // Update value label
-                valueLabel.textContent = `${newValue}`;
+                valueLabel.textContent = `${scaleNormalizedValue(param.units,newValue)}`;
 
                 messager
                     .sendParamUpdate(paramId, newValue);
@@ -106,7 +106,7 @@ export function uiCreateParam(paramId, param) {
     }
 }
 
-export function uiCreateDeviceSelector(devices, selected) {
+export function uiCreateDeviceSelector(messager, devices, selected) {
     const groupContainer = document.getElementById('renderingDeviceSelect');
 
     for (let deviceId in devices) {
