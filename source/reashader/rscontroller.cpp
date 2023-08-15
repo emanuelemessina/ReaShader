@@ -129,6 +129,7 @@ namespace ReaShader
 			}
 			// in the processor: rParams.at(uParamId) = savedParam;
 			myPluginController->setParamNormalized(uParamId, savedParam);
+			controller_rsParams[uParamId].value = savedParam;
 		}
 	}
 
@@ -141,5 +142,13 @@ namespace ReaShader
 	{
 		rsuiController = new RSUISubController(this, rsEditor, description);
 		return rsuiController;
+	}
+	void ReaShaderController::interceptWebuiMessageFromProcessor(std::string& msg)
+	{
+		RSUI::MessageHandler(msg.c_str()).reactToParamUpdate(
+			[&](Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue) {
+				// just update the internal controller param
+				controller_rsParams[id].value = newValue;
+			});
 	}
 } // namespace ReaShader

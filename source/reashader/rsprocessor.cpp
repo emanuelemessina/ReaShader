@@ -182,7 +182,7 @@ namespace ReaShader
 		reaShaderRenderer->shutdown();
 	}
 
-	void ReaShaderProcessor::setRenderingDevicesList(std::vector<VkPhysicalDeviceProperties>&& properties)
+	void ReaShaderProcessor::setRenderingDevicesList(std::vector<VkPhysicalDeviceProperties>& properties)
 	{
 		renderingDevicesList = properties;
 	}

@@ -8,6 +8,7 @@
 
 #include "rscontroller.h"
 #include "rsui/vst/rsuieditor.h"
+#include "tools/exceptions.h"
 
 using namespace Steinberg;
 using namespace VSTGUI;
@@ -48,6 +49,9 @@ namespace ReaShader
 			// relay ws message to frontend
 			std::string msg(text);
 			reaShaderController->rsuiServer->sendWSTextMessage(msg);
+
+			// intercept webui messages from processor to webui
+			reaShaderController->interceptWebuiMessageFromProcessor(msg);
 		}
 
 		return kResultOk;

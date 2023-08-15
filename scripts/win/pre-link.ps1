@@ -66,6 +66,11 @@ cmake -E copy_directory "$($env:project_root_dir)\resource\meshes" "$($env:asset
 if(-not $?){ end }
 log "Copied meshes"
 
-cmake -E copy_directory "$($env:project_root_dir)\source\reashader\rsui\frontend" "$($env:rsui_out_dir)" --exclude "styles"
+cmake -E copy_directory "$($env:project_root_dir)\source\reashader\rsui\frontend" "$($env:rsui_out_dir)"
+if(-not $?){ end }
+log "Copied rsui"
+
+# remove directories that should not be in the production release
+cmake -E remove_directory "$($env:rsui_out_dir)\styles"
 if(-not $?){ end }
 log "Copied rsui"

@@ -133,6 +133,10 @@ namespace vkt
 			{
 				return objs;
 			}
+			void clear()
+			{
+				objs.clear();
+			}
 
 		  private:
 			map objs;

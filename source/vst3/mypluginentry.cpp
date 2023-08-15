@@ -26,7 +26,7 @@ using namespace ReaShader;
 // GetPluginFactory function!
 //------------------------------------------------------------------------
 
-BEGIN_FACTORY_DEF("Emanuele Messina", "https://www.linkedin.com/in/emanuelemessinadev/",
+BEGIN_FACTORY_DEF("Emanuele Messina", "https://www.linkedin.com/in/emanuelemessina-em/",
 				  "mailto:emanuelemessina.em@gmail.com")
 
 //---First Plug-in included in this factory-------

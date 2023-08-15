@@ -48,7 +48,7 @@ namespace ReaShader
 		void deactivate();
 		void terminate();
 
-		void setRenderingDevicesList(std::vector<VkPhysicalDeviceProperties>&&);
+		void setRenderingDevicesList(std::vector<VkPhysicalDeviceProperties>&);
 
 		std::vector<ReaShaderParameter> processor_rsParams;
 		std::unique_ptr<ReaShaderRenderer> reaShaderRenderer;

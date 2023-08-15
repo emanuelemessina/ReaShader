@@ -231,7 +231,7 @@ namespace vkt
 
 			VkPhysicalDeviceShaderDrawParametersFeatures shader_draw_parameters_features = {};
 			shader_draw_parameters_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES;
-			shader_draw_parameters_features.pNext = nullptr;
+			shader_draw_parameters_features.pNext = NULL;
 			shader_draw_parameters_features.shaderDrawParameters = VK_TRUE;
 
 			createLogicalDevice(&shader_draw_parameters_features, enabledFeatures, enabledExtensions, useSwapChain);
