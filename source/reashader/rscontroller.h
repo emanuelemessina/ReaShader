@@ -35,6 +35,8 @@ namespace ReaShader
 		IPlugView* createVSTView();
 		RSUISubController* createVSTViewSubController(const IUIDescription* description);
 
+		void interceptWebuiMessageFromProcessor(std::string& msg);
+
 		void terminate();
 
 		std::unique_ptr<RSUIServer> rsuiServer;

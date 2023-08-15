@@ -63,7 +63,6 @@ export function uiCreateParam(messager, paramId, param) {
             titleLabel.setAttribute('for', `${paramId}`);
 
             const valueLabel = document.createElement('label');
-            valueLabel.textContent = `${scaleNormalizedValue(param.units, param.value)}`;
             valueLabel.id = `value_${paramId}`;
 
             const unitsLabel = document.createElement('label');
@@ -75,7 +74,6 @@ export function uiCreateParam(messager, paramId, param) {
             slider.type = 'range';
             slider.min = 0; // Set minimum value
             slider.max = 1; // Set maximum value
-            slider.value = param.value;
             slider.step = '0.001';
 
             // Add event listener to send paramUpdate message on slider change
@@ -96,6 +94,10 @@ export function uiCreateParam(messager, paramId, param) {
             sliderContainer.appendChild(unitsLabel);
 
             groupContainer.appendChild(sliderContainer);
+
+            // defer setting values after adding to container
+            slider.value = param.value;
+            valueLabel.textContent = `${scaleNormalizedValue(param.units, param.value)}`;
 
             break;
         case "hidden":

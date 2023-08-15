@@ -85,6 +85,9 @@ namespace ReaShader
 
 	void ReaShaderRenderer::checkFrameSize(int& w, int& h, void (*listener)())
 	{
+		if (halted)
+			return;
+
 		// assume if width changed all aspec ratio changed, come on...
 		if (w != FRAME_W)
 		{
@@ -171,6 +174,9 @@ namespace ReaShader
 
 	void ReaShaderRenderer::drawFrame(double pushConstants[])
 	{
+		if (halted)
+			return;
+
 		vkt::CommandPool* commandPool = vktDevice->getGraphicsCommandPool();
 		VkCommandBuffer commandBuffer = vkDrawCommandBuffer;
 		VkExtent2D extent{ FRAME_W, FRAME_H };
@@ -345,6 +351,9 @@ namespace ReaShader
 
 	void ReaShaderRenderer::transferFrame(int*& destBuffer)
 	{
+		if (halted)
+			return;
+
 		// init command buffer
 
 		VkCommandBuffer commandBuffer = vkTransferCommandBuffer;
@@ -436,6 +445,9 @@ namespace ReaShader
 	// load vf bits to color attachment
 	void ReaShaderRenderer::loadBitsToImage(int* srcBuffer)
 	{
+		if (halted)
+			return;
+
 		vkt::CommandPool* commandPool = vktDevice->getGraphicsCommandPool();
 		vkt::Queue* queue = vktDevice->getGraphicsQueue();
 		VkCommandBuffer commandBuffer = vkTransferCommandBuffer;
@@ -1101,9 +1113,15 @@ namespace ReaShader
 			vkt::Physical::DeviceSelector deviceSelector =
 				vkt::Physical::DeviceSelector().enumerate(myVkInstance).removeUnsuitable(&isPhysicalDeviceSuitable);
 
-			reaShaderProcessor->setRenderingDevicesList(deviceSelector.getProperties());
+			std::vector<VkPhysicalDeviceProperties> devicesProperties = deviceSelector.getProperties();
+
+			 std::reverse(devicesProperties.begin(), devicesProperties.end());
+
+			reaShaderProcessor->setRenderingDevicesList(devicesProperties);
 
 			vkSuitablePhysicalDevices = deviceSelector.getDevices();
+
+			 std::reverse(vkSuitablePhysicalDevices.begin(), vkSuitablePhysicalDevices.end());
 
 			// choose stored rendering device index
 			int renderingDeviceIndex = (int)(reaShaderProcessor->processor_rsParams[uRenderingDevice].value);
@@ -1120,12 +1138,16 @@ namespace ReaShader
 
 	void ReaShaderRenderer::changeRenderingDevice(int renderingDeviceIndex)
 	{
+		halted = true;
+
 		vktDevice->waitIdle();
 		
 		vktFrameResizedDeletionQueue.flush();
 		vktPhysicalDeviceChangedDeletionQueue.flush();
 
 		_setUpDevice(renderingDeviceIndex);
+
+		halted = false;
 	}
 
 	void ReaShaderRenderer::_setUpDevice(int renderingDeviceIndex)
@@ -1141,6 +1163,8 @@ namespace ReaShader
 		}
 
 		// meshes
+
+		vktPhysicalDeviceChangedDeletionQueue.push_function([&]() { meshes.clear(); });
 
 		{
 			vkt::Rendering::Mesh* quad = new vkt::Rendering::Mesh(vktDevice);
@@ -1169,6 +1193,8 @@ namespace ReaShader
 		// textures
 
 		vkSampler = vkt::textures::createSampler(vktDevice, VK_FILTER_LINEAR);
+
+		vktPhysicalDeviceChangedDeletionQueue.push_function([&]() { textures.clear(); });
 
 		{
 			vkt::Images::AllocatedImage* texture = new vkt::Images::AllocatedImage(vktDevice);
@@ -1256,6 +1282,8 @@ namespace ReaShader
 
 		// Materials
 
+		vktPhysicalDeviceChangedDeletionQueue.push_function([&]() { materials.clear(); });
+
 		// post process
 		{
 			vkt::Rendering::Material material_post_process = createMaterialPP(
@@ -1275,6 +1303,8 @@ namespace ReaShader
 		}
 
 		// render objects
+
+		vktPhysicalDeviceChangedDeletionQueue.push_function([&]() { renderObjects.clear();	});
 
 		{
 			vkt::Rendering::RenderObject pp{};

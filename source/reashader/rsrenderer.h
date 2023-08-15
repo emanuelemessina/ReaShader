@@ -27,14 +27,18 @@ namespace ReaShader
 		void init();
 		void shutdown();
 
+		void changeRenderingDevice(int renderingDeviceIndex);
+		
+		// public functions that drive the renderer, asynchronously called
+		// make sure to invalidate the device if there's a device change in progress
 		void checkFrameSize(int& w, int& h, void (*listener)() = nullptr);
 		void loadBitsToImage(int* srcBuffer);
 		void drawFrame(double pushConstants[]);
 		void transferFrame(int*& destBuffer);
-		void changeRenderingDevice(int renderingDeviceIndex);
 
 	  private:
 		bool exceptionOnInitialize{ false };
+		bool halted{ false };
 
 		// wrap low level faults and circumvent seh object unwinding
 
