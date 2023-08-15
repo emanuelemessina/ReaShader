@@ -1,6 +1,10 @@
-$c_background: #120335;
+@use './palette' as c;
 
-$img_background: "../../images/background.png";
+@use './radio-button';
+@use './slider';
+@use './button';
+
+$img_background: "images/background.png";
 
 body {
     display: flex;
@@ -8,7 +12,84 @@ body {
     align-content: center;
     justify-content: center;
     align-items: center;
+    
     height: 100vh;
     margin: 0;
+    
     background-image: url($img_background);
+    background-size: cover;
+    background-position: center;
+
+    color: white;
+    font-family: sans-serif;
+}
+
+#logo{
+
+    max-width: 500px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+
+flex-grow: 1;
+
+    img{
+        width: 100%;
+    }
+}
+
+#paramsContainer{
+    flex-grow: 2;
+}
+
+.slider-container{
+    display: flex;
+    flex-direction: row;
+    align-content: center;
+    height: 25px;
+
+    input[type=range]{
+        margin-right: 10px;
+        margin-left: 10px;
+    }
+
+    label:first-child{
+        flex-grow: 2;
+        justify-content: flex-end;
+    }
+    label:nth-last-child(2){
+        width: 50px;
+    }
+    label:last-child {
+        margin-left: 10px;
+    }
+}
+
+label{
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+fieldset{
+    margin: 0;
+    margin-bottom: 10px;
+    border: 1px solid c.$w-50;
+    background: c.$background;
+
+    input[type=radio]{
+        margin: 0;
+    }
+
+    legend{
+        color: c.$w-50;
+        padding: 0.5rem;
+    }
+
+    padding-bottom: 1rem;
+}
+
+.radio-button-container{
+    display: flex;
+    margin-bottom: 10px;
 }

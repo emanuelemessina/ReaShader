@@ -39,11 +39,11 @@ socket.addEventListener('message', (event) => {
                     const param = json.params[paramId];
                     paramId = parseInt(paramId);
 
-                    uiCreateParam(paramId, param);
+                    uiCreateParam(messager, paramId, param);
                 }
             })
             .handleRenderingDevicesList((json) => {
-                uiCreateDeviceSelector(json.devices, json.selected);
+                uiCreateDeviceSelector(messager, json.devices, json.selected);
             })
             ;
     } catch (error) {
