@@ -1,3 +1,11 @@
+/******************************************************************************
+ * Copyright (c) Emanuele Messina (https://github.com/emanuelemessina)
+ * All rights reserved.
+ *
+ * This code is licensed under the MIT License.
+ * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
+ *****************************************************************************/
+
 import { utf8_to_utf16, utf16_to_utf8, camelCaseToTitleCase } from './api.js';
 
 function scaleNormalizedValue(units, normalizedValue) {
