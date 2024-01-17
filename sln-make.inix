@@ -12,7 +12,7 @@ flavor=local
 ;attach=true
 ;command=S:\_AUDIO\Reaper\reaper.exe
 attach=false
-command=S:\_AUDIO\_VST\VST3PluginTestHost\VST3PluginTestHost.exe
+command=C:\Program Files\Steinberg\VST3PluginTestHost\VST3PluginTestHost.exe
 
 [general]
 
