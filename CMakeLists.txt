@@ -53,7 +53,7 @@ endif()
 
 set(RS_GLM_PATH "$ENV{VK_SDK_PATH}/../glm" CACHE PATH "GLM library include path")
 set(RS_VMA_PATH "$ENV{VK_SDK_PATH}/../VulkanMemoryAllocator" CACHE PATH "Vulkan Memory Allocator library path (contains include and build)")
-set(RS_TOL_PATH "$ENV{VK_SDK_PATH}/../tiny_obj_loader" CACHE PATH "Tiny Obj Loader library include path")
+set(RS_TOL_PATH "$ENV{VK_SDK_PATH}/../tinyobjloader" CACHE PATH "Tiny Obj Loader library include path")
 set(RS_STB_PATH "$ENV{VK_SDK_PATH}/../stb" CACHE PATH "STB library include path")
 
 include_directories (

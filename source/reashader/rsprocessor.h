@@ -81,7 +81,7 @@ namespace ReaShader
 		void _webuiSendRenderingDevicesList();
 
 		std::vector<VkPhysicalDeviceProperties> renderingDevicesList;
-		ReaShader::TrackInfo trackInfo;
+		ReaShader::TrackInfo trackInfo{-1};
 
 		int myColor;
 
