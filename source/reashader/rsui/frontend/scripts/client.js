@@ -7,7 +7,7 @@
  *****************************************************************************/
 
 import { MessageHandler, Messager } from './api.js';
-import { uiParamUpdate, uiCreateParamGroups, uiCreateParam, uiCreateDeviceSelector } from './rsui.js'
+import { uiParamUpdate, uiCreateParamGroups, uiCreateParam, uiCreateDeviceSelector, setParamTypesList } from './rsui.js'
 
 const socket = new WebSocket(`ws://localhost:${window.location.port}/ws`);
 const messager = new Messager(socket);
@@ -19,7 +19,9 @@ socket.addEventListener('open', (event) => {
         .sendRequestTrackInfo()
         .sendRequestParamGroupsList()
         .sendRequestParamsList()
-        .sendRequestRenderingDevicesList();
+        .sendRequestRenderingDevicesList()
+        .sendRequestParamTypesList()
+        ;
 });
 
 // Listen for messages
@@ -52,6 +54,9 @@ socket.addEventListener('message', (event) => {
             })
             .handleRenderingDevicesList((json) => {
                 uiCreateDeviceSelector(messager, json.devices, json.selected);
+            })
+            .handleParamTypesList((json) => {
+                setParamTypesList(json.types);
             })
             ;
     } catch (error) {

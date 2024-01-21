@@ -7,7 +7,7 @@
  *****************************************************************************/
 
 #include "rsrenderer.h"
-#include "rsparams.h"
+#include "rsparams/rsparams.h"
 #include "rsprocessor.h"
 #include "tools/compiler_codes.h"
 #include "tools/exceptions.h"
@@ -1132,12 +1132,12 @@ namespace ReaShader
 			 std::reverse(vkSuitablePhysicalDevices.begin(), vkSuitablePhysicalDevices.end());
 
 			// choose stored rendering device index
-			int renderingDeviceIndex = (int)(reaShaderProcessor->processor_rsParams[uRenderingDevice].value);
+			int renderingDeviceIndex = (int)(dynamic_cast<Parameters::Int8u&>(*reaShaderProcessor->processor_rsParams[Parameters::uRenderingDevice]).value);
 			if (renderingDeviceIndex >=
 				vkSuitablePhysicalDevices.size()) // fall back to 0 if out of index (device list changed)
 			{
 				renderingDeviceIndex = 0;
-				reaShaderProcessor->processor_rsParams[uRenderingDevice].value = 0;
+				dynamic_cast<Parameters::Int8u&>(*reaShaderProcessor->processor_rsParams[Parameters::uRenderingDevice]).value = 0;
 			}
 
 			_setUpDevice(renderingDeviceIndex);

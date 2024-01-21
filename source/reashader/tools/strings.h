@@ -9,7 +9,7 @@
 #pragma once
 
 #include <string>
-
+#include <vector>
 #include <codecvt>
 
 #include <locale>
@@ -18,6 +18,23 @@ namespace tools
 {
 	namespace strings
 	{
+
+		inline std::u16string bytes_to_u16string(const std::vector<std::uint8_t>& bytes)
+		{
+			std::u16string result;
+
+			for (std::size_t i = 0; i < bytes.size(); i += 2)
+			{
+				char16_t combinedChar = (bytes[i] << 8) | bytes[i + 1];
+				result.push_back(combinedChar);
+			}
+
+			return result;
+		}
+
+		// ------------------------------------------
+
+		// lossy conversions
 
 		inline std::wstring s2ws(const std::string& str)
 		{
@@ -34,6 +51,20 @@ namespace tools
 
 			return converterX.to_bytes(wstr);
 		}
+
+		inline std::string u16string_to_string(const std::u16string& u16str)
+		{
+			std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
+			return converter.to_bytes(u16str);
+		}
+
+		inline std::u16string string_to_u16string(const std::string& str)
+		{
+			std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
+			return converter.from_bytes(str);
+		}
+
+		// ---------------------------------------------
 
 		/**
 		 * Copies str to a new writable char*.

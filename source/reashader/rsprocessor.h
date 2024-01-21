@@ -24,6 +24,8 @@ using namespace Steinberg;
 #include "rsrenderer.h"
 #include "rsui/api.h"
 
+#include <mutex>
+
 namespace ReaShader
 {
 	FWD_DECL(MyPluginProcessor);
@@ -49,7 +51,7 @@ namespace ReaShader
 		 * @param id
 		 * @param newValue
 		 */
-		void parameterUpdate(Vst::ParamID id, Vst::ParamValue newValue);
+		void vstParameterUpdate(Vst::ParamID id, Vst::ParamValue newValue);
 		void storeParamsValues(IBStream* state);
 		void loadParamsValues(IBStream* state);
 		void activate();
@@ -58,7 +60,8 @@ namespace ReaShader
 
 		void setRenderingDevicesList(std::vector<VkPhysicalDeviceProperties>&);
 
-		std::vector<ReaShaderParameter> processor_rsParams;
+		std::mutex rsparamsVectorMutex; // for locking during loadState (and halt the processing)
+		std::vector<std::unique_ptr<Parameters::IParameter>> processor_rsParams;
 		std::unique_ptr<ReaShaderRenderer> reaShaderRenderer;
 
 	  protected:
@@ -76,7 +79,7 @@ namespace ReaShader
 		 */
 		void _sendJSONToController(json msg);
 
-		void _webuiSendParamUpdate(Vst::ParamID id, Vst::ParamValue newValue);
+		void _webuiSendVSTParamUpdate(Vst::ParamID id, Vst::ParamValue newValue);
 		void _webuiSendTrackInfo();
 		void _webuiSendRenderingDevicesList();
 

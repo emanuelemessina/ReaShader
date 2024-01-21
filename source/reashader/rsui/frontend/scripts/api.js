@@ -6,61 +6,7 @@
  * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
  *****************************************************************************/
 
-export function utf8_to_utf16(utf8) {
-    return decodeURIComponent(escape(utf8))
-}
-export function utf16_to_utf8(utf16) {
-    return unescape(encodeURIComponent(value))
-}
-
-export function camelCaseToTitleCase(input) {
-    return input.replace(/([A-Z])/g, ' $1')
-        .replace(/^./, function (str) { return str.toUpperCase(); });
-}
-
-function decodeJSONFromUTF8(json) {
-    function decodeValue(value) {
-        if (typeof value === 'string') {
-            return utf8_to_utf16(value);
-        } else if (Array.isArray(value)) {
-            return value.map(decodeValue);
-        } else if (typeof value === 'object' && value !== null) {
-            const decodedObject = {};
-            for (const key in value) {
-                if (value.hasOwnProperty(key)) {
-                    decodedObject[key] = decodeValue(value[key]);
-                }
-            }
-            return decodedObject;
-        } else {
-            return value;
-        }
-    }
-
-    return decodeValue(json);
-}
-function encodeJSONToUTF8(json) {
-    function encodeValue(value) {
-        if (typeof value === 'string') {
-            return utf8_to_utf16(value);
-        } else if (Array.isArray(value)) {
-            return value.map(encodeValue);
-        } else if (typeof value === 'object' && value !== null) {
-            const encodedObject = {};
-            for (const key in value) {
-                if (value.hasOwnProperty(key)) {
-                    encodedObject[key] = encodeValue(value[key]);
-                }
-            }
-            return encodedObject;
-        } else {
-            return value;
-        }
-    }
-
-    return encodeValue(json);
-}
-
+import { b64_to_utf16, utf16_to_b64 } from './strings.js'
 
 /**
  * Provide a callback to the handlers that accepts a jsonObject
@@ -82,6 +28,11 @@ export class MessageHandler {
 
     handleParamGroupsList(callback) {
         this.#_reactTo("paramGroupsList", callback);
+        return this;
+    }
+
+    handleParamTypesList(callback) {
+        this.#_reactTo("paramTypesList", callback);
         return this;
     }
 
@@ -126,11 +77,41 @@ export class Messager {
         this.socket = socket;
     }
 
-    sendParamUpdate(paramId, value) {
+    // preferential path for vst params only
+    sendVSTParamUpdate(paramId, sliderValue) {
         let msg = {
-            type: "paramUpdate",
+            type: "vstParamUpdate",
             paramId: paramId,
             value: value
+        };
+
+        this.#_send(msg);
+
+        return this;
+    }
+
+    // value can be any json object depending on the param type
+    sendParamUpdate(paramId, value) {
+        let msg = {
+            type: "vstParamUpdate",
+            paramId: paramId,
+            value: value
+        };
+
+        this.#_send(msg);
+
+        return this;
+    }
+
+    sendParamAdd(title, groupId, typeId, derived) {
+        let msg = {
+            type: "paramAdd",
+            param: {
+                title: title,
+                groupId: groupId,
+                typeId: typeId,
+                derived: derived
+            }
         };
 
         this.#_send(msg);
@@ -164,6 +145,17 @@ export class Messager {
         let msg = {
             type: "request",
             what: "paramsList"
+        };
+
+        this.#_send(msg);
+
+        return this;
+    }
+
+    sendRequestParamTypesList() {
+        let msg = {
+            type: "request",
+            what: "paramTypesList"
         };
 
         this.#_send(msg);

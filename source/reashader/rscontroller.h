@@ -14,7 +14,7 @@
 #include "tools/fwd_decl.h"
 
 #include "rsui/vst/rsuieditor.h"
-#include "rsparams.h"
+#include "rsparams/rsparams.h"
 
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
@@ -39,7 +39,7 @@ namespace ReaShader
 
 		void initialize();
 
-		void loadParamsUIValues(IBStream* state);
+		void loadUIParams(IBStream* state);
 		IPlugView* createVSTView();
 		RSUISubController* createVSTViewSubController(const IUIDescription* description);
 
@@ -49,19 +49,24 @@ namespace ReaShader
 
 		std::unique_ptr<RSUIServer> rsuiServer;
 
-		std::vector<ReaShaderParameter> controller_rsParams;
+		std::vector<std::unique_ptr<Parameters::IParameter>> controller_rsParams;
 
 	  private:
 		MyPluginController* myPluginController;
 		FUnknown* context;
+		ParameterContainer* vstParameters{ nullptr };
 
-		void _registerUIParams();
+		void _unregisterVSTParams();
+		void _registerVSTParam(Parameters::VSTParameter& rsParam);
+		void _registerVSTParams();
 
 		void _receiveTextFromRSUIServer(const std::string& msg);
 		void _receiveBinaryFromRSUIServer(const std::vector<char>& msg);
 
+		void _relayMessageToProcessor(const std::string& msg);
+
 		// memory managed by plugin
-		RSUIEditor* rsEditor;
-		RSUISubController* rsuiController;
+		RSUIEditor* rsEditor{nullptr};
+		RSUISubController* rsuiController{nullptr};
 	};
 } // namespace ReaShader

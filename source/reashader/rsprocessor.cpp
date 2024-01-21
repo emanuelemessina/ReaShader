@@ -8,7 +8,7 @@
 
 #include "rsprocessor.h"
 #include "mypluginprocessor.h"
-#include "rsparams.h"
+#include "rsparams/rsparams.h"
 
 #include <stdlib.h> /* srand, rand */
 #include <time.h>	/* time */
@@ -34,7 +34,12 @@ namespace ReaShader
 
 		myColor = rand() % 0xffffff | (0xff0000);
 
-		processor_rsParams.assign(defaultRSParams, std::end(defaultRSParams));
+		// we need to prepopulate the params with the default vector
+		// it's the preocessor duty to initialize and store the first state, that will be also read by the controller
+		processor_rsParams.push_back(std::make_unique<Parameters::VSTParameter>(Parameters::uAudioGain, "Audio Gain", Parameters::Group::Main, "%"));
+		processor_rsParams.push_back(std::make_unique<Parameters::VSTParameter>(Parameters::uVideoParam, "Video Param",
+																				Parameters::Group::Main, "%"));
+		processor_rsParams.push_back(std::make_unique<Parameters::Int8u>(Parameters::uRenderingDevice, "Rendering Device", Parameters::Group::RenderingDeviceSelect, 0));
 
 		reaShaderRenderer = std::make_unique<ReaShaderRenderer>(this);
 		reaShaderRenderer->init();
@@ -45,7 +50,7 @@ namespace ReaShader
 		myPluginProcessor->sendTextMessage(msg.dump().c_str());
 	}
 
-	void ReaShaderProcessor::_webuiSendParamUpdate(Vst::ParamID id, Vst::ParamValue newValue)
+	void ReaShaderProcessor::_webuiSendVSTParamUpdate(Vst::ParamID id, Vst::ParamValue newValue)
 	{
 		_sendJSONToController(RSUI::MessageBuilder::buildParamUpdate(id, newValue));
 	}
@@ -57,8 +62,8 @@ namespace ReaShader
 	void ReaShaderProcessor::receivedJSONFromController(json msg)
 	{
 		RSUI::MessageHandler(msg)
-			.reactToParamUpdate([&](Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue) {
-				processor_rsParams[id].value = newValue;
+			.reactToVSTParamUpdate([&](Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue) {
+				dynamic_cast<Parameters::VSTParameter&>(*processor_rsParams[id]).value = newValue;
 			})
 			.reactToRequest([&](RSUI::RequestType type) {
 				switch (type)
@@ -76,54 +81,58 @@ namespace ReaShader
 				}
 			})
 			.reactToRenderingDeviceChange([&](int newIndex) {
-				processor_rsParams[uRenderingDevice].value = (Steinberg::Vst::ParamValue)newIndex;
+				dynamic_cast<Parameters::Int8u&>(*processor_rsParams[Parameters::uRenderingDevice]).value = (Steinberg::Vst::ParamValue)newIndex;
 				reaShaderRenderer->changeRenderingDevice(newIndex);
+			})
+			.reactToParamAdd([&](std::unique_ptr<Parameters::IParameter> newParam) {
+				newParam->id = processor_rsParams.size();
+				processor_rsParams.push_back(std::move(newParam));
 			})
 			.fallbackWarning("ReaShaderProcessor");
 	}
 
-	void ReaShaderProcessor::parameterUpdate(Vst::ParamID id, Vst::ParamValue newValue)
+	void ReaShaderProcessor::vstParameterUpdate(Vst::ParamID id, Vst::ParamValue newValue)
 	{
 		// update processor param (change was made by vstui or automation)
-		processor_rsParams[id].value = newValue;
+		dynamic_cast<Parameters::VSTParameter&>(*processor_rsParams[id]).value = newValue;
 		// relay back to frontend to update webui
-		_webuiSendParamUpdate(id, newValue);
+		_webuiSendVSTParamUpdate(id, newValue);
 	}
 	void ReaShaderProcessor::storeParamsValues(IBStream* state)
 	{
-		// here we need to save the model
-		IBStreamer streamer(state, kLittleEndian);
-
-		// make sure everything is saved in order
-
-		for (int i = 0; i < uNumParams; i++)
-		{
-			if (streamer.writeFloat(processor_rsParams[i].value) == false)
-			{
-				std::wstring title(processor_rsParams[i].title);
-				LOG(WARNING, toConsole | toFile | toBox, "ReaShaderProcessor", "IBStreamer write error",
-					std::format("Cannot write param {} with id {}", tools::strings::ws2s(title), i));
-			}
-		}
+		Parameters::PresetStreamer streamer{ state };
+		streamer.write(processor_rsParams, [&](int faultIndex) {
+			LOG(WARNING, toConsole | toFile | toBox, "ReaShaderProcessor", "RSPresetStreamer write error",
+				std::format("Cannot write param {} with id {}", processor_rsParams[faultIndex]->title, faultIndex));
+		});
 	}
 	void ReaShaderProcessor::loadParamsValues(IBStream* state)
 	{
 		// called when we load a preset or project, the model has to be reloaded
+		std::lock_guard<std::mutex> lock(rsparamsVectorMutex); // important!! prevents process function from breaking
+		Parameters::PresetStreamer streamer{ state };
+		streamer.read(processor_rsParams, [&](int faultIndex) {
+			LOG(WARNING, toConsole | toFile | toBox, "ReaShaderProcessor", "RSPresetStreamer read error",
+				std::format("Cannot read param {} with id {}", processor_rsParams[faultIndex]->title, faultIndex));
+		});
+
+		/*
+		// old
 		IBStreamer streamer(state, kLittleEndian);
 		// make sure everything is read in order (in the exact way it was saved)
-
 		for (int i = 0; i < uNumParams; i++)
 		{
 			float savedParam = 0.f;
 			if (streamer.readFloat(savedParam) == false)
 			{
-				std::wstring title(processor_rsParams[i].title);
 				LOG(WARNING, toConsole | toFile | toBox, "ReaShaderProcessor", "IBStreamer read error",
-					std::format("Cannot read param {} with id {}", tools::strings::ws2s(title), i));
+					std::format("Cannot read param {} with id {}", processor_rsParams[i].title, i));
 			}
 			processor_rsParams[i].value = savedParam;
 		}
+		*/		
 	}
+
 	void ReaShaderProcessor::activate()
 	{
 		// REAPER API (here we are after effOpen equivalent in vst3)
@@ -198,24 +207,38 @@ namespace ReaShader
 	void ReaShaderProcessor::_webuiSendRenderingDevicesList()
 	{
 		_sendJSONToController(RSUI::MessageBuilder::buildRenderingDevicesList(
-			(int)processor_rsParams[ReaShader::uRenderingDevice].value, renderingDevicesList));
+			dynamic_cast<Parameters::Int8u&>(*processor_rsParams[Parameters::uRenderingDevice]).value, renderingDevicesList));
 	}
 
 	//-----------------------------------------
 
 	/* video */
 
+	/**
+	* @param double* valueOut is a pointer to an array of doubles, reaper's video processor internal representation of the state (set of params). each time a value is assigned the pointer shifts to the next position
+	*/
 	bool getVideoParam(IREAPERVideoProcessor* vproc, int idx, double* valueOut)
 	{
 		// called from video thread, gets current state
 
-		if (idx >= 0 && idx < uNumParams)
+		if (idx >= 0 && idx < Parameters::uNumDefaultParams)
 		{
 			ReaShaderProcessor* reaShaderProcessor = (ReaShaderProcessor*)vproc->userdata;
 			//  directly pass parameters to the video processor
 			//*valueOut = (*((std::map<Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue>*)
 			//(((int**)vproc->userdata)[0]))).at(idx);
-			*valueOut = reaShaderProcessor->processor_rsParams[idx].value;
+
+			// although we have passed, because we can, the entire rsprocessor as additional data to the reaper video processor (thus having access to everything)
+			// still because we can, and it's simple and fast, we use also the provided double array state to pass just the indexed values of the vst parameters
+			// since we have many parameter types, we check if the type is vst, and if not we simply set the value out to 0
+			if (reaShaderProcessor->processor_rsParams[idx]->typeId() == Parameters::Type::VSTParameter)
+			{
+				*valueOut = dynamic_cast<Parameters::VSTParameter&>(*reaShaderProcessor->processor_rsParams[idx]).value;
+			}
+			else
+			{
+				*valueOut = 0;
+			}
 
 			return true;
 		}
@@ -251,7 +274,7 @@ namespace ReaShader
 
 			rsProcessor->reaShaderRenderer->loadBitsToImage(bits);
 
-			float videoParam = parmlist[uVideoParam + 1];
+			float videoParam = parmlist[Parameters::uVideoParam + 1];
 			double pushConstants[] = { project_time, frate, videoParam };
 
 			rsProcessor->reaShaderRenderer->drawFrame(pushConstants);

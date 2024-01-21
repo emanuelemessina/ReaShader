@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "rsparams.h"
+#include "rsparams/rsparams.h"
 #include "tools/logging.h"
 #include "tools/strings.h"
 #include "vkt/vktcommon.h"
@@ -30,6 +30,7 @@ namespace ReaShader
 	{
 		enum MessageType
 		{
+			VSTParamUpdate,
 			ParamUpdate,
 			TrackInfo,
 			Request,
@@ -38,19 +39,26 @@ namespace ReaShader
 			ServerShutdown,
 			RenderingDevicesList,
 			RenderingDeviceChange,
+			ParamAdd,
+			ParamTypesList,
 
 			numMessageTypes
 		};
 
 		// respect the messagetype enum order and size
-		static const std::string typeStrings[] = { "paramUpdate",
+		static const std::string typeStrings[] = { 
+			"vstParamUpdate",
+			"paramUpdate",
 												   "trackInfo",
 												   "request",
 												   "paramGroupsList",
 												   "paramsList",
 												   "serverShutdown",
 												   "renderingDevicesList",
-												   "renderingDeviceChange" };
+												   "renderingDeviceChange",
+												   "paramAdd",
+												   "paramTypesList"
+		};
 
 		/**
 		 Incoming requests from frontend
@@ -61,6 +69,7 @@ namespace ReaShader
 			WantParamGroupsList,
 			WantParamsList,
 			WantRenderingDevicesList,
+			WantParamTypesList,
 
 			numRequestTypes
 		};
@@ -69,7 +78,8 @@ namespace ReaShader
 			{ typeStrings[TrackInfo], WantTrackInfo },
 			{ typeStrings[ParamGroupsList], WantParamGroupsList },
 			{ typeStrings[ParamsList], WantParamsList },
-			{ typeStrings[RenderingDevicesList], WantRenderingDevicesList }
+			{ typeStrings[RenderingDevicesList], WantRenderingDevicesList },
+			{ typeStrings[ParamTypesList], WantParamTypesList }
 		};
 
 		//--------------------------------------
@@ -100,10 +110,49 @@ namespace ReaShader
 				}
 			}
 
+			// vst params have a preferential path because they can be updated also from the processor
+			// other param types take the more general route
+			MessageHandler& reactToVSTParamUpdate(
+				const std::function<void(Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue newValue)>& callback)
+			{
+				_reactTo(MessageType::VSTParamUpdate, [&](const json& msg) {
+					callback(msg["paramId"], msg["value"]);
+				});
+
+				return *this;
+			}
+
 			MessageHandler& reactToParamUpdate(
-				const std::function<void(Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue)>& callback)
+				const std::function<void(Steinberg::Vst::ParamID, json newValue)>& callback)
 			{
 				_reactTo(MessageType::ParamUpdate, [&](const json& msg) { callback(msg["paramId"], msg["value"]); });
+
+				return *this;
+			}
+
+			MessageHandler& reactToParamAdd(
+				const std::function<void(std::unique_ptr<Parameters::IParameter>)>&
+					callback)
+			{
+				Parameters::Type paramType = (Parameters::Type)msg["param"]["typeId"];
+
+				if (paramType >= Parameters::Type::numParamTypes)
+				{
+					error = true;
+					return *this;
+				}
+
+				Parameters::TypeInstantiator ti{};
+				std::unique_ptr<Parameters::IParameter> newParam = ti.wield(paramType);
+				if (newParam == nullptr) // although it shouldn't because the previous check should've failed
+				{
+					error = true;
+					return *this;
+				}
+				newParam->fromJson(msg["param"]);
+
+				_reactTo(MessageType::ParamAdd,
+						 [&](const json& msg) { callback(std::move(newParam)); });
 
 				return *this;
 			}
@@ -228,32 +277,41 @@ namespace ReaShader
 				json j;
 				j["type"] = typeStrings[RSUI::ParamGroupsList];
 
-				for (int i = 0; i < (int)ReaShader::ReaShaderParamGroup::numParamGroups; i++)
+				for (int i = 0; i < (int)ReaShader::Parameters::Group::numParamGroups; i++)
 				{
 					json groupProps;
-					groupProps["name"] = ReaShader::paramGroupStrings[i];
+					groupProps["name"] = ReaShader::Parameters::paramGroupStrings[i];
 
 					j["groups"][i] = groupProps;
 				}
 
 				return j;
 			}
-			static json buildParamsList(std::vector<ReaShaderParameter>& rsParams)
+			static json buildParamTypesList()
+			{
+				json j;
+				j["type"] = typeStrings[RSUI::ParamTypesList];
+
+				for (int i = 0; i < (int)ReaShader::Parameters::Type::numParamTypes; i++)
+				{
+					json typeProps;
+					typeProps["name"] = ReaShader::Parameters::paramTypeStrings[i];
+
+					j["types"][i] = typeProps;
+				}
+
+				return j;
+			}
+			static json buildParamsList(std::vector<std::unique_ptr<Parameters::IParameter>>& rsParams)
 			{
 				json j;
 				j["type"] = typeStrings[RSUI::ParamsList];
 
-				for (int i = 0; i < uNumParams; i++)
+				for (int i = 0; i < rsParams.size(); i++)
 				{
-					json paramProps;
-					paramProps["title"] = tools::strings::ws2s(rsParams[i].title);
-					paramProps["units"] = tools::strings::ws2s(rsParams[i].units);
-					paramProps["defaultValue"] = rsParams[i].defaultValue;
-					paramProps["value"] = rsParams[i].value;
-					paramProps["group"] = ReaShader::paramGroupStrings[(int)rsParams[i].group];
-					paramProps["type"] = ReaShader::paramTypeStrings[(int)rsParams[i].type];
+					json paramProps = rsParams[i]->toJson();
 
-					j["params"][rsParams[i].id] = paramProps;
+					j["params"][rsParams[i]->id] = paramProps;
 				}
 
 				return j;
