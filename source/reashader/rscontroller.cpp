@@ -9,7 +9,7 @@
 #include "rscontroller.h"
 #include "myplugincids.h"
 #include "myplugincontroller.h"
-#include "rsparams.h"
+#include "rsparams/rsparams.h"
 #include "rsui/api.h"
 #include "rsui/vst/rsuieditor.h"
 #include <base/source/fstreamer.h>
@@ -20,15 +20,24 @@ namespace ReaShader
 {
 	using namespace RSUI;
 
-	void ReaShaderController::_registerUIParams()
+	void ReaShaderController::_unregisterVSTParams()
 	{
-		ParameterContainer& parameters = myPluginController->getParameters();
-
-		for (int i = 0; i < uNumParams; i++)
+		vstParameters->removeAll();
+	}
+	void ReaShaderController::_registerVSTParam(Parameters::VSTParameter& rsParam)
+	{
+		vstParameters->addParameter(
+			(Steinberg::char16*)tools::strings::string_to_u16string(rsParam.title).c_str(),
+									(Steinberg::char16*)tools::strings::string_to_u16string(rsParam.units).c_str(), 0,
+									rsParam.defaultValue, rsParam.steinbergFlags, rsParam.id);
+	}
+	void ReaShaderController::_registerVSTParams()
+	{
+		// here we only register the vst automation params, we discard everything else in the complete state
+		for (int i = 0; i < controller_rsParams.size(); i++)
 		{
-			parameters.addParameter(controller_rsParams[i].title.c_str(), controller_rsParams[i].units.c_str(), 0,
-									controller_rsParams[i].defaultValue, controller_rsParams[i].steinbergFlags,
-									controller_rsParams[i].id);
+			if (controller_rsParams[i]->typeId() == Parameters::Type::VSTParameter)
+				_registerVSTParam(dynamic_cast<Parameters::VSTParameter&>(*controller_rsParams[i]));
 		}
 	}
 
@@ -38,10 +47,13 @@ namespace ReaShader
 
 		// check json
 		RSUI::MessageHandler(msg.c_str())
-			.reactToParamUpdate([&](Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue) {
-				controller_rsParams[id].value = newValue;
-				myPluginController->setParamNormalized(id, newValue);
-				myPluginController->sendTextMessage(msg.c_str()); // relay to processor to update processor params
+			.reactToVSTParamUpdate([&](Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue) {
+				dynamic_cast<Parameters::VSTParameter&>(*controller_rsParams[id]).value = newValue;
+				myPluginController->setParamNormalized(id, newValue); // update vst param value
+				_relayMessageToProcessor(msg); // relay to processor to update processor params
+			}) 
+			.reactToParamUpdate([&](Steinberg::Vst::ParamID id, json newValue) { 
+				controller_rsParams[id]->setValue(newValue);
 			})
 			.reactToRequest([&](RSUI::RequestType type) {
 				switch (type)
@@ -56,19 +68,38 @@ namespace ReaShader
 						rsuiServer->sendWSTextMessage(resp);
 						break;
 					}
+					case RSUI::RequestType::WantParamTypesList: {
+						std::string resp = RSUI::MessageBuilder::buildParamTypesList().dump();
+						rsuiServer->sendWSTextMessage(resp);
+						break;
+					}
 					default: // relay to processor to handle unknown request
-						myPluginController->sendTextMessage(msg.c_str());
+						_relayMessageToProcessor(msg);
 						break;
 				}
 			})
 			.reactToRenderingDeviceChange([&](int newIndex) {
 				// update rendering device controller parameter
-				controller_rsParams[uRenderingDevice].value = (Steinberg::Vst::ParamValue)newIndex;
-				myPluginController->sendTextMessage(msg.c_str()); // relay to processor to actually perform the change
+				dynamic_cast<Parameters::Int8u&>(*controller_rsParams[Parameters::uRenderingDevice]).value = (Steinberg::Vst::ParamValue)newIndex;
+				_relayMessageToProcessor(msg); // relay to processor to actually perform the change
+			})
+			.reactToParamAdd([&](std::unique_ptr<Parameters::IParameter> newParam) {
+				newParam->id = controller_rsParams.size();
+				controller_rsParams.push_back(std::move(newParam));
+				
+				if (newParam->typeId() == Parameters::Type::VSTParameter)
+					_registerVSTParam(dynamic_cast<Parameters::VSTParameter&>(*newParam));
+				
+				_relayMessageToProcessor(msg); // relay to processor to update its param list
 			})
 			.fallback([&](const json& parsedMsg) {
-				myPluginController->sendTextMessage(msg.c_str()); // relay to processor in the default react case
+				_relayMessageToProcessor(msg); // relay to processor in the default react case
 			});
+	}
+
+	void ReaShaderController::_relayMessageToProcessor(const std::string& msg)
+	{
+		myPluginController->sendTextMessage(msg.c_str()); 
 	}
 
 	void ReaShaderController::_receiveBinaryFromRSUIServer(const std::vector<char>& msg)
@@ -100,11 +131,17 @@ namespace ReaShader
 
 	void ReaShaderController::initialize()
 	{
+		// get parameter container
+		vstParameters = &(myPluginController->getParameters());
+		
+		// (already done in the load state function)
+		/*
 		// populate default params
 		controller_rsParams.assign(defaultRSParams, std::end(defaultRSParams));
 
 		// Here you register parameters for the vst ui (used for automation)
 		_registerUIParams();
+		*/
 
 		// Launch UI Server Thread
 		rsuiServer = std::make_unique<RSUIServer>(
@@ -119,26 +156,25 @@ namespace ReaShader
 		rsuiServer->sendWSTextMessage(death);
 	}
 
-	void ReaShaderController::loadParamsUIValues(IBStream* state)
+	void ReaShaderController::loadUIParams(IBStream* state)
 	{
-		// basically the same code in the processor
-		// update ui with processor state (setParam)
+		// they are taken from the processor saved state
+		// so no need to prepopulate and register params from defaults
 
-		IBStreamer streamer(state, kLittleEndian);
+		// populate the params vector
+		Parameters::PresetStreamer streamer{ state };
+		streamer.read(controller_rsParams, [&](int faultIndex) {
+			LOG(WARNING, toConsole | toFile | toBox, "ReaShaderProcessor", "RSPresetStreamer read error",
+				std::format("Cannot read param {} with id {}", controller_rsParams[faultIndex]->title, faultIndex));
+		});
 
-		for (int uParamId = 0; uParamId < uNumParams; uParamId++)
-		{
-			float savedParam = 0.f;
-			if (streamer.readFloat((float&)savedParam) == false)
-			{
-				std::wstring title(controller_rsParams[uParamId].title);
-				LOG(WARNING, toConsole | toFile | toBox, "ReaShaderController", "IBStreamer read error",
-					std::format("Cannot read param {} with id {}", tools::strings::ws2s(title), uParamId));
-			}
-			// in the processor: rParams.at(uParamId) = savedParam;
-			myPluginController->setParamNormalized(uParamId, savedParam);
-			controller_rsParams[uParamId].value = savedParam;
-		}
+		// erase the param container
+		_unregisterVSTParams();
+		// re register
+		_registerVSTParams();
+
+		// just update a param
+		//myPluginController->setParamNormalized(uParamId, savedParam);
 	}
 
 	IPlugView* ReaShaderController::createVSTView()
@@ -151,12 +187,13 @@ namespace ReaShader
 		rsuiController = new RSUISubController(this, rsEditor, description);
 		return rsuiController;
 	}
+	// intercepts a message that the processor sent to the webui
 	void ReaShaderController::interceptWebuiMessageFromProcessor(std::string& msg)
 	{
-		RSUI::MessageHandler(msg.c_str()).reactToParamUpdate(
+		RSUI::MessageHandler(msg.c_str()).reactToVSTParamUpdate(
 			[&](Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue) {
 				// just update the internal controller param
-				controller_rsParams[id].value = newValue;
+				dynamic_cast<Parameters::VSTParameter&>(*controller_rsParams[id]).value = newValue;
 			});
 	}
 } // namespace ReaShader

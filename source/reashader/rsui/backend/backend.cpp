@@ -195,7 +195,7 @@ namespace ReaShader
 			do
 			{
 				// random port in iana ephemeral range
-				_port = rand() % (65535 - 49152 + 1) + 49152;
+				_port = rand() % (65535 - 60000 + 1) + 60000; // has problems in the 4xxxx range at least on windows
 			} while (port_in_use(_port));
 
 			_uiserver_handle = restinio::run_async(restinio::own_io_context(),

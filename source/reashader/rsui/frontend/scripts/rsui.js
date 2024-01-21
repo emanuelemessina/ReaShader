@@ -6,7 +6,7 @@
  * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
  *****************************************************************************/
 
-import { utf8_to_utf16, utf16_to_utf8, camelCaseToTitleCase } from './api.js';
+import { camelCaseToTitleCase } from './strings.js'
 
 function scaleNormalizedValue(units, normalizedValue) {
     switch (units) {
@@ -62,12 +62,12 @@ export function uiCreateParam(messager, paramId, param) {
 
     // create ui based on type
     switch (param.type) {
-        case "slider":
+        case "vstParameter":
             const sliderContainer = document.createElement('div');
             sliderContainer.classList.add('slider-container');
 
             const titleLabel = document.createElement('label');
-            titleLabel.textContent = utf8_to_utf16(param.title);
+            titleLabel.textContent = param.title;
             titleLabel.setAttribute('for', `${paramId}`);
 
             const valueLabel = document.createElement('label');
@@ -75,7 +75,7 @@ export function uiCreateParam(messager, paramId, param) {
 
             const unitsLabel = document.createElement('label');
             unitsLabel.id = `units_${paramId}`;
-            unitsLabel.textContent = `${utf8_to_utf16(param.units)}`;
+            unitsLabel.textContent = `${param.units}`;
 
             const slider = document.createElement('input');
             slider.id = paramId
@@ -92,7 +92,7 @@ export function uiCreateParam(messager, paramId, param) {
                 valueLabel.textContent = `${scaleNormalizedValue(param.units,newValue)}`;
 
                 messager
-                    .sendParamUpdate(paramId, newValue);
+                    .sendVSTParamUpdate(paramId, newValue);
             });
 
             // Append elements to the container
@@ -108,7 +108,11 @@ export function uiCreateParam(messager, paramId, param) {
             valueLabel.textContent = `${scaleNormalizedValue(param.units, param.value)}`;
 
             break;
-        case "hidden":
+        case "int8u":
+
+            break;
+        case "string":
+
             break;
         default:
             console.warn(`Unexpected paramater type ${param.type}: `, paramId, param);
@@ -167,3 +171,7 @@ export function uiCreateDeviceSelector(messager, devices, selected) {
     // Append submit button to the group container
     groupContainer.appendChild(submitButton);
 }
+
+var paramTypesList;
+
+export function setParamTypesList(list) { paramTypesList = list; }

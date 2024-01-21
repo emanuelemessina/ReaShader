@@ -12,7 +12,7 @@
 
 #include <nlohmann/json.hpp>
 
-#include "rsparams.h"
+#include "rsparams/rsparams.h"
 #include "tools/exceptions.h"
 
 using namespace Steinberg;
@@ -155,7 +155,7 @@ namespace ReaShader
 					}*/
 					if (paramQueue->getPoint(numPoints - 1, sampleOffset, value) == kResultTrue)
 					{
-						reaShaderProcessor->parameterUpdate(paramQueue->getParameterId(), value);
+						reaShaderProcessor->vstParameterUpdate(paramQueue->getParameterId(), value);
 					}
 				}
 			}
@@ -181,7 +181,8 @@ namespace ReaShader
 		data.outputs[0].silenceFlags = 0;
 
 		// optionally derive another value from param default range [0,1]
-		float gain = reaShaderProcessor->processor_rsParams[uAudioGain].value;
+		std::lock_guard<std::mutex> lock(reaShaderProcessor->rsparamsVectorMutex);
+		float gain = dynamic_cast<Parameters::VSTParameter&>(*reaShaderProcessor->processor_rsParams[Parameters::uAudioGain]).value;
 		// for each channel (left and right)
 		for (int32 i = 0; i < numChannels; i++)
 		{

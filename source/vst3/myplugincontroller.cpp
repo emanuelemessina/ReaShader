@@ -99,7 +99,7 @@ namespace ReaShader
 		if (!state)
 			return kResultFalse;
 
-		reaShaderController->loadParamsUIValues(state);
+		reaShaderController->loadUIParams(state);
 
 		return kResultOk;
 	}
