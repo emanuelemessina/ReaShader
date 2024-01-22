@@ -164,9 +164,8 @@ namespace ReaShader
 
 		// populate the params vector
 		Parameters::PresetStreamer streamer{ state };
-		streamer.read(controller_rsParams, [&](int faultIndex) {
-			LOG(WARNING, toConsole | toFile | toBox, "ReaShaderProcessor", "RSPresetStreamer read error",
-				std::format("Cannot read param {} with id {}", controller_rsParams[faultIndex]->title, faultIndex));
+		streamer.read(controller_rsParams, [&](std::string&& msg) {
+			LOG(WARNING, toConsole | toFile | toBox, "ReaShaderProcessor", "RSPresetStreamer read error", std::move(msg));
 		});
 
 		// erase the param container

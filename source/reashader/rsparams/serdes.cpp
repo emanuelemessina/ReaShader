@@ -76,27 +76,20 @@ namespace ReaShader::Parameters
 	}
 	bool IParameter::serialize(IBStreamer& streamer) const
 	{
+		return
 		// IParameter
 
 		// param id
-		if (streamer.writeInt32u(id) == false)
-			return false;
-
+		streamer.writeInt32u(id) &&
 		// param title (null terminated)
-		if (streamer.writeStr8(title.c_str()) == false)
-			return false;
-
+		streamer.writeStr8(title.c_str()) &&
 		// reashaderparam group
-		if (streamer.writeInt8u((uint8)group) == false)
-			return false;
-
+		streamer.writeInt8u((uint8)group) &&
 		// param type id
-		if (streamer.writeInt8u((uint8)typeId()) == false)
-			return false;
-
+		streamer.writeInt8u((uint8)typeId()) &&
+		
 		// DerivedParam
-
-		return serializeDerived(streamer);
+		serializeDerived(streamer);
 	}
 	bool IParameter::deserialize_v1(TypeInstantiator* ti, IBStreamer& streamer, std::unique_ptr<IParameter>& out)
 	{
@@ -104,7 +97,7 @@ namespace ReaShader::Parameters
 
 		// param id
 		uint32_t id;
-		if (streamer.readInt32u((Steinberg::uint32&)id) == false)
+		if (!streamer.readInt32u((Steinberg::uint32&)id))
 			return false;
 
 		// check end magic
@@ -114,16 +107,18 @@ namespace ReaShader::Parameters
 		}
 
 		// param title
-		std::string title = streamer.readStr8();
+		std::string title;
+		if (!readStr8(streamer, title))
+			return false;
 
 		// reashaderparam group
 		Group group;
-		if (streamer.readInt8u((uint8&)group) == false)
+		if (!streamer.readInt8u((uint8&)group))
 			return false;
 
 		// param type id
 		Type typeId;
-		if (streamer.readInt8u((uint8&)typeId) == false)
+		if (!streamer.readInt8u((uint8&)typeId))
 			return false;
 
 		std::unique_ptr<IParameter> tmp = ti->wield(typeId);
@@ -135,7 +130,7 @@ namespace ReaShader::Parameters
 		tmp->title = std::move(title);
 		tmp->group = group;
 
-		if (tmp->deserializeDerived_v1(streamer) == false)
+		if (!tmp->deserializeDerived_v1(streamer))
 			return false;
 
 		out = std::move(tmp);
@@ -161,37 +156,30 @@ namespace ReaShader::Parameters
 	}
 	bool VSTParameter::serializeDerived(IBStreamer& streamer) const
 	{
+		return
 		// units (null terminated)
-		if (streamer.writeStr8(units.c_str()) == false)
-			return false;
-
+		streamer.writeStr8(units.c_str()) &&
 		// default value
-		if (streamer.writeDouble(defaultValue) == false)
-			return false;
-
+		streamer.writeDouble(defaultValue) &&
 		// value
-		if (streamer.writeDouble(value) == false)
-			return false;
-
+		streamer.writeDouble(value) &&
 		// steinberg flags
-		if (streamer.writeInt32(steinbergFlags) == false)
-			return false;
+		streamer.writeInt32(steinbergFlags)
+		;
 	}
+	
 	bool VSTParameter::deserializeDerived_v1(IBStreamer& streamer)
 	{
+		return
 		// units
-		units = streamer.readStr8();
+		 readStr8(streamer, units) &&
 		// default value
-		if (streamer.readDouble(defaultValue) == false)
-			return false;
+		streamer.readDouble(defaultValue) &&
 		// value
-		if (streamer.readDouble(value) == false)
-			return false;
+		streamer.readDouble(value) &&
 		// steinberg flags
-		if (streamer.readInt32(steinbergFlags) == false)
-			return false;
-
-		return true;
+		streamer.readInt32(steinbergFlags) 
+		;
 	}
 		
 
@@ -207,17 +195,17 @@ namespace ReaShader::Parameters
 	}
 	bool Int8u::serializeDerived(IBStreamer& streamer) const
 	{
+		return
 		// value
-		if (streamer.writeInt8u(value) == false)
-			return false;
-		return true;
+		streamer.writeInt8u(value)
+		;
 	}
 	bool Int8u::deserializeDerived_v1(IBStreamer& streamer)
 	{
+		return
 		// value
-		if (streamer.readInt8u(value) == false)
-			return false;
-		return true;
+		streamer.readInt8u(value)
+		;
 	}
 
 	// String
@@ -231,16 +219,17 @@ namespace ReaShader::Parameters
 		value = derived["value"];
 	}
 	bool String::serializeDerived(IBStreamer& streamer) const 
-	{ // value
-		if (streamer.writeStr8(value.c_str()) == false)
-			return false;
-		return true;
+	{ 
+		return
+		// value
+		streamer.writeStr8(value.c_str())
+		;
 	}
 	bool String::deserializeDerived_v1(IBStreamer& streamer) 
 	{
+		return
 		// value
-		value = streamer.readStr8();
-
-		return true;
+		readStr8(streamer, value)
+		;
 	}
 }
