@@ -22,6 +22,26 @@ using json = nlohmann::json;
 
 using namespace Steinberg;
 
+// ----------------------
+
+// helpers
+
+// makes the readStr8 steinberg function behave like the other ones
+static bool readStr8(IBStreamer& str, std::string& dest)
+{
+	std::unique_ptr<char8> result(str.readStr8());
+
+	if (result == nullptr)
+		return false;
+	else
+	{
+		dest.assign(result.get());
+		return true;
+	}
+}
+
+// ----------------------
+
 namespace ReaShader::Parameters
 {
 		// -----------------------------------
@@ -139,10 +159,10 @@ namespace ReaShader::Parameters
 				}
 
 				void write(std::vector<std::unique_ptr<IParameter>>& rsparams_src,
-						   const std::function<void(int faultIndex)>& onError);
+						   const std::function<void(std::string&&)>& onError);
 
 				void read(std::vector<std::unique_ptr<IParameter>>& rsparams_dst,
-						  const std::function<void(int faultIndex)>& onError);
+						  const std::function<void(std::string&&)>& onError);
 
 				inline IBStreamer& getStreamer()
 				{

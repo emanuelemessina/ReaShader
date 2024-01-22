@@ -23,34 +23,38 @@ namespace ReaShader::Parameters
 	}
 
 	void PresetStreamer::write(std::vector<std::unique_ptr<IParameter>>& rsparams_src,
-							 const std::function<void(int faultIndex)>& onError)
+							 const std::function<void(std::string&& msg)>& onError)
 	{
 		// preset format version number
-		streamer.writeInt8u(1);
-
+		if (!streamer.writeInt8u(1))
+			onError("Error trying to write preset (start)!");
+		
 		// make sure everything is saved in order
 
 		int i = 0;
 		for (; i < rsparams_src.size(); i++)
 		{
-			if (rsparams_src[i]->serialize(streamer) == false)
+			if (!rsparams_src[i]->serialize(streamer))
 				break;
 		}
 
-		// end magic
-		streamer.writeInt32u(-1);
-
 		if (i < rsparams_src.size())
 		{
-			onError(i);
+			onError(std::format("Error writing param {} with id {}. \nWriting stopped abruptly.", rsparams_src[i]->title, i));
 		}
+
+		// end magic
+		if (!streamer.writeInt32u(-1))
+			onError("Error trying to write preset (end)!");
 	}
 
-	void PresetStreamer::read(std::vector<std::unique_ptr<IParameter>>& rsparams_dst, const std::function<void(int faultIndex)>& onError)
+	void PresetStreamer::read(std::vector<std::unique_ptr<IParameter>>& rsparams_dst,
+							  const std::function<void(std::string&& msg)>& onError)
 	{
 		// preset format version number switch
 		uint8_t versionNumber;
-		streamer.readInt8u(versionNumber);
+		if (!streamer.readInt8u(versionNumber))
+			onError("Error trying to read preset (start)!");
 
 		// select deserializer version
 
@@ -62,11 +66,9 @@ namespace ReaShader::Parameters
 				break;
 
 			default:
-				LOG(WARNING, toConsole | toFile | toBox, "RSPresetStreamer", "Preset File reading Error",
-					std::format("Unknown version number {}", versionNumber));
+				onError(std::format("Unknown preset file version number: {}.\nPreset loading refuted.", versionNumber));
 				return;
 		}
-
 
 		// proceed with deserialization
 
@@ -80,22 +82,23 @@ namespace ReaShader::Parameters
 		for (; true; i++) // if end magic is malformed, the other checks will fail anyway
 		{
 			std::unique_ptr<IParameter> newParam = nullptr;
-			if (deserializer(&ti, streamer, newParam) == false)
+			if (!deserializer(&ti, streamer, newParam)) 
 			{
-				break;
+				break; // failure, error is true
 			}
 			else if (newParam == nullptr) // end
 			{
-				error = false;
+				error = false; // success, clear error
 				break;
 			}
+
+			// deser ok
 
 			// default params config check (1) (corrupted file or different plugin version)
 			// check type mismatch
 			if (newParam->typeId() != defaultParamTypes[i])
 			{
-				LOG(WARNING, toConsole | toFile | toBox, "RSPresetStreamer", "Preset reading Mismatch",
-					std::format("The default parameters config in the loaded preset does not match the current one.\n Preset loading refuted.", versionNumber));
+				onError(std::format("Preset config Mismatch\n\nThe default parameters config in the loaded preset does not match the current one.\nPreset loading refuted."));
 				return;
 			}
 
@@ -107,16 +110,13 @@ namespace ReaShader::Parameters
 		// default part inferior size
 		if (tmp_params.size() < Parameters::uNumDefaultParams)
 		{
-			LOG(WARNING, toConsole | toFile | toBox, "RSPresetStreamer", "Preset reading Mismatch",
-				std::format("The default parameters config in the loaded preset does not match the current one.\n "
-							"Preset loading refuted.",
-							versionNumber));
+			onError(std::format("Preset config Mismatch\n\nThe default parameters config in the loaded preset does not match the current one.\nPreset loading refuted."));
 			return;
 		}
 
 		if (error)
 		{
-			onError(i);
+			onError(std::format("Error reading param {} with id {}.\nPreset loading refuted.", rsparams_dst[i]->title, i));
 			return;
 		}
 

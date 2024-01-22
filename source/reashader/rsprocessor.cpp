@@ -113,9 +113,8 @@ namespace ReaShader
 	void ReaShaderProcessor::storeParamsValues(IBStream* state)
 	{
 		Parameters::PresetStreamer streamer{ state };
-		streamer.write(processor_rsParams, [&](int faultIndex) {
-			LOG(WARNING, toConsole | toFile | toBox, "ReaShaderProcessor", "RSPresetStreamer write error",
-				std::format("Cannot write param {} with id {}", processor_rsParams[faultIndex]->title, faultIndex));
+		streamer.write(processor_rsParams, [&](std::string&& msg) {
+			LOG(WARNING, toConsole | toFile | toBox, "ReaShaderProcessor", "RSPresetStreamer write error", std::move(msg));
 		});
 	}
 	// reads the state from daw memory (project state on start) and from file (manual load)
@@ -124,9 +123,8 @@ namespace ReaShader
 		// called when we load a preset or project, the model has to be reloaded
 		std::lock_guard<std::mutex> lock(rsparamsVectorMutex); // important!! prevents process function from breaking
 		Parameters::PresetStreamer streamer{ state };
-		streamer.read(processor_rsParams, [&](int faultIndex) {
-			LOG(WARNING, toConsole | toFile | toBox, "ReaShaderProcessor", "RSPresetStreamer read error",
-				std::format("Cannot read param {} with id {}", processor_rsParams[faultIndex]->title, faultIndex));
+		streamer.read(processor_rsParams, [&](std::string&& msg) {
+			LOG(WARNING, toConsole | toFile | toBox, "ReaShaderProcessor", "RSPresetStreamer read error", std::move(msg));
 		});
 
 		/*
