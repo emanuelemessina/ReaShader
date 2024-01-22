@@ -24,17 +24,6 @@ using namespace Steinberg;
 
 namespace ReaShader::Parameters
 {
-	// default params id list
-
-	enum DefaultParamIds : Steinberg::Vst::ParamID
-	{
-		uAudioGain,
-		uVideoParam,
-		uRenderingDevice,
-
-		uNumDefaultParams
-	};
-
 		// -----------------------------------
 
 		enum class Group : uint8_t
@@ -67,10 +56,14 @@ namespace ReaShader::Parameters
 		FWD_DECL(TypeInstantiator)
 
 		// TODO: specific error messages instead of bool
+
+#define IBASEPARAMETER_MEMBER_LIST Steinberg::Vst::ParamID id, std::string title, Group group
+#define IBASEPARAMETER_INITIALIZATION IParameter(id, title, group)
+
 		struct IParameter
 		{
 			IParameter() = default;
-			virtual ~IParameter() = default;
+			IParameter(IBASEPARAMETER_MEMBER_LIST) : id(id), title(title), group(group){};
 
 			Steinberg::Vst::ParamID id;
 
@@ -103,12 +96,6 @@ namespace ReaShader::Parameters
 				
 				virtual void setValueFromJson(json& newValue) = 0;
 		};
-
-#define IBASEPARAMETER_MEMBER_LIST Steinberg::Vst::ParamID id, std::string title, Group group
-#define IBASEPARAMETER_INITIALIZATION                                                                                  \
-	this->id = id;                                                                                                     \
-	this->title = title;                                                                                               \
-	this->group = group;                                                                                           \
 
 		// -----------------------------------
 
@@ -168,16 +155,18 @@ namespace ReaShader::Parameters
 
 		// -----------------------------------
 
-		// DO NOT FORGET TO CALL registerInstantiator IN THE APPROPRIATE RSSTREAMER FUNCTION FOR NEW PARAMETER CLASSES
+		// DO NOT FORGET TO CALL registerInstantiator IN THE TYPEINSTANTIATOR FUNCTION FOR NEW PARAMETER CLASSES
+		// INHERIT DEFAULT CONSTRUCTORS WITH  using IParameter::IParameter;
 
 		struct VSTParameter : public IParameter
-		{	
-			VSTParameter() = default;
+		{ 
+			using IParameter::IParameter;
+
 			VSTParameter(IBASEPARAMETER_MEMBER_LIST, std::string units, Steinberg::Vst::ParamValue defaultValue = 0.5f,
 						 Steinberg::Vst::ParamValue value = 0.5f,
 						 Steinberg::int32 steinbergFlags = Vst::ParameterInfo::kCanAutomate)
-				: units(units), defaultValue(defaultValue), value(value),
-				  steinbergFlags(steinbergFlags){ IBASEPARAMETER_INITIALIZATION }
+				: IBASEPARAMETER_INITIALIZATION,
+				units(units), defaultValue(defaultValue), value(value), steinbergFlags(steinbergFlags){ }
 
 			std::string units;
 			Steinberg::Vst::ParamValue defaultValue = 0.5;
@@ -202,10 +191,11 @@ namespace ReaShader::Parameters
 
 		struct Int8u : IParameter
 		{
-			Int8u() = default;
+			using IParameter::IParameter;
 
-			Int8u(IBASEPARAMETER_MEMBER_LIST, uint8_t value)
-				: value(value){ IBASEPARAMETER_INITIALIZATION }
+			Int8u(IBASEPARAMETER_MEMBER_LIST, uint8_t value) : IBASEPARAMETER_INITIALIZATION, value(value)
+			{
+			}
 
 			uint8_t value;
 
@@ -227,12 +217,13 @@ namespace ReaShader::Parameters
 
 		struct String : IParameter
 		{
-			String() = default;
+			using IParameter::IParameter;
 
-			String(IBASEPARAMETER_MEMBER_LIST, std::string value)
-				: value(value){ IBASEPARAMETER_INITIALIZATION }
+			String(IBASEPARAMETER_MEMBER_LIST, std::string value = "") : IBASEPARAMETER_INITIALIZATION, value(value)
+			{
+			}
 
-			std::string value;
+			std::string value{ "" };
 
 			inline void setValueFromJson(json& newValue) override
 			{
@@ -251,5 +242,19 @@ namespace ReaShader::Parameters
 		};
 
 		// -----------------------------------
+
+		// default params id list
+
+		enum DefaultParamIds : Steinberg::Vst::ParamID
+		{
+			uAudioGain,
+			uVideoParam,
+			uRenderingDevice,
+			uCustomShaderPath,
+
+			uNumDefaultParams
+		};
+
+		static const Type defaultParamTypes[] = { Type::VSTParameter, Type::VSTParameter, Type::Int8u, Type::String };
 
 	}

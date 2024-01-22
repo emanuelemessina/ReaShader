@@ -73,6 +73,10 @@ namespace ReaShader
 											  double project_time, double frate, int force_format);
 
 	  private:
+
+		template <typename P, typename... Args> void _registerParam(Args&&... args);
+		void _registerDefaultParams();
+
 		/**
 		 * @brief Message to controller gets relayed to web ui
 		 * @param msg
@@ -86,8 +90,9 @@ namespace ReaShader
 		std::vector<VkPhysicalDeviceProperties> renderingDevicesList;
 		ReaShader::TrackInfo trackInfo{-1};
 
-		int myColor;
+		int myColor{ 0 };
 
 		IREAPERVideoProcessor* m_videoproc{ nullptr };
+		
 	};
 } // namespace ReaShader
