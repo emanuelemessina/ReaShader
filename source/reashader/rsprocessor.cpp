@@ -28,18 +28,29 @@ namespace ReaShader
 	{
 	}
 
+	template <typename P, typename... Args>
+	void ReaShaderProcessor::_registerParam(Args&&... args)
+	{
+		processor_rsParams.push_back(std::make_unique<P>(std::forward<Args>(args)...));
+	}
+
+	void ReaShaderProcessor::_registerDefaultParams()
+	{
+		// we need to prepopulate the params with the default vector
+		// it's the preocessor duty to initialize and store the first state, that will be also read by the controller
+		_registerParam<Parameters::VSTParameter>(Parameters::uAudioGain, "Audio Gain", Parameters::Group::Main, "%");
+		_registerParam<Parameters::VSTParameter>(Parameters::uVideoParam, "Video Param", Parameters::Group::Main, "%");
+		_registerParam<Parameters::Int8u>(Parameters::uRenderingDevice, "Rendering Device", Parameters::Group::RenderingDeviceSelect, 0);
+		_registerParam<Parameters::String>(Parameters::uCustomShaderPath, "Custom Shader", Parameters::Group::Shader);
+	}
+
 	void ReaShaderProcessor::initialize()
 	{
 		srand(time(NULL));
 
 		myColor = rand() % 0xffffff | (0xff0000);
 
-		// we need to prepopulate the params with the default vector
-		// it's the preocessor duty to initialize and store the first state, that will be also read by the controller
-		processor_rsParams.push_back(std::make_unique<Parameters::VSTParameter>(Parameters::uAudioGain, "Audio Gain", Parameters::Group::Main, "%"));
-		processor_rsParams.push_back(std::make_unique<Parameters::VSTParameter>(Parameters::uVideoParam, "Video Param",
-																				Parameters::Group::Main, "%"));
-		processor_rsParams.push_back(std::make_unique<Parameters::Int8u>(Parameters::uRenderingDevice, "Rendering Device", Parameters::Group::RenderingDeviceSelect, 0));
+		_registerDefaultParams();
 
 		reaShaderRenderer = std::make_unique<ReaShaderRenderer>(this);
 		reaShaderRenderer->init();
@@ -98,6 +109,7 @@ namespace ReaShader
 		// relay back to frontend to update webui
 		_webuiSendVSTParamUpdate(id, newValue);
 	}
+	// writes the state to daw memory (on start and on exit) and on file (manual save)
 	void ReaShaderProcessor::storeParamsValues(IBStream* state)
 	{
 		Parameters::PresetStreamer streamer{ state };
@@ -106,6 +118,7 @@ namespace ReaShader
 				std::format("Cannot write param {} with id {}", processor_rsParams[faultIndex]->title, faultIndex));
 		});
 	}
+	// reads the state from daw memory (project state on start) and from file (manual load)
 	void ReaShaderProcessor::loadParamsValues(IBStream* state)
 	{
 		// called when we load a preset or project, the model has to be reloaded

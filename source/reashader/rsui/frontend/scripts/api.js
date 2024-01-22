@@ -82,7 +82,7 @@ export class Messager {
         let msg = {
             type: "vstParamUpdate",
             paramId: paramId,
-            value: value
+            value: sliderValue
         };
 
         this.#_send(msg);

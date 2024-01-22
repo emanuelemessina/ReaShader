@@ -90,8 +90,28 @@ namespace ReaShader::Parameters
 				break;
 			}
 
+			// default params config check (1) (corrupted file or different plugin version)
+			// check type mismatch
+			if (newParam->typeId() != defaultParamTypes[i])
+			{
+				LOG(WARNING, toConsole | toFile | toBox, "RSPresetStreamer", "Preset reading Mismatch",
+					std::format("The default parameters config in the loaded preset does not match the current one.\n Preset loading refuted.", versionNumber));
+				return;
+			}
+
 			// add param to dst vector
 			tmp_params.push_back(std::move(newParam));
+		}
+
+		// default params config check (2)
+		// default part inferior size
+		if (tmp_params.size() < Parameters::uNumDefaultParams)
+		{
+			LOG(WARNING, toConsole | toFile | toBox, "RSPresetStreamer", "Preset reading Mismatch",
+				std::format("The default parameters config in the loaded preset does not match the current one.\n "
+							"Preset loading refuted.",
+							versionNumber));
+			return;
 		}
 
 		if (error)

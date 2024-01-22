@@ -156,6 +156,7 @@ namespace ReaShader
 		rsuiServer->sendWSTextMessage(death);
 	}
 
+	// called after the processor wrote or loaded a state
 	void ReaShaderController::loadUIParams(IBStream* state)
 	{
 		// they are taken from the processor saved state
