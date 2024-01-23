@@ -1,0 +1,46 @@
+/******************************************************************************
+ * Copyright (c) Emanuele Messina (https://github.com/emanuelemessina)
+ * All rights reserved.
+ *
+ * This code is licensed under the MIT License.
+ * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
+ *****************************************************************************/
+
+@use './_palette' as c;
+
+textarea{
+    margin: 0;
+    margin-bottom: 10px;
+    border: 0;
+    padding: 0.5rem;
+
+    width: 100%;
+    min-height: 50px;
+    box-sizing: border-box;
+    resize: vertical;
+
+    background-color: c.$w-50;
+    color: c.$accent;
+
+    transition-duration: 0.2s;
+
+    &:focus-visible{
+        outline: none;
+        box-shadow: inset 0 0 5px 0 #000;
+        background-color: white;
+
+        &::placeholder{
+            color: c.$b-50;
+        }
+    }
+
+    &:not(:placeholder-shown) {
+        background-color: white;
+    }
+
+    &::placeholder{
+        white-space: normal;
+        
+        color: white;
+    }
+}

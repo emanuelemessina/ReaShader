@@ -8,6 +8,11 @@
 
 import { b64_to_utf16, utf16_to_b64 } from './strings.js'
 
+// we can register only the ids that we need, but keep it in sync with api.h!
+export const DEFAULT_PARAM_IDS = {
+    customShader: 3,
+}
+
 /**
  * Provide a callback to the handlers that accepts a jsonObject
  */
