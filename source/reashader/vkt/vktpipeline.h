@@ -114,7 +114,7 @@ class RenderPassBuilder : IBuilder<VkRenderPass>
     std::vector<SubpassBuilder *> subpassBuilders{};
 };
 
-inline bool compile_glsl_to_spirv(const std::vector<char> &glslSource, EShLanguage stage, std::vector<uint32_t> &spirvCode)
+inline bool compile_glsl_to_spirv(std::string &glslSource, EShLanguage stage, std::vector<uint32_t> &spirvCode)
 {
     glslang::InitializeProcess(); // Initialize glslang
 
@@ -190,9 +190,11 @@ inline VkShaderModule createShaderModule(Logical::Device *vktDevice, std::string
 }
 inline VkShaderModule createShaderModule(Logical::Device *vktDevice, EShLanguage stage, std::string glslPath)
 {
-    const std::vector<char> vert = vkt::io::readFile(glslPath);
+    std::vector<char> vertRaw = vkt::io::readFile(glslPath);
+	vertRaw.push_back('\0');
+	std::string vertSource(vertRaw.data());
     std::vector<uint32_t> vertSpv;
-    compile_glsl_to_spirv(vert, stage, vertSpv);
+    compile_glsl_to_spirv(vertSource, stage, vertSpv);
     return vkt::Pipeline::createShaderModule(vktDevice, vertSpv);
 }
 
