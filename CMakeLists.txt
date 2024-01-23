@@ -114,6 +114,8 @@ file(GLOB_RECURSE SOURCE_FILES
     "external/cwalk/cwalk.c"
     "external/restinio/dev/fmt/src/format.cc"
     "external/restinio/dev/nodejs/http_parser/http_parser.c"
+    "external/boxer/src/*.cpp"
+    "external/boxer/src/*.mm"
 
     "sln-make.inix"
 )
@@ -192,9 +194,6 @@ smtg_target_configure_version_file(${PROJECT_NAME})
 # set c++ version
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD ${CPP_ISO})
 
-# boxer static lib compile
-add_subdirectory("external/boxer")
-
 # ADDITIONAL LIBRARY INCLUDES (needs to be PRIVATE otherwise conflict with SMTG)
 
 target_link_directories(${PROJECT_NAME} PRIVATE
@@ -218,9 +217,6 @@ target_link_directories(${PROJECT_NAME} PRIVATE
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE 
-    
-    Boxer
-    
     opengl32.lib 
     vulkan-1.lib
 
