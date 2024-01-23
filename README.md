@@ -34,6 +34,7 @@ The following libraries can be placed them next to the `x.x.x.x` folder inside t
 - [Tiny Obj Loader](https://github.com/tinyobjloader/tinyobjloader)
 - [STB](https://github.com/nothings/stb)
 - [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
+- [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) : has to be built with cmake (set the build dir to `/build`), then the project will automatically find the static library output
 
 <br>
 
@@ -141,6 +142,7 @@ See [Development](doc/Development.md).
 - [cwalk](https://github.com/likle/cwalk)
 - [nlohmann-json](https://github.com/nlohmann/json)
 - [boxer](https://github.com/aaronmjacobs/Boxer)
+- [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross)
 
 <br>
 
