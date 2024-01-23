@@ -7,6 +7,7 @@
  *****************************************************************************/
 
 import { camelCaseToTitleCase } from './strings.js'
+import { DEFAULT_PARAM_IDS } from './api.js'
 
 function scaleNormalizedValue(units, normalizedValue) {
     switch (units) {
@@ -55,6 +56,36 @@ export function uiCreateParamGroups(groups) {
 
         paramsContainer.appendChild(groupContainer);
     }
+}
+
+export function uiCreateShaderSelector(savedPath){
+    // get shader container
+    const paramsContainer = document.getElementById('shader');
+    
+    // Create text input element for filepath
+    const filePathInput = document.createElement('textarea');
+    filePathInput.placeholder = savedPath == "" ? 'Enter absolute system path of the shader' : savedPath;
+    filePathInput.spellcheck = false;
+    paramsContainer.appendChild(filePathInput);
+    
+    // Create submit button
+    const submitButton = document.createElement('button');
+    submitButton.type = 'button';
+    submitButton.textContent = 'Submit';
+
+    // Attach submit function to the button click event
+    submitButton.addEventListener('click', () => {
+        const enteredPath = filePathInput.value.trim();
+
+        if (enteredPath != "") {
+            // Use filePath as needed, e.g., send it to the server or process it further
+            console.log('Selected file path:', enteredPath);
+        } else {
+            console.log('No file selected.');
+        }
+    });
+
+    paramsContainer.appendChild(submitButton);
 }
 
 export function uiCreateParam(messager, paramId, param) {
@@ -112,6 +143,12 @@ export function uiCreateParam(messager, paramId, param) {
 
             break;
         case "string":
+            
+            // check for custom shader
+            if (paramId == DEFAULT_PARAM_IDS.customShader) {
+                uiCreateShaderSelector(param.value); // create shader selector and preset it with the saved shader path
+                break;
+            }
 
             break;
         default:
