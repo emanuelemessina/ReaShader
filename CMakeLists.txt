@@ -51,10 +51,11 @@ if(DEFINED $ENV{VK_SDK_PATH}) # env var
     message(FATAL_ERROR "Vulkan SDK is not installed!")
 endif()
 
-set(RS_GLM_PATH "$ENV{VK_SDK_PATH}/../glm" CACHE PATH "GLM library include path")
-set(RS_VMA_PATH "$ENV{VK_SDK_PATH}/../VulkanMemoryAllocator" CACHE PATH "Vulkan Memory Allocator library path (contains include and build)")
-set(RS_TOL_PATH "$ENV{VK_SDK_PATH}/../tinyobjloader" CACHE PATH "Tiny Obj Loader library include path")
-set(RS_STB_PATH "$ENV{VK_SDK_PATH}/../stb" CACHE PATH "STB library include path")
+set(RS_GLM_PATH "$ENV{VK_SDK_PATH}/../glm" CACHE PATH "GLM path")
+set(RS_VMA_PATH "$ENV{VK_SDK_PATH}/../VulkanMemoryAllocator" CACHE PATH "Vulkan Memory Allocator path (contains include and build)")
+set(RS_TOL_PATH "$ENV{VK_SDK_PATH}/../tinyobjloader" CACHE PATH "Tiny Obj Loader path")
+set(RS_STB_PATH "$ENV{VK_SDK_PATH}/../stb" CACHE PATH "STB path")
+set(RS_GLSLANG_PATH "$ENV{VK_SDK_PATH}/../glslang" CACHE PATH "glslang path")
 
 include_directories (
     "$ENV{VK_SDK_PATH}/include"
@@ -197,15 +198,54 @@ set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD ${CPP_ISO})
 
 target_link_directories(${PROJECT_NAME} PRIVATE
     "$ENV{VK_SDK_PATH}/Lib"
+
     "${RS_VMA_PATH}/build/src/Debug"
     "${RS_VMA_PATH}/build/src/Release"
+    
+    "${RS_GLSLANG_PATH}/build/External/spirv-tools/source/opt/Debug"
+    "${RS_GLSLANG_PATH}/build/External/spirv-tools/source/Debug"
+    "${RS_GLSLANG_PATH}/build/External/spirv-tools/source/Debug"
+    "${RS_GLSLANG_PATH}/build/SPIRV/Debug"  
+    "${RS_GLSLANG_PATH}/build/glslang/Debug"  
+    
+    "${RS_GLSLANG_PATH}/build/External/spirv-tools/source/opt/Release"
+    "${RS_GLSLANG_PATH}/build/External/spirv-tools/source/Release"
+    "${RS_GLSLANG_PATH}/build/External/spirv-tools/source/Release"
+    "${RS_GLSLANG_PATH}/build/SPIRV/Release"  
+    "${RS_GLSLANG_PATH}/build/glslang/Release"  
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE 
     opengl32.lib 
     vulkan-1.lib
+
     debug VulkanMemoryAllocatord.lib
     optimized VulkanMemoryAllocator.lib
+
+    debug glslangd.lib
+    optimized glslang.lib
+    debug glslang-default-resource-limitsd.lib
+    optimized glslang-default-resource-limits.lib
+    debug MachineIndependentd.lib
+    optimized MachineIndependent.lib
+    debug GenericCodeGend.lib
+    optimized GenericCodeGen.lib
+
+    debug SPIRVd.lib
+    optimized SPIRV.lib
+    debug SPIRV-Toolsd.lib
+    optimized SPIRV-Tools.lib
+    debug SPIRV-Tools-optd.lib
+    optimized SPIRV-Tools-opt.lib
+
+    optimized spirv-cross-core.lib
+    debug spirv-cross-cored.lib
+    optimized spirv-cross-cpp.lib
+    debug spirv-cross-cppd.lib
+    optimized spirv-cross-reflect.lib
+    debug spirv-cross-reflectd.lib
+    optimized spirv-cross-glsl.lib
+    debug spirv-cross-glsld.lib
 )
 
 # file groups (IDE)

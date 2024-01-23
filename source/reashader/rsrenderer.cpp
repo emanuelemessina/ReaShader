@@ -550,7 +550,7 @@ namespace ReaShader
 
 		return
 #ifdef DEBUG
-			//deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
+		// deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
 #endif
 			indices.graphicsFamily.has_value();
 	}
@@ -646,9 +646,9 @@ namespace ReaShader
 												  std::vector<VkDescriptorSetLayout> descriptorSetLayouts)
 	{
 		VkShaderModule vertShaderModule =
-			vkt::Pipeline::createShaderModule(vktDevice, tools::paths::join({ SHADERS_DIR, "vert.spv" }));
+			vkt::Pipeline::createShaderModule(vktDevice, EShLangVertex, tools::paths::join({ SHADERS_DIR, "vert.glsl" }));
 		VkShaderModule fragShaderModule =
-			vkt::Pipeline::createShaderModule(vktDevice, tools::paths::join({ SHADERS_DIR, "frag.spv" }));
+			vkt::Pipeline::createShaderModule(vktDevice, EShLangFragment, tools::paths::join({ SHADERS_DIR, "frag.glsl" }));
 
 		// ---------
 
@@ -1123,21 +1123,24 @@ namespace ReaShader
 
 			std::vector<VkPhysicalDeviceProperties> devicesProperties = deviceSelector.getProperties();
 
-			 std::reverse(devicesProperties.begin(), devicesProperties.end());
+			std::reverse(devicesProperties.begin(), devicesProperties.end());
 
 			reaShaderProcessor->setRenderingDevicesList(devicesProperties);
 
 			vkSuitablePhysicalDevices = deviceSelector.getDevices();
 
-			 std::reverse(vkSuitablePhysicalDevices.begin(), vkSuitablePhysicalDevices.end());
+			std::reverse(vkSuitablePhysicalDevices.begin(), vkSuitablePhysicalDevices.end());
 
 			// choose stored rendering device index
-			int renderingDeviceIndex = (int)(dynamic_cast<Parameters::Int8u&>(*reaShaderProcessor->processor_rsParams[Parameters::uRenderingDevice]).value);
+			int renderingDeviceIndex = (int)(dynamic_cast<Parameters::Int8u&>(
+												 *reaShaderProcessor->processor_rsParams[Parameters::uRenderingDevice])
+												 .value);
 			if (renderingDeviceIndex >=
 				vkSuitablePhysicalDevices.size()) // fall back to 0 if out of index (device list changed)
 			{
 				renderingDeviceIndex = 0;
-				dynamic_cast<Parameters::Int8u&>(*reaShaderProcessor->processor_rsParams[Parameters::uRenderingDevice]).value = 0;
+				dynamic_cast<Parameters::Int8u&>(*reaShaderProcessor->processor_rsParams[Parameters::uRenderingDevice])
+					.value = 0;
 			}
 
 			_setUpDevice(renderingDeviceIndex);
@@ -1149,7 +1152,7 @@ namespace ReaShader
 		halted = true;
 
 		vktDevice->waitIdle();
-		
+
 		vktFrameResizedDeletionQueue.flush();
 		vktPhysicalDeviceChangedDeletionQueue.flush();
 
@@ -1312,7 +1315,7 @@ namespace ReaShader
 
 		// render objects
 
-		vktPhysicalDeviceChangedDeletionQueue.push_function([&]() { renderObjects.clear();	});
+		vktPhysicalDeviceChangedDeletionQueue.push_function([&]() { renderObjects.clear(); });
 
 		{
 			vkt::Rendering::RenderObject pp{};

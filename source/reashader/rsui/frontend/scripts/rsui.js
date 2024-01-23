@@ -64,7 +64,7 @@ export function uiCreateShaderSelector(savedPath){
     
     // Create text input element for filepath
     const filePathInput = document.createElement('textarea');
-    filePathInput.placeholder = savedPath == "" ? 'Enter absolute system path of the shader' : savedPath;
+    filePathInput.placeholder = savedPath == "" ? 'Enter absolute system path of the shader (.glsl)' : savedPath;
     filePathInput.spellcheck = false;
     paramsContainer.appendChild(filePathInput);
     
@@ -73,15 +73,33 @@ export function uiCreateShaderSelector(savedPath){
     submitButton.type = 'button';
     submitButton.textContent = 'Submit';
 
+    function isValidSystemPath(path) {
+        // Add your validation logic here, e.g., check if it's a valid Windows or Unix path pointing to a GLSL file
+        // For simplicity, let's assume it should end with ".glsl"
+        return path.match(/^(?:[a-zA-Z]:\\|\/)[\w\-.]+\.glsl$/);
+    }
+    function updateButtonState() {
+        const enteredPath = filePathInput.value.trim();
+        const isValidPath = isValidSystemPath(enteredPath);
+
+        submitButton.disabled = !isValidPath;
+        submitButton.title = isValidPath ? '' : 'Invalid path';
+    }
+
+    // Attach input event listener to check validity on input changes
+    filePathInput.addEventListener('input', updateButtonState);
+    // Initial state update
+    updateButtonState();
+
     // Attach submit function to the button click event
     submitButton.addEventListener('click', () => {
         const enteredPath = filePathInput.value.trim();
 
-        if (enteredPath != "") {
-            // Use filePath as needed, e.g., send it to the server or process it further
+        if (isValidSystemPath(enteredPath)) {
             console.log('Selected file path:', enteredPath);
+            messager.sendParamUpdate(DEFAULT_PARAM_IDS.customShader, enteredPath);
         } else {
-            console.log('No file selected.');
+            console.log('No file selected or invalid path.');
         }
     });
 
