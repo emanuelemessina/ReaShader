@@ -1,7 +1,0 @@
-# Project definition
-cmake_minimum_required(VERSION 3.1)
-project(Boxer-Examples VERSION 1.0.0 LANGUAGES CXX)
-
-# Executable definition and features
-add_executable(${PROJECT_NAME} "example.cpp")
-target_link_libraries(${PROJECT_NAME} PRIVATE Boxer)
