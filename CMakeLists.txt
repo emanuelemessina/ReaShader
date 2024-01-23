@@ -114,8 +114,6 @@ file(GLOB_RECURSE SOURCE_FILES
     "external/cwalk/cwalk.c"
     "external/restinio/dev/fmt/src/format.cc"
     "external/restinio/dev/nodejs/http_parser/http_parser.c"
-    "external/boxer/src/*.cpp"
-    "external/boxer/src/*.mm"
 
     "sln-make.inix"
 )
@@ -194,11 +192,12 @@ smtg_target_configure_version_file(${PROJECT_NAME})
 # set c++ version
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD ${CPP_ISO})
 
+# boxer static lib compile
+add_subdirectory("external/boxer")
+
 # ADDITIONAL LIBRARY INCLUDES (needs to be PRIVATE otherwise conflict with SMTG)
 
 target_link_directories(${PROJECT_NAME} PRIVATE
-    "$ENV{VK_SDK_PATH}/Lib"
-
     "${RS_VMA_PATH}/build/src/Debug"
     "${RS_VMA_PATH}/build/src/Release"
     
@@ -213,9 +212,15 @@ target_link_directories(${PROJECT_NAME} PRIVATE
     "${RS_GLSLANG_PATH}/build/External/spirv-tools/source/Release"
     "${RS_GLSLANG_PATH}/build/SPIRV/Release"  
     "${RS_GLSLANG_PATH}/build/glslang/Release"  
+
+    # has to come last because it contains duplicates of glslang and spirv libs that are obsolete
+    "$ENV{VK_SDK_PATH}/Lib"
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE 
+    
+    Boxer
+    
     opengl32.lib 
     vulkan-1.lib
 
