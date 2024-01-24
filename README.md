@@ -33,8 +33,8 @@ The following libraries can be placed them next to the `x.x.x.x` folder inside t
 - [GLM](https://github.com/g-truc/glm)
 - [Tiny Obj Loader](https://github.com/tinyobjloader/tinyobjloader)
 - [STB](https://github.com/nothings/stb)
-- [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
-- [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) : has to be built with cmake (set the build dir to `/build`), then the project will automatically find the static library output
+- [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) : to be built with cmake (both debug and release)
+- [glslang](https://github.com/KhronosGroup/glslang) has to be built with cmake (set the build dir to `/build`) (both debug and release!), then the project will automatically find the static library file paths. _(Vulkan sdk has it but the version is obsolete and has conflicts)_
 
 <br>
 
@@ -58,7 +58,7 @@ The following CMake modules are required
 
 <br>
 
-## Build
+## Build steps
 
 <br>
 
@@ -66,12 +66,12 @@ The following CMake modules are required
 
 <br>
 
-First, build VMA for both debug and release (to have the `.lib` files).
-
-Then, run CMake with build generation directory `/build/<os>` folder.
+Run CMake with build generation directory `/build/<os>` folder.
 <br>
 - For Windows: `<os>` is `win` , Compiler is **Visual Studio**
 - For Mac: `<os>` is `mac` , Compiler is **Xcode**
+
+Then build from the generated solution with the related IDE.
 
 <br>
 
@@ -85,9 +85,6 @@ Take ownership of `C:\Program Files\Common Files` as the plugin will be copied t
 
 <br>
 
----
-
-<br>
 
 ## Run
 
@@ -113,9 +110,6 @@ See [Development](doc/Development.md).
 
 <br>
 
----
-
-<br>
 
 ## Credits
 
@@ -143,6 +137,7 @@ See [Development](doc/Development.md).
 - [nlohmann-json](https://github.com/nlohmann/json)
 - [boxer](https://github.com/aaronmjacobs/Boxer)
 - [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross)
+- [glslang](https://github.com/KhronosGroup/glslang)
 
 <br>
 

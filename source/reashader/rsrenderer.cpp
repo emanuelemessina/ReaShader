@@ -682,7 +682,7 @@ namespace ReaShader
 		dynamicState.pDynamicStates = dynamicStates.data();
 
 		// vertex state
-
+		// TODO: REFLECTION
 		vkt::VertexInputDescription vertexInputDesc = vkt::Vertex::get_vertex_description();
 
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
@@ -786,7 +786,7 @@ namespace ReaShader
 		colorBlending.blendConstants[3] = 0.0f; // Optional
 
 		// push constants
-
+		// TODO: REFLECTION
 		VkPushConstantRange push_constant{};
 		push_constant.offset = 0;
 		push_constant.size = sizeof(MeshPushConstants);
