@@ -60,7 +60,7 @@ namespace ReaShader
 		forceStopFlag.store(true); // someone removed us from the map, thread will exit for sure
 		timeOutWatchDog.detach();
 		// restore the current upload connection if there are no more uploads from this connection
-		if (serv->fileUploadProcessesRegistry.size() == 0)
+		if (serv->fileUploadProcessesRegistry.size() == 1)
 			serv->currentFileUploadConnectionId = 0;
 	}
 
@@ -125,7 +125,7 @@ namespace ReaShader
 
 		auto elapsedSeconds = 0;
 
-		while (elapsedSeconds < 120 && !forceStopFlag.load())
+		while (elapsedSeconds < FRONTEND_RESPONSE_TIMEOUT && !forceStopFlag.load())
 		{
 			std::this_thread::sleep_for(std::chrono::seconds(1));
 
@@ -247,6 +247,21 @@ namespace ReaShader
 
 				uint32_t uid32 = header["uid32"].get<uint32_t>();
 
+				// check that there is not a process already for this uid!
+				// this is a double start
+				auto it = fileUploadProcessesRegistry.find(uid32);
+				if (it != fileUploadProcessesRegistry.end())
+				{
+					// we just want to kill this upload
+					fileUploadProcessesRegistry.erase(uid32);
+					json error;
+					error["uid32"] = uid32;
+					error["status"] = "error";
+					error["message"] = "Started a concurrent upload for the same file!";
+					wsh->send_message(rws::message_t(rws::final_frame, rws::opcode_t::text_frame, error.dump()));
+					return;
+				}
+				
 				fileUploadProcessesRegistry.emplace(
 					uid32, std::make_unique<FileUploadProcess>(this, uid32, header["numPackets"]));
 
@@ -282,8 +297,16 @@ namespace ReaShader
 		else if (rws::opcode_t::continuation_frame == m->opcode())
 		{
 			// messages longer than 64k are fragmented, we assume they are binary
-			FileUploadProcess& fup = *fileUploadProcessesRegistry[continuationUid32];
-			fup.addChunk(payload, true); // we are sure that a closing chunk never gets fragmented because it's only 4 bytes, so this is not the final chunk	
+
+			// check if the process still exists
+			auto it = fileUploadProcessesRegistry.find(continuationUid32);
+			if (it != fileUploadProcessesRegistry.end())
+			{
+				FileUploadProcess& fup = *fileUploadProcessesRegistry[continuationUid32];
+				fup.addChunk(payload, true); // we are sure that a closing chunk never gets fragmented because it's only 4 bytes, so this is not the final chunk					
+				return;
+			}
+			// if it does not, ignore it
 		}
 		else if (rws::opcode_t::ping_frame == m->opcode())
 		{

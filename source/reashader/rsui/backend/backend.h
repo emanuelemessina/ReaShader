@@ -30,6 +30,8 @@ namespace ReaShader
 
 	FWD_DECL(RSUIServer)
 
+	#define FRONTEND_RESPONSE_TIMEOUT 60 // in seconds
+
 	struct FileUploadProcess
 	{
 		FileUploadProcess(RSUIServer* serv, uint32_t uid32, std::size_t expectedPacketCount)

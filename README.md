@@ -138,6 +138,7 @@ See [Development](doc/Development.md).
 - [boxer](https://github.com/aaronmjacobs/Boxer)
 - [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross)
 - [glslang](https://github.com/KhronosGroup/glslang)
+- [iMurmurHash](https://github.com/jensyt/imurmurhash-js)
 
 <br>
 
