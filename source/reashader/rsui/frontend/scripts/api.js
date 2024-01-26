@@ -8,10 +8,16 @@
 
 import { b64_to_utf16, utf16_to_b64 } from './strings.js'
 
+// ------------------------
+
 // we can register only the ids that we need, but keep it in sync with api.h!
 export const DEFAULT_PARAM_IDS = {
     customShader: 3,
 }
+
+const SERVER_RESPONSE_TIMEOUT = 60000:
+
+// -------------------------
 
 /**
  * Provide a callback to the handlers that accepts a jsonObject
@@ -276,7 +282,7 @@ export class Messager {
 
                     this.socket.send(sendChunk.buffer);
 
-                    const responseTimeout = 120000; // (in milliseconds)
+                    const responseTimeout = SERVER_RESPONSE_TIMEOUT; // (in milliseconds)
 
                     const chunkResponsePromise = new Promise((resolve, reject) => {
 

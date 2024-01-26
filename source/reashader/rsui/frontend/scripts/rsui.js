@@ -28,63 +28,82 @@ function getParamDisplayValue(paramId, normalizedValue) {
 
 
 function createFileUploader(messager, metadata, container, accept, initialStatus, onComplete) {
-    // Create file input element for filepath
-    const fileInput = document.createElement('input');
-    fileInput.type = 'file';
-    fileInput.accept = accept; // Set the accepted file type
 
-    container.appendChild(fileInput);
+    const inputFileContainer = document.createElement('div');
+    inputFileContainer.classList.add('input-file-container');
+    container.appendChild(inputFileContainer);
 
-    // Create label for upload percentage
+    // ---------------------
+
+    const selectorContainer = document.createElement('div');
+    selectorContainer.classList.add('selector-container');
+    inputFileContainer.appendChild(selectorContainer);
+
+    const progressContainer = document.createElement('div');
+    progressContainer.classList.add('progress-container');
+    progressContainer.style.display = "none";
+    inputFileContainer.appendChild(progressContainer);
+    
+    // ---------------------
+    
     const statusLabel = document.createElement('label');
     statusLabel.textContent = initialStatus;
-    container.appendChild(statusLabel);
-
-    // Create progress bar
+    progressContainer.appendChild(statusLabel);
+    
     const progressBar = document.createElement('progress');
     progressBar.value = 0;
     progressBar.max = 100;
-    container.appendChild(progressBar);
+    progressContainer.appendChild(progressBar);
+    
+    // ---------------------
+    
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = accept;
+    selectorContainer.appendChild(fileInput);
+    
+    const submitButton = document.createElement('button');
+    submitButton.type = 'button';
+    submitButton.textContent = 'Submit';
+    selectorContainer.appendChild(submitButton);
 
+    // ---------------------
     function updateProgress(percent) {
         progressBar.value = percent;
         statusLabel.textContent = `Uploading: ${percent.toFixed(2)}%`;
     }
 
-    // Create submit button
-    const submitButton = document.createElement('button');
-    submitButton.type = 'button';
-    submitButton.textContent = 'Submit';
-
     function updateButtonState() {
-        // Add your validation logic here if needed
-        submitButton.disabled = false; // Enable the button
+        submitButton.disabled = fileInput.files.length === 0;
     }
     // Initial state update
     updateButtonState();
-
     // Attach input event listener to check validity on file selection
     fileInput.addEventListener('change', updateButtonState);
 
+    // ---------------------
+    
     // Attach submit function to the button click event
     submitButton.addEventListener('click', async () => {
         const selectedFile = fileInput.files[0];
 
         if (selectedFile) {
             console.log('Selected file:', selectedFile.name);
-
-            messager.uploadFile(metadata, selectedFile, updateProgress, onComplete, () => { statusLabel.textContent = "Server is busy with another request."; }, (error) => {
-                statusLabel.textContent = `Error: ${error}`
-            }, () => { statusLabel.textContent = "Server hanged :("})
+            progressContainer.style.display = "block";
+            submitButton.disabled = true;
+            messager.uploadFile(metadata, selectedFile, updateProgress,
+                /* onComplete */() => { progressContainer.style.display = "none"; submitButton.disabled = false; onComplete(); }, 
+                /* onRefuse */() => { submitButton.disabled = false; statusLabel.textContent = "Server is busy with another request."; },
+                /* onError*/(error) => { submitButton.disabled = false; statusLabel.textContent = `Error: ${error}`; },
+                /* onServerHAnged */ () => { statusLabel.textContent = "Server hanged :(" }
+            )
 
         } else {
             console.log('No file selected.');
         }
     });
 
-    container.appendChild(submitButton);
 }
-
 
 // -------------------------------------
 
@@ -119,13 +138,13 @@ export function uiCreateParamGroups(groups) {
         paramsContainer.appendChild(groupContainer);
     }
 }
-export function uiCreateShaderSelector(messager, savedPath){
+export function uiCreateShaderSelector(messager, savedPath) {
     // get shader container
     const paramsContainer = document.getElementById('shader');
-    
+
     const info = document.createElement('p');
 
-    createFileUploader(messager, {purpose: "customShader"},paramsContainer, '.glsl', savedPath ? `Current shader: ${savedPath.split('\\').pop().split('/').pop()}` : "", () => { info.textContent = "Compiling..." })
+    createFileUploader(messager, { purpose: "customShader" }, paramsContainer, '.glsl', savedPath ? `Current shader: ${savedPath.split('\\').pop().split('/').pop()}` : "", () => { info.textContent = "Compiling..." })
 
     paramsContainer.appendChild(info);
 }
@@ -162,7 +181,7 @@ export function uiCreateParam(messager, paramId, param) {
                 const newValue = parseFloat(event.target.value);
 
                 // Update value label
-                valueLabel.textContent = `${scaleNormalizedValue(param.units,newValue)}`;
+                valueLabel.textContent = `${scaleNormalizedValue(param.units, newValue)}`;
 
                 messager
                     .sendVSTParamUpdate(paramId, newValue);
@@ -185,7 +204,7 @@ export function uiCreateParam(messager, paramId, param) {
 
             break;
         case "string":
-            
+
             // check for custom shader
             if (paramId == DEFAULT_PARAM_IDS.customShader) {
                 uiCreateShaderSelector(messager, param.value); // create shader selector and preset it with the saved shader path

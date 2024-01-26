@@ -1,0 +1,53 @@
+/******************************************************************************
+ * Copyright (c) Emanuele Messina (https://github.com/emanuelemessina)
+ * All rights reserved.
+ *
+ * This code is licensed under the MIT License.
+ * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
+ *****************************************************************************/
+
+@use './palette' as c;
+
+@use './button';
+
+
+.input-file-container{
+    display: flex;
+    flex-direction: column;
+
+    .selector-container{
+        display: flex;
+        flex-direction: row;
+        margin-bottom: 5px;
+    }
+
+    .progress-container{
+        position: relative;
+        padding: 0.2rem;
+
+        label{
+            position: relative;
+            z-index: 2;
+            font-size: 0.6rem;
+        }
+        
+        progress{
+            appearance: none;
+            height: 100%;
+            width: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+    }
+}
+
+input[type="file"] {
+    cursor: pointer;    
+    flex-grow: 1;
+
+    &::file-selector-button {
+        @extend button;
+        height:100%;
+    }
+}

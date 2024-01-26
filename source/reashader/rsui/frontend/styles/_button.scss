@@ -23,4 +23,10 @@ button{
     &:active{
         box-shadow: inset 0 0 10px 0 black;
     }
+
+    &[disabled], &[disabled]:hover{
+        background-color: c.$w-50;
+        color: white;
+        box-shadow: none;
+    }
 }
