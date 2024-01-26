@@ -206,6 +206,7 @@ export class Messager {
         const readerChunkSize = 1024 * 256; // 50KB chunks, after 64k of ws message we have ws fragmentation
 
         const uid32 = MurmurHash3(file.name).hash(file.size.toString()).hash(file.lastModified.toString()).result();
+        const broadcastUid32 = 4294967295;
 
         const fileUploadHeader = {
             uid32: uid32,
@@ -216,34 +217,38 @@ export class Messager {
             numPackets: Math.ceil(file.size / readerChunkSize),
             metadata: metadata
         };
-
-        // Convert fileUploadHeader JSON to binary
+        
         const fileUploadHeaderArrayBuffer = new TextEncoder().encode(JSON.stringify(fileUploadHeader)).buffer;
 
         let aborted = false;
-        const broadcastUid32 = 4294967295;
 
-        // Event listener for handling server responses
-        const handleServerResponse = async (event) => {
-
-            var response;
-
-            try {
-                response = JSON.parse(event.data);
-                if (parseInt(response.uid32 != broadcastUid32)) {
-                    if (parseInt(response.uid32) != uid32) {
-                        // not for us
-                        return;
+        // response to fileupload header
+        const fileUploadHeaderResponse = async (event) => {
+            
+            // returns parsed response if it's for us, false if it's not
+            function checkFileUploadChunkResponse(rawResponse) {
+                try {
+                    var response = JSON.parse(rawResponse);
+                    if (parseInt(response.uid32 != broadcastUid32)) {
+                        if (parseInt(response.uid32) != uid32) {
+                            // not for us
+                            return false;
+                        }
                     }
+
+                    // it's for us
+                    return response;
                 }
-
-                // it's for us
-            }
-            catch (e) {
-                // not for us
-                return;
+                catch (e) {
+                    // not for us
+                    return false;
+                }
             }
 
+            var response = checkFileUploadChunkResponse(event.data);
+            
+            if (response === false) { return; }
+            
             const reader = new FileReader();
 
             function abortUpload(socket, eventHandlerToUnregister = null) {
@@ -256,7 +261,7 @@ export class Messager {
 
             if (response.status === 'proceed') {
                 // Server acknowledged the file upload, proceed with sending file data
-                this.socket.removeEventListener('message', handleServerResponse); // from now on this is not the handler anymore
+                this.socket.removeEventListener('message', fileUploadHeaderResponse); // from now on this is not the handler anymore
                 console.log(`Server acknowledged ${uid32} (${file.name}) upload.`);
 
                 let readerOffset = 0;
@@ -272,38 +277,33 @@ export class Messager {
 
                     if (reader.readyState != FileReader.DONE) { return; }
 
-                    const readChunk = new Uint8Array(reader.result);
+                    const chunkBuffer = new Uint8Array(reader.result);
 
                     // Prepend uid32 to the chunk
-                    const uid32Array = new Uint8Array(Uint32Array.of(uid32).buffer);
-                    const sendChunk = new Uint8Array(uid32Array.length + readChunk.length);
-                    sendChunk.set(uid32Array);
-                    sendChunk.set(readChunk, uid32Array.length);
+                    const uid32ArrayBuffer = new Uint8Array(Uint32Array.of(uid32).buffer);
+                    const sendChunkBuffer = new Uint8Array(uid32ArrayBuffer.length + chunkBuffer.length);
+                    sendChunkBuffer.set(uid32ArrayBuffer);
+                    sendChunkBuffer.set(chunkBuffer, uid32ArrayBuffer.length);
 
-                    this.socket.send(sendChunk.buffer);
+                    this.socket.send(sendChunkBuffer.buffer);
 
                     const responseTimeout = SERVER_RESPONSE_TIMEOUT; // (in milliseconds)
 
+                    function gotError(message) {
+                        console.error(`Server error for ${uid32} (${file.name}): ${message}`);
+                        onError(message);
+                    }
+
                     const chunkResponsePromise = new Promise((resolve, reject) => {
 
-                        const chunkResponseHandler = (_jsonResp) => {
-                            try {
-                                var resp = JSON.parse(_jsonResp.data);
-                                if (parseInt(response.uid32 != broadcastUid32)) {
-                                    if (parseInt(response.uid32) != uid32) {
-                                        // not for us
-                                        return;
-                                    }
-                                }
-                                // it's for us
-                                clearTimeout(timer);
-                                this.socket.removeEventListener('message', chunkResponseHandler);
-                                resolve(resp);
-                            }
-                            catch (e) {
-                                // not for us
-                                return;
-                            }
+                        const chunkResponseHandler = (rawResp) => {
+                            
+                            var resp = checkFileUploadChunkResponse(rawResp);
+                            if (resp === false) { return; }
+
+                            clearTimeout(timer);
+                            this.socket.removeEventListener('message', chunkResponseHandler);
+                            resolve(resp);
                         };
 
                         const timer = setTimeout(() => {
@@ -319,22 +319,44 @@ export class Messager {
                         const chunkResponse = await chunkResponsePromise;
 
                         if (chunkResponse.status == "proceed") {
-                            readerOffset += readChunk.byteLength;
+
+                            readerOffset += chunkBuffer.byteLength;
+
                             const percent = Math.min((readerOffset / file.size) * 100, 100);
                             progressUpdate(percent);
 
                             if (readerOffset < file.size) {
                                 readNextChunk();
-                            } else {
-                                // send ending chunk (uid32 only)
-                                this.socket.send(uid32Array.buffer); // TODO: implement timeout for the proceed in frontend and still check for error messages
-                                console.log(`File ${file.name} upload complete.`);
-                                onComplete();
                             }
+                            else {
+                                // send ending chunk (uid32 only)
+                                this.socket.send(uid32ArrayBuffer.buffer); // TODO: implement timeout for the proceed in frontend and still check for error messages
+
+                                try {
+                                    const lastChunkResponse = await chunkResponsePromise;
+
+                                    if (lastChunkResponse.status == "proceed") {
+                                        console.log(`File ${file.name} upload complete.`);
+                                        onComplete();
+                                        return;
+                                    }
+                                    else if (lastChunkResponse.status == "error") {
+                                        // upload finished anyway, no need to call abort
+                                        gotError(lastChunkResponse);
+                                        return;
+                                    }
+                                    
+                                }
+                                catch (e) { throw e; }
+
+                            }
+
+                            return;
                         }
                         else if (chunkResponse.status == "error") {
-                            console.error(`Server error for ${uid32} (${file.name}): ${chunkResponse.message}`);
-                            onError(chunkResponse.message);
+                            abortUpload(this.socket);
+                            gotError(chunkResponse.message);
+                            return;
                         }
 
                     } catch (error) {
@@ -346,24 +368,24 @@ export class Messager {
 
                 };
 
-                // Start the file upload
+                // Start the file upload reading the first chunk
                 readNextChunk();
             }
             else if (response.status === 'busy') {
-                abortUpload(this.socket, handleServerResponse);
+                abortUpload(this.socket, fileUploadHeaderResponse);
                 console.log('Server is busy. Try again later.');
                 onRefuse();
             }
             else if (response.status == "error") {
-                abortUpload(this.socket, handleServerResponse);
+                abortUpload(this.socket, fileUploadHeaderResponse);
                 console.error('Server error:', response.message);
                 onError(response.message);
             }
         };
+        
+        this.socket.addEventListener('message', fileUploadHeaderResponse);
 
-        // Register the event listener for handling server responses
-        this.socket.addEventListener('message', handleServerResponse);
-        // Send fileUploadHeader as a binary frame
+        // Send fileUploadHeader as a binary frame to start fileupload
         this.socket.send(fileUploadHeaderArrayBuffer);
     }
 
