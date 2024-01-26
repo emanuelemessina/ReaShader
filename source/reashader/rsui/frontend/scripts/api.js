@@ -194,5 +194,172 @@ export class Messager {
         this.socket.send(JSON.stringify(json))
     }
 
+    // metadata should be a SMALL json of extra file info
+    async uploadFile(metadata, file, progressUpdate, onComplete, onRefuse, onError, onServerHanged) {
+
+        const readerChunkSize = 1024 * 256; // 50KB chunks, after 64k of ws message we have ws fragmentation
+
+        const uid32 = MurmurHash3(file.name).hash(file.size.toString()).hash(file.lastModified.toString()).result();
+
+        const fileUploadHeader = {
+            uid32: uid32,
+            filename: file.name,
+            mimetype: file.type,
+            size: file.size,
+            extension: file.name.split('.').pop(),
+            numPackets: Math.ceil(file.size / readerChunkSize),
+            metadata: metadata
+        };
+
+        // Convert fileUploadHeader JSON to binary
+        const fileUploadHeaderArrayBuffer = new TextEncoder().encode(JSON.stringify(fileUploadHeader)).buffer;
+
+        let aborted = false;
+        const broadcastUid32 = 4294967295;
+
+        // Event listener for handling server responses
+        const handleServerResponse = async (event) => {
+
+            var response;
+
+            try {
+                response = JSON.parse(event.data);
+                if (parseInt(response.uid32 != broadcastUid32)) {
+                    if (parseInt(response.uid32) != uid32) {
+                        // not for us
+                        return;
+                    }
+                }
+
+                // it's for us
+            }
+            catch (e) {
+                // not for us
+                return;
+            }
+
+            const reader = new FileReader();
+
+            function abortUpload(socket, eventHandlerToUnregister = null) {
+                reader.abort();
+                aborted = true;
+                if (eventHandlerToUnregister != null) {
+                    socket.removeEventListener('message', eventHandlerToUnregister);
+                }
+            }
+
+            if (response.status === 'proceed') {
+                // Server acknowledged the file upload, proceed with sending file data
+                this.socket.removeEventListener('message', handleServerResponse); // from now on this is not the handler anymore
+                console.log(`Server acknowledged ${uid32} (${file.name}) upload.`);
+
+                let readerOffset = 0;
+
+                function readNextChunk() {
+                    const blob = file.slice(readerOffset, readerOffset + readerChunkSize);
+                    reader.readAsArrayBuffer(blob);
+                }
+
+                reader.onloadend = async () => {
+
+                    if (aborted) { return; }
+
+                    if (reader.readyState != FileReader.DONE) { return; }
+
+                    const readChunk = new Uint8Array(reader.result);
+
+                    // Prepend uid32 to the chunk
+                    const uid32Array = new Uint8Array(Uint32Array.of(uid32).buffer);
+                    const sendChunk = new Uint8Array(uid32Array.length + readChunk.length);
+                    sendChunk.set(uid32Array);
+                    sendChunk.set(readChunk, uid32Array.length);
+
+                    this.socket.send(sendChunk.buffer);
+
+                    const responseTimeout = 120000; // (in milliseconds)
+
+                    const chunkResponsePromise = new Promise((resolve, reject) => {
+
+                        const chunkResponseHandler = (_jsonResp) => {
+                            try {
+                                var resp = JSON.parse(_jsonResp.data);
+                                if (parseInt(response.uid32 != broadcastUid32)) {
+                                    if (parseInt(response.uid32) != uid32) {
+                                        // not for us
+                                        return;
+                                    }
+                                }
+                                // it's for us
+                                clearTimeout(timer);
+                                this.socket.removeEventListener('message', chunkResponseHandler);
+                                resolve(resp);
+                            }
+                            catch (e) {
+                                // not for us
+                                return;
+                            }
+                        };
+
+                        const timer = setTimeout(() => {
+                            clearTimeout(timer);
+                            this.socket.removeEventListener('message', chunkResponseHandler);
+                            reject(new Error('Server response timeout'));
+                        }, responseTimeout);
+
+                        this.socket.addEventListener('message', chunkResponseHandler);
+                    });
+
+                    try {
+                        const chunkResponse = await chunkResponsePromise;
+
+                        if (chunkResponse.status == "proceed") {
+                            readerOffset += readChunk.byteLength;
+                            const percent = Math.min((readerOffset / file.size) * 100, 100);
+                            progressUpdate(percent);
+
+                            if (readerOffset < file.size) {
+                                readNextChunk();
+                            } else {
+                                // send ending chunk (uid32 only)
+                                this.socket.send(uid32Array.buffer); // TODO: implement timeout for the proceed in frontend and still check for error messages
+                                console.log(`File ${file.name} upload complete.`);
+                                onComplete();
+                            }
+                        }
+                        else if (chunkResponse.status == "error") {
+                            console.error(`Server error for ${uid32} (${file.name}): ${chunkResponse.message}`);
+                            onError(chunkResponse.message);
+                        }
+
+                    } catch (error) {
+                        // timeout
+                        console.error(error.message);
+                        abortUpload(this.socket);
+                        onServerHanged();
+                    }
+
+                };
+
+                // Start the file upload
+                readNextChunk();
+            }
+            else if (response.status === 'busy') {
+                abortUpload(this.socket, handleServerResponse);
+                console.log('Server is busy. Try again later.');
+                onRefuse();
+            }
+            else if (response.status == "error") {
+                abortUpload(this.socket, handleServerResponse);
+                console.error('Server error:', response.message);
+                onError(response.message);
+            }
+        };
+
+        // Register the event listener for handling server responses
+        this.socket.addEventListener('message', handleServerResponse);
+        // Send fileUploadHeader as a binary frame
+        this.socket.send(fileUploadHeaderArrayBuffer);
+    }
+
     // Add more message builders as needed
 }

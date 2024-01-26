@@ -60,6 +60,7 @@ socket.addEventListener('message', (event) => {
             })
             ;
     } catch (error) {
-        console.error('Error parsing incoming JSON:', error, event.data);
+        // leave it, might be for other handlers
+        //console.error('Error parsing incoming JSON:', error, event.data);
     }
 });

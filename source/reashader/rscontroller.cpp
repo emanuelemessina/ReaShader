@@ -41,7 +41,7 @@ namespace ReaShader
 		}
 	}
 
-	void ReaShaderController::_receiveTextFromRSUIServer(const std::string& msg)
+	void ReaShaderController::_receiveTextFromRSUIServer(const std::string&& msg)
 	{
 		// relay messages to processor if needed
 
@@ -85,11 +85,9 @@ namespace ReaShader
 			})
 			.reactToParamAdd([&](std::unique_ptr<Parameters::IParameter> newParam) {
 				newParam->id = controller_rsParams.size();
-				controller_rsParams.push_back(std::move(newParam));
-				
 				if (newParam->typeId() == Parameters::Type::VSTParameter)
 					_registerVSTParam(dynamic_cast<Parameters::VSTParameter&>(*newParam));
-				
+				controller_rsParams.push_back(std::move(newParam));
 				_relayMessageToProcessor(msg); // relay to processor to update its param list
 			})
 			.fallback([&](const json& parsedMsg) {
@@ -97,36 +95,23 @@ namespace ReaShader
 			});
 	}
 
+	void ReaShaderController::_receiveFileFromRSUIServer(json&& metadata, std::string&& name, std::string&& extension,
+														 size_t size, const std::vector<char>&& data)
+	{
+
+	}
+
 	void ReaShaderController::_relayMessageToProcessor(const std::string& msg)
 	{
 		myPluginController->sendTextMessage(msg.c_str()); 
 	}
 
-	void ReaShaderController::_receiveBinaryFromRSUIServer(const std::vector<char>& msg)
+	void ReaShaderController::_receiveBinaryFromRSUIServer(const std::vector<char>&& msg)
 	{
 		// relay message to processor
 		// myPluginController->sendMessage(msg);
 
-		if (msg.size() < 2)
-			// malformed: too short
-			return;
-
-		char magicSequence[3];
-		magicSequence[0] = msg[0];
-		magicSequence[1] = msg[1];
-		magicSequence[2] = msg[2];
-
-		if (magicSequence[2] != '\0')
-			// malformed: wrong magic terminator
-			return;
-
-		std::string magic = "RS";
-
-		if (std::string(magicSequence) != magic)
-			// malformed: wrong magic
-			return;
-
-		// proceed
+		
 	}
 
 	void ReaShaderController::initialize()
@@ -146,6 +131,8 @@ namespace ReaShader
 		// Launch UI Server Thread
 		rsuiServer = std::make_unique<RSUIServer>(
 			std::bind(&ReaShaderController::_receiveTextFromRSUIServer, this, std::placeholders::_1),
+			std::bind(&ReaShaderController::_receiveFileFromRSUIServer, this, std::placeholders::_1,
+					  std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5),
 			std::bind(&ReaShaderController::_receiveBinaryFromRSUIServer, this, std::placeholders::_1));
 	}
 

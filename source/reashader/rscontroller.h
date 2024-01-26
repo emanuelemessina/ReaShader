@@ -60,8 +60,10 @@ namespace ReaShader
 		void _registerVSTParam(Parameters::VSTParameter& rsParam);
 		void _registerVSTParams();
 
-		void _receiveTextFromRSUIServer(const std::string& msg);
-		void _receiveBinaryFromRSUIServer(const std::vector<char>& msg);
+		void _receiveTextFromRSUIServer(const std::string&& msg);
+		void _receiveBinaryFromRSUIServer(const std::vector<char>&& msg);
+		void _receiveFileFromRSUIServer(json&& metadata, std::string&& name, std::string&& extension, size_t size,
+										const std::vector<char>&& data);
 
 		void _relayMessageToProcessor(const std::string& msg);
 

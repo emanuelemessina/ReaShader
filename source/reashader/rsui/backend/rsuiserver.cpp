@@ -15,6 +15,8 @@
 namespace rws = restinio::websocket::basic;
 using ws_registry_t = std::map<std::uint64_t, rws::ws_handle_t>;
 
+// -----------------------------------------------------
+
 #include <nlohmann/json.hpp>
 
 #include "tools/mime_types.h"
@@ -136,32 +138,8 @@ namespace ReaShader
 		router->http_get(R"(/ws)", [&](auto req, auto) {
 			if (restinio::http_connection_header_t::upgrade == req->header().connection())
 			{
-				auto wsh = rws::upgrade<uiserver_traits_t>(*req, rws::activation_t::immediate, [&](auto wsh, auto m) {
-					if (rws::opcode_t::text_frame == m->opcode())
-					{
-						_incomingTextMessageHandler(m->payload().c_str());
-					}
-					else if (rws::opcode_t::binary_frame == m->opcode() ||
-							 rws::opcode_t::continuation_frame == m->opcode())
-					{
-						// other type of message recieved
-						// wsh->send_message(*m);
-						//
-						// Convert the string to a vector of chars
-						std::vector<char> charVector(m->payload().begin(), m->payload().end());
-						_incomingBinaryMessageHandler(charVector);
-					}
-					else if (rws::opcode_t::ping_frame == m->opcode())
-					{
-						auto resp = *m;
-						resp.set_opcode(rws::opcode_t::pong_frame);
-						wsh->send_message(resp);
-					}
-					else if (rws::opcode_t::connection_close_frame == m->opcode())
-					{
-						std::any_cast<ws_registry_t*>(_ws_registry)->erase(wsh->connection_id());
-					}
-				});
+				auto wsh = rws::upgrade<uiserver_traits_t>(*req, rws::activation_t::immediate,
+														   [&](auto wsh, auto m) { _ws_handler(wsh, m); });
 
 				std::any_cast<ws_registry_t*>(_ws_registry)->emplace(wsh->connection_id(), wsh);
 
@@ -183,8 +161,10 @@ namespace ReaShader
 	}
 
 	RSUIServer::RSUIServer(IncomingTextMessageHandler incomingTextMessageHandler,
+		IncomingFileHandler incomingFileHandler,
 						   IncomingBinaryMessageHandler incomingBinaryMessageHandler)
 		: _incomingTextMessageHandler(incomingTextMessageHandler),
+		  _incomingFileHandler(incomingFileHandler),
 		  _incomingBinaryMessageHandler(incomingBinaryMessageHandler)
 	{
 		_ws_registry = new ws_registry_t();
@@ -218,7 +198,10 @@ namespace ReaShader
 	}
 	RSUIServer::~RSUIServer()
 	{
+		fileUploadProcessesRegistry.clear();
+
 		uiserver_instance_t* uiserver_handle = std::any_cast<uiserver_instance_t*>(_uiserver_handle);
+
 		if (uiserver_handle)
 		{
 			uiserver_handle->stop();
@@ -227,26 +210,5 @@ namespace ReaShader
 		delete std::any_cast<ws_registry_t*>(_ws_registry);
 	}
 
-	/**
-	 * Send broadcast message to each ws connection (from server to browser).
-	 */
-	void RSUIServer::sendWSTextMessage(std::string& msg)
-	{
-		_sendWSMessage(msg, false);
-	}
-	void RSUIServer::sendWSBinaryMessage(std::vector<char>& msg)
-	{
-		std::string str(msg.data(), msg.size());
-		_sendWSMessage(str, true);
-	}
-
-	void RSUIServer::_sendWSMessage(std::string& msg, bool binary)
-	{
-		auto message =
-			rws::message_t(rws::final_frame, binary ? rws::opcode_t::binary_frame : rws::opcode_t::text_frame, msg);
-		for (const auto& [id, handle] : *std::any_cast<ws_registry_t*>(_ws_registry))
-		{
-			handle->send_message(message);
-		}
-	}
+	
 }; // namespace ReaShader
