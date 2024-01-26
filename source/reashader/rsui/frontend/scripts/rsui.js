@@ -26,6 +26,68 @@ function getParamDisplayValue(paramId, normalizedValue) {
     return scaleNormalizedValue(units, normalizedValue);
 }
 
+
+function createFileUploader(messager, metadata, container, accept, initialStatus, onComplete) {
+    // Create file input element for filepath
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = accept; // Set the accepted file type
+
+    container.appendChild(fileInput);
+
+    // Create label for upload percentage
+    const statusLabel = document.createElement('label');
+    statusLabel.textContent = initialStatus;
+    container.appendChild(statusLabel);
+
+    // Create progress bar
+    const progressBar = document.createElement('progress');
+    progressBar.value = 0;
+    progressBar.max = 100;
+    container.appendChild(progressBar);
+
+    function updateProgress(percent) {
+        progressBar.value = percent;
+        statusLabel.textContent = `Uploading: ${percent.toFixed(2)}%`;
+    }
+
+    // Create submit button
+    const submitButton = document.createElement('button');
+    submitButton.type = 'button';
+    submitButton.textContent = 'Submit';
+
+    function updateButtonState() {
+        // Add your validation logic here if needed
+        submitButton.disabled = false; // Enable the button
+    }
+    // Initial state update
+    updateButtonState();
+
+    // Attach input event listener to check validity on file selection
+    fileInput.addEventListener('change', updateButtonState);
+
+    // Attach submit function to the button click event
+    submitButton.addEventListener('click', async () => {
+        const selectedFile = fileInput.files[0];
+
+        if (selectedFile) {
+            console.log('Selected file:', selectedFile.name);
+
+            messager.uploadFile(metadata, selectedFile, updateProgress, onComplete, () => { statusLabel.textContent = "Server is busy with another request."; }, (error) => {
+                statusLabel.textContent = `Error: ${error}`
+            }, () => { statusLabel.textContent = "Server hanged :("})
+
+        } else {
+            console.log('No file selected.');
+        }
+    });
+
+    container.appendChild(submitButton);
+}
+
+
+// -------------------------------------
+
 export function uiParamUpdate(paramId, newValue) {
     newValue = parseFloat(newValue);
     const slider = document.getElementById(paramId);
@@ -57,53 +119,15 @@ export function uiCreateParamGroups(groups) {
         paramsContainer.appendChild(groupContainer);
     }
 }
-
-export function uiCreateShaderSelector(savedPath){
+export function uiCreateShaderSelector(messager, savedPath){
     // get shader container
     const paramsContainer = document.getElementById('shader');
     
-    // Create text input element for filepath
-    const filePathInput = document.createElement('textarea');
-    filePathInput.placeholder = savedPath == "" ? 'Enter absolute system path of the shader (.glsl)' : savedPath;
-    filePathInput.spellcheck = false;
-    paramsContainer.appendChild(filePathInput);
-    
-    // Create submit button
-    const submitButton = document.createElement('button');
-    submitButton.type = 'button';
-    submitButton.textContent = 'Submit';
+    const info = document.createElement('p');
 
-    function isValidSystemPath(path) {
-        // Add your validation logic here, e.g., check if it's a valid Windows or Unix path pointing to a GLSL file
-        // For simplicity, let's assume it should end with ".glsl"
-        return path.match(/^(?:[a-zA-Z]:\\|\/)[\w\-.]+\.glsl$/);
-    }
-    function updateButtonState() {
-        const enteredPath = filePathInput.value.trim();
-        const isValidPath = isValidSystemPath(enteredPath);
+    createFileUploader(messager, {purpose: "customShader"},paramsContainer, '.glsl', savedPath ? `Current shader: ${savedPath.split('\\').pop().split('/').pop()}` : "", () => { info.textContent = "Compiling..." })
 
-        submitButton.disabled = !isValidPath;
-        submitButton.title = isValidPath ? '' : 'Invalid path';
-    }
-
-    // Attach input event listener to check validity on input changes
-    filePathInput.addEventListener('input', updateButtonState);
-    // Initial state update
-    updateButtonState();
-
-    // Attach submit function to the button click event
-    submitButton.addEventListener('click', () => {
-        const enteredPath = filePathInput.value.trim();
-
-        if (isValidSystemPath(enteredPath)) {
-            console.log('Selected file path:', enteredPath);
-            messager.sendParamUpdate(DEFAULT_PARAM_IDS.customShader, enteredPath);
-        } else {
-            console.log('No file selected or invalid path.');
-        }
-    });
-
-    paramsContainer.appendChild(submitButton);
+    paramsContainer.appendChild(info);
 }
 
 export function uiCreateParam(messager, paramId, param) {
@@ -164,7 +188,7 @@ export function uiCreateParam(messager, paramId, param) {
             
             // check for custom shader
             if (paramId == DEFAULT_PARAM_IDS.customShader) {
-                uiCreateShaderSelector(param.value); // create shader selector and preset it with the saved shader path
+                uiCreateShaderSelector(messager, param.value); // create shader selector and preset it with the saved shader path
                 break;
             }
 
