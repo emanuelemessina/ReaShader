@@ -114,7 +114,7 @@ export function uiVSTParamUpdate(paramId, newValue) {
     const valueLabel = document.getElementById(`value_${paramId}`);
     valueLabel.textContent = getParamDisplayValue(paramId, newValue); // TODO scaling of values based on units
 }
-export function uiParamUpdate(paramId, newValue) {
+export function uiParamUpdate(paramId, data) {
     // to be implemented
 }
 
@@ -147,7 +147,7 @@ export function uiCreateShaderSelector(messager, savedPath) {
 
     const info = document.createElement('p');
 
-    createFileUploader(messager, { purpose: "customShader" }, paramsContainer, '.glsl', savedPath ? `Current shader: ${savedPath.split('\\').pop().split('/').pop()}` : "", () => { info.textContent = "Compiling..." })
+    createFileUploader(messager, { paramId: DEFAULT_PARAM_IDS.customShader }, paramsContainer, '.glsl', savedPath ? `Current shader: ${savedPath.split('\\').pop().split('/').pop()}` : "", () => { info.textContent = "Compiling..." })
 
     paramsContainer.appendChild(info);
 }
@@ -204,7 +204,9 @@ export function uiCreateParam(messager, paramId, param) {
 
             break;
         case "int8u":
-
+            if (paramId == DEFAULT_PARAM_IDS.deviceSelector) {
+                break; // we will create the device selector manually when we have the devices list
+            }
             break;
         case "string":
 

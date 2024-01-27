@@ -102,6 +102,17 @@ namespace ReaShader
 			.fallbackWarning("ReaShaderProcessor");
 	}
 
+	void ReaShaderProcessor::receivedFileFromController(json&& info, std::vector<char>&& data)
+	{
+		std::string name = info["name"];
+		return;
+	}
+
+	void ReaShaderProcessor::receivedBinaryFromController(const char* data, size_t size)
+	{
+
+	}
+	
 	void ReaShaderProcessor::vstParameterUpdate(Vst::ParamID id, Vst::ParamValue newValue)
 	{
 		// update processor param (change was made by vstui or automation)
