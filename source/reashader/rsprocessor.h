@@ -46,6 +46,9 @@ namespace ReaShader
 		 * @param msg
 		 */
 		void receivedJSONFromController(json msg);
+		void receivedBinaryFromController(const char* data, size_t size);
+		void receivedFileFromController(json&& info, std::vector<char>&& data);
+
 		/**
 		 * @brief Gets called from the plugin processor when a parameter is updated from the DAW
 		 * @param id

@@ -9,6 +9,7 @@
 
 #include "vstgui/plugin-bindings/vst3editor.h"
 #include "vstgui/uidescription/icontroller.h"
+#include "pluginterfaces/base/smartpointer.h"
 
 #include "rscontroller.h"
 

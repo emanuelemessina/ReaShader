@@ -15,6 +15,8 @@
 #include "rsparams/rsparams.h"
 #include "tools/exceptions.h"
 
+#include <cstring>
+
 using namespace Steinberg;
 using json = nlohmann::json;
 
@@ -37,14 +39,42 @@ namespace ReaShader
 		if (strcmp(message->getMessageID(), "BinaryMessage") == 0)
 		{
 			const void* data;
-			uint32 size;
-			if (message->getAttributes()->getBinary("MyData", data, size) == kResultOk)
+			uint32_t size;
+			if (message->getAttributes()->getBinary("Data", data, (Steinberg::uint32&)size) == kResultOk)
 			{
-				// we are in UI thread
-				// size should be 100
-				if (size == 100 && ((char*)data)[1] == 1) // yeah...
+				try
 				{
-					fprintf(stderr, "[MyPluginProcessor] received the binary message!\n");
+					if (size < sizeof(uint32_t))
+						throw std::exception("not a file");
+
+					uint32_t infoSize = 0;
+					// read info size
+					for (size_t i = 0; i < sizeof(uint32_t); ++i)
+					{
+						infoSize |= ((uint8_t*)data)[i] << 8 * i;
+					}
+					// read info string
+					std::string is = "";
+					size_t offset = sizeof(uint32_t);
+					for (size_t i = 0; i < infoSize; ++i)
+					{
+						is += ((char*)data)[offset+i];
+					}
+					// json parse
+					json info = json::parse(is);
+
+					offset += infoSize;
+
+					const uint32_t dSize = size - offset;
+					std::vector<char> d(dSize);
+					std::memcpy(d.data(), (char*)data + offset, dSize);
+
+					reaShaderProcessor->receivedFileFromController(std::move(info), std::move(d));
+				}
+				catch (STDEXC e)
+				{
+					// not a file
+					reaShaderProcessor->receivedBinaryFromController((const char*) data, size);
 				}
 				return kResultOk;
 			}
@@ -53,18 +83,17 @@ namespace ReaShader
 		return AudioEffect::notify(message);
 	}
 
-	tresult MyPluginProcessor::receiveText(const char* text)
+	tresult MyPluginProcessor::receiveText(const char* charptr)
 	{
 		// checkmessage from rsuiserver
 		try
 		{
-			auto msg = json::parse(text);
+			auto msg = json::parse(charptr);
 			reaShaderProcessor->receivedJSONFromController(msg);
 		}
-		catch (STDEXC /*e*/)
+		catch (STDEXC e)
 		{
 			// the message is not a webui message
-			// json parse exception is catched and logged by controller
 		}
 
 		return kResultOk;

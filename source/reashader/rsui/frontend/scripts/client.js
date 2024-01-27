@@ -48,9 +48,9 @@ socket.addEventListener('message', (event) => {
             .handleParamsList((json) => {
 
                 // iterate over params
-                for (let paramId in json.params) {
-                    const param = json.params[paramId];
-                    paramId = parseInt(paramId);
+                for (let paramIndex in json.params) {
+                    const param = json.params[paramIndex];
+                    const paramId = param.id;
 
                     uiCreateParam(messager, paramId, param);
                 }

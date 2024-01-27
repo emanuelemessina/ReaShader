@@ -50,7 +50,7 @@ namespace ReaShader
 			.reactToVSTParamUpdate([&](Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue) {
 				dynamic_cast<Parameters::VSTParameter&>(*controller_rsParams[id]).value = newValue;
 				myPluginController->setParamNormalized(id, newValue); // update vst param value
-				_relayMessageToProcessor(msg); // relay to processor to update processor params
+				_relayTextToProcessor(msg); // relay to processor to update processor params
 			}) 
 			.reactToParamUpdate([&](Steinberg::Vst::ParamID id, json newValue) { 
 				controller_rsParams[id]->setValue(newValue);
@@ -74,34 +74,65 @@ namespace ReaShader
 						break;
 					}
 					default: // relay to processor to handle unknown request
-						_relayMessageToProcessor(msg);
+						_relayTextToProcessor(msg);
 						break;
 				}
 			})
 			.reactToRenderingDeviceChange([&](int newIndex) {
 				// update rendering device controller parameter
 				dynamic_cast<Parameters::Int8u&>(*controller_rsParams[Parameters::uRenderingDevice]).value = (Steinberg::Vst::ParamValue)newIndex;
-				_relayMessageToProcessor(msg); // relay to processor to actually perform the change
+				_relayTextToProcessor(msg); // relay to processor to actually perform the change
 			})
 			.reactToParamAdd([&](std::unique_ptr<Parameters::IParameter> newParam) {
 				newParam->id = controller_rsParams.size();
 				if (newParam->typeId() == Parameters::Type::VSTParameter)
 					_registerVSTParam(dynamic_cast<Parameters::VSTParameter&>(*newParam));
 				controller_rsParams.push_back(std::move(newParam));
-				_relayMessageToProcessor(msg); // relay to processor to update its param list
+				_relayTextToProcessor(msg); // relay to processor to update its param list
 			})
 			.fallback([&](const json& parsedMsg) {
-				_relayMessageToProcessor(msg); // relay to processor in the default react case
+				_relayTextToProcessor(msg); // relay to processor in the default react case
 			});
 	}
 
-	void ReaShaderController::_receiveFileFromRSUIServer(json&& metadata, std::string&& name, std::string&& extension,
-														 size_t size, const std::vector<char>&& data)
+	void ReaShaderController::_relayFileToProcessor(json&& info, const std::vector<char>&& data)
 	{
+		FUnknownPtr<IHostApplication> hostApp(context);
+		if (auto msg = Steinberg::owned(allocateMessage(hostApp)))
+		{
+			msg->setMessageID("BinaryMessage");
+			
+			std::vector<char> d;
 
+			// set metadata first
+			const std::string is = info.dump();
+			const uint32_t iss = is.size();
+			// set info size and append
+			for (size_t i = 0; i < sizeof(uint32_t); i++) // uint32 : 0xMMYYXXLL -> pushback : 0xLLXXYYMM
+			{
+				d.push_back( ((char*)&iss)[i] ); // append 
+			}
+			d.insert(d.end(),is.begin(), is.end());
+			// set actual data last
+			d.insert(d.end(), data.begin(), data.end());
+
+			msg->getAttributes()->setBinary("Data", d.data(), d.size());
+			
+			myPluginController->sendMessage(msg);
+		}
 	}
 
-	void ReaShaderController::_relayMessageToProcessor(const std::string& msg)
+	void ReaShaderController::_receiveFileFromRSUIServer(json&& metadata, std::string&& name, std::string&& extension,
+														 size_t size, std::vector<char>&& data)
+	{
+		json info;
+		info["size"] = size;
+		info["extension"] = extension;
+		info["name"] = name;
+		_relayFileToProcessor(std::move(info), std::move(data));
+	}
+
+	void ReaShaderController::_relayTextToProcessor(const std::string& msg)
 	{
 		myPluginController->sendTextMessage(msg.c_str()); 
 	}

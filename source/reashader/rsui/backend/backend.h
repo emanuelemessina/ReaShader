@@ -19,7 +19,7 @@
 
 using IncomingTextMessageHandler = std::function<void(const std::string&&)>;
 using IncomingBinaryMessageHandler = std::function<void(const std::vector<char>&&)>;
-using IncomingFileHandler = std::function<void(json&& metadata, std::string&& name, std::string&& extension, size_t size, const std::vector<char>&& data)>;
+using IncomingFileHandler = std::function<void(json&& metadata, std::string&& name, std::string&& extension, size_t size, std::vector<char>&& data)>;
 
 // THE STD ANY ARE BECAUSE OF RESTINIO FUCKING HEADERS CONFLICTING WITH Windows.h AND HAVING SYNTAX ERRORS IF MISPLACED
 // so we have to include the headers in the cpp and we cannot have restinio types in here
