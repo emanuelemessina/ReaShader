@@ -15,7 +15,7 @@ export const DEFAULT_PARAM_IDS = {
     customShader: 3,
 }
 
-const SERVER_RESPONSE_TIMEOUT = 60000:
+const SERVER_RESPONSE_TIMEOUT = 60000;
 
 // -------------------------
 
@@ -27,6 +27,10 @@ export class MessageHandler {
         this.jsonObject = JSON.parse(jsonString);
     }
 
+    handleVSTParamUpdate(callback) {
+        this.#_reactTo("vstParamUpdate", callback);
+        return this;
+    }
     handleParamUpdate(callback) {
         this.#_reactTo("paramUpdate", callback);
         return this;
@@ -101,12 +105,12 @@ export class Messager {
         return this;
     }
 
-    // value can be any json object depending on the param type
-    sendParamUpdate(paramId, value) {
+    // data can be any json object depending on the param type
+    sendParamUpdate(paramId, data) {
         let msg = {
-            type: "vstParamUpdate",
+            type: "paramUpdate",
             paramId: paramId,
-            value: value
+            data: data
         };
 
         this.#_send(msg);
@@ -195,6 +199,10 @@ export class Messager {
 
         return this;
     }
+
+    // Add more message builders as needed
+
+    //--------------------------------------------------------
 
     #_send(json) {
         this.socket.send(JSON.stringify(json))
@@ -389,5 +397,4 @@ export class Messager {
         this.socket.send(fileUploadHeaderArrayBuffer);
     }
 
-    // Add more message builders as needed
 }

@@ -84,6 +84,7 @@ namespace ReaShader
 
 		//--------------------------------------
 
+		// REMEMBER TO CHECK FOR A PECULIAR FIELD IN THE REACT METHODS TO AVOID A STORM OF SOFT EXCEPTIONS BY JSON PARSER
 		class MessageHandler
 		{
 		  public:
@@ -115,6 +116,9 @@ namespace ReaShader
 			MessageHandler& reactToVSTParamUpdate(
 				const std::function<void(Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue newValue)>& callback)
 			{
+				if (!(_hasField("value")))
+					return *this;
+
 				_reactTo(MessageType::VSTParamUpdate, [&](const json& msg) {
 					callback(msg["paramId"], msg["value"]);
 				});
@@ -123,9 +127,12 @@ namespace ReaShader
 			}
 
 			MessageHandler& reactToParamUpdate(
-				const std::function<void(Steinberg::Vst::ParamID, json newValue)>& callback)
+				const std::function<void(Steinberg::Vst::ParamID, json data)>& callback)
 			{
-				_reactTo(MessageType::ParamUpdate, [&](const json& msg) { callback(msg["paramId"], msg["value"]); });
+				if (!(_hasField("data")))
+					return *this;
+
+				_reactTo(MessageType::ParamUpdate, [&](const json& msg) { callback(msg["paramId"], msg["data"]); });
 
 				return *this;
 			}
@@ -134,6 +141,9 @@ namespace ReaShader
 				const std::function<void(std::unique_ptr<Parameters::IParameter>)>&
 					callback)
 			{
+				if (!(_hasField("param")))
+					return *this;
+				
 				Parameters::Type paramType = (Parameters::Type)msg["param"]["typeId"];
 
 				if (paramType >= Parameters::Type::numParamTypes)
@@ -159,6 +169,9 @@ namespace ReaShader
 
 			MessageHandler& reactToRenderingDeviceChange(const std::function<void(uint32_t)>& callback)
 			{
+				if (!(_hasField("id")))
+					return *this;
+
 				_reactTo(MessageType::RenderingDeviceChange, [&](const json& msg) { callback(msg["id"]); });
 
 				return *this;
@@ -244,7 +257,15 @@ namespace ReaShader
 		class MessageBuilder
 		{
 		  public:
-			static json buildParamUpdate(Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue)
+			static json buildVSTParamUpdate(Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue)
+			{
+				json j;
+				j["type"] = typeStrings[VSTParamUpdate];
+				j["paramId"] = id;
+				j["value"] = newValue;
+				return j;
+			}
+			static json buildParamUpdate(Steinberg::Vst::ParamID id, json newValue)
 			{
 				json j;
 				j["type"] = typeStrings[ParamUpdate];

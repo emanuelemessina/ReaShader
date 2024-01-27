@@ -63,7 +63,7 @@ namespace ReaShader
 
 	void ReaShaderProcessor::_webuiSendVSTParamUpdate(Vst::ParamID id, Vst::ParamValue newValue)
 	{
-		_sendJSONToController(RSUI::MessageBuilder::buildParamUpdate(id, newValue));
+		_sendJSONToController(RSUI::MessageBuilder::buildVSTParamUpdate(id, newValue));
 	}
 	void ReaShaderProcessor::_webuiSendTrackInfo()
 	{

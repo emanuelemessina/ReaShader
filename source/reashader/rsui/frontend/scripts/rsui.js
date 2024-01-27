@@ -107,12 +107,15 @@ function createFileUploader(messager, metadata, container, accept, initialStatus
 
 // -------------------------------------
 
-export function uiParamUpdate(paramId, newValue) {
+export function uiVSTParamUpdate(paramId, newValue) {
     newValue = parseFloat(newValue);
     const slider = document.getElementById(paramId);
     slider.value = newValue; // Convert to slider range
     const valueLabel = document.getElementById(`value_${paramId}`);
     valueLabel.textContent = getParamDisplayValue(paramId, newValue); // TODO scaling of values based on units
+}
+export function uiParamUpdate(paramId, newValue) {
+    // to be implemented
 }
 
 export function uiCreateParamGroups(groups) {
