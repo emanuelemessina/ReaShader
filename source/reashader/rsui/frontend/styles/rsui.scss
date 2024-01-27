@@ -13,28 +13,9 @@
 @use './button';
 @use './textarea';
 @use './input-file';
+@use './bars';
 
 $img_background: "images/background.png";
-
-*{
-    scrollbar-color: c.$accent #00000000 ;
-}
-
-::-webkit-progress-bar{
-    background-color: c.$w-50;
-    height: 100%;
-}
-::-webkit-progress-value {
-    background-color: c.$accent;
-}
-
-::-webkit-scrollbar, ::-webkit-scrollbar-corner{
-    background-color: c.$background;
-}
-
-::-webkit-scrollbar-thumb{
-    background-color: c.$accent;
-}
 
 body {
     display: flex;

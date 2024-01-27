@@ -1,0 +1,51 @@
+
+/******************************************************************************
+ * Copyright (c) Emanuele Messina (https://github.com/emanuelemessina)
+ * All rights reserved.
+ *
+ * This code is licensed under the MIT License.
+ * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
+ *****************************************************************************/
+
+@use './palette' as c;
+
+@mixin progress-bar-track{
+    background-color: c.$w-50;
+    height: 100%;
+    border: none;
+}
+@mixin progress-bar-value{
+    background-color: c.$accent;
+}
+
+::-webkit-progress-bar{
+    @include progress-bar-track;
+}
+::-webkit-progress-value {
+    @include progress-bar-value;
+}
+
+@supports (-moz-appearance:none) {
+    * { 
+        scrollbar-color:c.$accent rgba(0, 0, 0, 0);
+    }
+    progress{
+        @include progress-bar-track();
+    }
+    ::-moz-progress-bar {
+        @include progress-bar-value();
+    }
+}
+
+::-webkit-scrollbar, ::-webkit-scrollbar-corner{
+    background-color: c.$background;
+    width: 2px;
+}
+
+::-webkit-scrollbar-thumb{
+    background-color: c.$accent;
+}
+
+::-webkit-scrollbar-button {
+    display: none;
+}

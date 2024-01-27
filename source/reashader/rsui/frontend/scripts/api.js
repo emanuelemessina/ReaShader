@@ -306,7 +306,7 @@ export class Messager {
 
                         const chunkResponseHandler = (rawResp) => {
                             
-                            var resp = checkFileUploadChunkResponse(rawResp);
+                            var resp = checkFileUploadChunkResponse(rawResp.data);
                             if (resp === false) { return; }
 
                             clearTimeout(timer);
