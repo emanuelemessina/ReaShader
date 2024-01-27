@@ -130,7 +130,7 @@ inline bool compile_glsl_to_spirv(std::string &glslSource, EShLanguage stage, st
 
     shader.setEnvInput(glslang::EShSourceGlsl, stage, glslang::EShClientVulkan, defaultVersion);
     shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_3);
-    shader.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_6);
+    shader.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_3);
 
     // Enable/disable options as needed
     // shader.setAutoMapBindings(true);

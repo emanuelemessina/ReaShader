@@ -7,7 +7,7 @@
  *****************************************************************************/
 
 import { MessageHandler, Messager } from './api.js';
-import { uiParamUpdate, uiCreateParamGroups, uiCreateParam, uiCreateDeviceSelector, setParamTypesList } from './rsui.js'
+import { uiVSTParamUpdate ,uiParamUpdate, uiCreateParamGroups, uiCreateParam, uiCreateDeviceSelector, setParamTypesList } from './rsui.js'
 
 const socket = new WebSocket(`ws://localhost:${window.location.port}/ws`);
 const messager = new Messager(socket);
@@ -32,6 +32,9 @@ socket.addEventListener('message', (event) => {
         handler
             .handleServerShutdown(() => {
                 window.close();
+            })
+            .handleVSTParamUpdate((json) => {
+                uiVSTParamUpdate(json.paramId, json.value);
             })
             .handleParamUpdate((json) => {
                 uiParamUpdate(json.paramId, json.value);
