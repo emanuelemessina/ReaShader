@@ -9,7 +9,7 @@
 #include "rsprocessor.h"
 #include "mypluginprocessor.h"
 #include "rsparams/rsparams.h"
-
+#include "vkt/vktpipeline.h" 
 #include <stdlib.h> /* srand, rand */
 #include <time.h>	/* time */
 
@@ -41,7 +41,7 @@ namespace ReaShader
 		_registerParam<Parameters::VSTParameter>(Parameters::uAudioGain, "Audio Gain", Parameters::Group::Main, "%");
 		_registerParam<Parameters::VSTParameter>(Parameters::uVideoParam, "Video Param", Parameters::Group::Main, "%");
 		_registerParam<Parameters::Int8u>(Parameters::uRenderingDevice, "Rendering Device", Parameters::Group::RenderingDeviceSelect, 0);
-		_registerParam<Parameters::String>(Parameters::uCustomShaderPath, "Custom Shader", Parameters::Group::Shader);
+		_registerParam<Parameters::String>(Parameters::uCustomShaderName, "Custom Shader", Parameters::Group::Shader);
 	}
 
 	void ReaShaderProcessor::initialize()
@@ -104,7 +104,22 @@ namespace ReaShader
 
 	void ReaShaderProcessor::receivedFileFromController(json&& info, std::vector<char>&& data)
 	{
-		std::string name = info["name"];
+		if (info["paramId"] == Parameters::uCustomShaderName)
+		{
+			// send shader to renderer (pp shader)
+			// -> init vulkan and device
+			// -> create the opaque material
+			// -> wait for the dedicated custom pp shader in the renderer before doing anything
+			// -> ..
+			// -> async create the shader module
+				// compile shader
+				// save spirv to file in shadersm folder
+				// set custom shader filename
+			// reflect, bind resources and register as new params
+			// -> refresh the new params in the ui
+			// -> receive new params from ui, allocate and unlock the pp material
+			// pp material will be drawn
+		}
 		return;
 	}
 

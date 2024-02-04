@@ -270,7 +270,7 @@ namespace ReaShader::Parameters
 			uAudioGain,
 			uVideoParam,
 			uRenderingDevice,
-			uCustomShaderPath,
+			uCustomShaderName,
 
 			uNumDefaultParams
 		};

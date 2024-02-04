@@ -35,6 +35,17 @@ namespace vkt
 			*/
 			AllocatedBuffer* allocate(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
 
+			AllocatedBuffer* map(void** data)
+			{
+				VK_CHECK_RESULT(vmaMapMemory(vktDevice->vmaAllocator, allocation, data));
+			}
+
+			AllocatedBuffer* unmap()
+			{
+				vmaUnmapMemory(vktDevice->vmaAllocator, allocation);		
+				return this;
+			}
+
 			AllocatedBuffer* putData(void* data, size_t size);
 
 			void destroy();

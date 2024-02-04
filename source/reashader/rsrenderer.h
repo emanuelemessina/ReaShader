@@ -18,7 +18,7 @@
 
 namespace ReaShader
 {
-FWD_DECL(ReaShaderProcessor)
+	FWD_DECL(ReaShaderProcessor)
 
 class ReaShaderRenderer
 {
@@ -40,7 +40,9 @@ class ReaShaderRenderer
     // make sure to invalidate the device if there's a device change in progress
     void checkFrameSize(int &w, int &h, void (*listener)() = nullptr);
     void loadBitsToImage(int *srcBuffer);
-    void drawFrame(double pushConstants[]);
+    // called inside drawFrame to update the general scene parameters to pass to the shaders
+	void updateVirtualScene(double pushConstants[]);
+	void drawFrame(double pushConstants[]);
     void transferFrame(int *&destBuffer);
 
   private:
@@ -56,8 +58,13 @@ class ReaShaderRenderer
 
     //-----------------------------------------------
 
-    void _setUpDevice(int renderingDeviceIndex);
-    void _createRenderTargets();
+    void setUpDevice(int renderingDeviceIndex);
+    void createRenderTargets();
+
+    // create defalt resources
+	void _createDefaultMeshes();
+	void _createDefaultTextures();
+	void _setupRendering();
 
     std::vector<VkPhysicalDevice> vkSuitablePhysicalDevices;
 
@@ -94,7 +101,7 @@ class ReaShaderRenderer
 
     VkSampler vkSampler;
 
-    struct FrameData
+    struct VirtualSceneData
     {
         vkt::Buffers::AllocatedBuffer *cameraBuffer;
         vkt::Buffers::AllocatedBuffer *sceneBuffer;
@@ -103,6 +110,22 @@ class ReaShaderRenderer
         vkt::Descriptors::DescriptorSet globalSet;
         vkt::Descriptors::DescriptorSet objectSet;
         vkt::Descriptors::DescriptorSet textureSet;
-    } frameData{};
+    } virtualSceneData{};
+
+        struct VirtualCameraData
+	{
+		glm::mat4 view;
+		glm::mat4 proj;
+		glm::mat4 viewproj;
+	} camData;
+
+	struct VirtualEnvironmentData
+	{
+		glm::vec4 fogColor;		// w is for exponent
+		glm::vec4 fogDistances; // x for min, y for max, zw unused.
+		glm::vec4 ambientColor;
+		glm::vec4 sunlightDirection; // w for sun power
+		glm::vec4 sunlightColor;
+	} envData;
 };
 } // namespace ReaShader

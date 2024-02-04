@@ -67,7 +67,35 @@ namespace vkt
 			VkPipelineLayout pipelineLayout;
 			VkPipelineCache pipelineCache;
 
-			Descriptors::DescriptorSet* textureSet;
+			Material& registerBindDescriptorSets(uint32_t firstSet, uint32_t descriptorSetCount,
+												 const VkDescriptorSet* pDescriptorSets, uint32_t dynamicOffsetCount,
+												 const uint32_t* pDynamicOffsets)
+			{
+				registeredDescriptorSets.push_back(std::make_tuple(firstSet, descriptorSetCount, pDescriptorSets, dynamicOffsetCount,
+												   pDynamicOffsets));
+				return *this;
+			}
+			// calls vkCmdBindDescriptorSets for all registered sets
+			void cmdBindDescriptors(VkCommandBuffer commandBuffer, VkPipelineBindPoint bindPoint)
+			{
+				for (int i = 0; i < registeredDescriptorSets.size(); i++)
+				{
+					auto& r = registeredDescriptorSets[i];
+					vkCmdBindDescriptorSets(commandBuffer, bindPoint, pipelineLayout, std::get<0>(r), std::get<1>(r),
+											std::get<2>(r), std::get<3>(r), std::get<4>(r));
+				}
+			}
+
+			template <typename P>
+			void cmdPushConstants(VkCommandBuffer commandBuffer, VkShaderStageFlagBits stages, P* constants, uint32_t offset)
+			{
+				vkCmdPushConstants(commandBuffer, pipelineLayout, stages, 0,
+								   sizeof(P), constants);
+			}
+
+			private:
+			std::vector<std::tuple<uint32_t, uint32_t, const VkDescriptorSet*, uint32_t, const uint32_t*>>
+				registeredDescriptorSets;
 		};
 
 		struct RenderObject
@@ -76,7 +104,7 @@ namespace vkt
 
 			Material* material;
 
-			glm::mat4 localTransformMatrix = glm::mat4{ 1.0f };
+			glm::mat4 localTransformMatrix = glm::mat4{ 1.0f }; // identity
 		};
 	} // namespace Rendering
 
