@@ -204,7 +204,7 @@ export function uiCreateParam(messager, paramId, param) {
 
             break;
         case "int8u":
-            if (paramId == DEFAULT_PARAM_IDS.deviceSelector) {
+            if (paramId == DEFAULT_PARAM_IDS.renderingDevice) {
                 break; // we will create the device selector manually when we have the devices list
             }
             break;

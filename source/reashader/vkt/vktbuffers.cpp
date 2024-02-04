@@ -56,13 +56,13 @@ namespace vkt
 
 		AllocatedBuffer* AllocatedBuffer::putData(void* data, size_t size)
 		{
-			// copy vertex data
 			void* mapped;
-			VK_CHECK_RESULT(vmaMapMemory(vktDevice->vmaAllocator, allocation, &mapped));
+			
+			map(&mapped);
 
 			memcpy(mapped, data, size);
 
-			vmaUnmapMemory(vktDevice->vmaAllocator, allocation);
+			unmap();
 
 			return this;
 		}

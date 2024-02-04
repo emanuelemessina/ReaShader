@@ -6,7 +6,7 @@ layout (location = 1) in vec2 texCoord;
 
 layout(location = 0) out vec4 outColor;
 
-layout(set = 2, binding = 1) uniform sampler2D sampledFrame;
+layout(set = 0, binding = 1) uniform sampler2D sampledFrame;
 
 layout( push_constant ) uniform constants
 {

@@ -77,6 +77,19 @@ namespace vkt
 			return description;
 		}
 
+		// already calls get_vertex_description
+		static VkPipelineVertexInputStateCreateInfo get_pipeline_input_state(
+			vkt::VertexInputDescription& vertexInputDesc)
+		{
+			VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+			vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+			vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexInputDesc.bindings.size());
+			vertexInputInfo.pVertexBindingDescriptions = vertexInputDesc.bindings.data();
+			vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexInputDesc.attributes.size());
+			vertexInputInfo.pVertexAttributeDescriptions = vertexInputDesc.attributes.data();
+			return vertexInputInfo;
+		}
+
 		bool operator==(const Vertex& other) const
 		{
 			return position == other.position && uv == other.uv && normal == other.normal;
