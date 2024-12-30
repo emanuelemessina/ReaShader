@@ -15,6 +15,9 @@ You install it the same way you would install a VST, and it will process video f
 It's a work in progress, proofs of concept are available in [Releases](https://github.com/emanuelemessina/ReaShader/releases).
 \
 Currently i've created a web based UI (instead of the default VSTGUI, given the complexity of the interface), and i use Vulkan to process the frames. 
+\
+\
+Please cite me if you benefit from this project, as it required a lot of blood, sweat and tears, thank you 🙏.
 
 <br>
 
@@ -126,6 +129,8 @@ See [Development](doc/Development.md).
 
 
 ## Credits
+
+[License File](LICENSE)
 
 <br>
 
