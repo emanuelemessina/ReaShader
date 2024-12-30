@@ -1,6 +1,20 @@
 # ReaShader
 
-_THE Video Processor VST for Reaper_
+## Motivation
+
+Reaper is a great and versatile DAW, capable of handling not just audio but also video.
+\
+While it has its own video processing capabilities, currently (2024) the features are limited and the effects must be written by hand as custom scripts accessing an internal API.
+\
+\
+Thus, Reashader is my own experiment in trying to make a VST that acts as a video processor for Reaper.
+\
+You install it the same way you would install a VST, and it will process video frames instead of audio samples.
+\
+\
+It's a work in progress, proofs of concept are available in [Releases](https://github.com/emanuelemessina/ReaShader/releases).
+\
+Currently i've created a web based UI (instead of the default VSTGUI, given the complexity of the interface), and i use Vulkan to process the frames. 
 
 <br>
 
@@ -12,7 +26,7 @@ _THE Video Processor VST for Reaper_
 
 <br>
 
-Clone the [vst-sdk-bundle](https://github.com/emanuelemessina/vst-sdk-bundle), it contains a copy of the vst3 sdk.
+Obtain a copy of the VST3 SDK from Steinberg.
 
 <br>
 
