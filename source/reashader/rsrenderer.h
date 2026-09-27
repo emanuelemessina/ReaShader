@@ -15,6 +15,8 @@
 #include "vkt/vktdevices.h"
 #include "vkt/vktimages.h"
 #include "vkt/vktrendering.h"
+#include "vkt/vktpipeline.h"
+
 
 namespace ReaShader
 {
@@ -35,6 +37,8 @@ class ReaShaderRenderer
     void shutdown();
 
     void changeRenderingDevice(int renderingDeviceIndex);
+	void changeCustomShader(std::vector<char>&& glsl, std::function<void(std::string&& msg)> onStatus,
+							std::function<void(std::string&& msg)> onError, std::function<void(void)> onSuccess);
 
     // public functions that drive the renderer, asynchronously called
     // make sure to invalidate the device if there's a device change in progress
@@ -69,28 +73,43 @@ class ReaShaderRenderer
     std::vector<VkPhysicalDevice> vkSuitablePhysicalDevices;
 
     VkInstance myVkInstance;
-    vkt::deletion_queue vktMainDeletionQueue{};
-    vkt::deletion_queue vktFrameResizedDeletionQueue{};
-    vkt::deletion_queue vktPhysicalDeviceChangedDeletionQueue{};
 
+    struct DeletionQueues
+	{
+		vkt::deletion_queue vktMain{};
+		vkt::deletion_queue vktFrameResized{};
+		vkt::deletion_queue vktPhysicalDeviceChanged{};
+		vkt::deletion_queue vktCustomShaderChanged{};
+	} deletionQueues;
+    
     vkt::Physical::Device *vktPhysicalDevice;
     vkt::Logical::Device *vktDevice;
 
-    vkt::Images::AllocatedImage *vktFrameTransfer;
-    vkt::Images::AllocatedImage *vktPostProcessSource;
-    vkt::Images::AllocatedImage *vktColorAttachment;
-    vkt::Images::AllocatedImage *vktDepthAttachment;
+	struct RenderTargets
+	{
+		vkt::Images::AllocatedImage* vktFrameTransfer;
+		vkt::Images::AllocatedImage* vktPostProcessSource;
+		vkt::Images::AllocatedImage* vktColorAttachment;
+		vkt::Images::AllocatedImage* vktDepthAttachment;
+    } renderTargets;
+    
 
     VkRenderPass vkRenderPass;
     VkFramebuffer vkFramebuffer;
 
-    VkCommandBuffer vkDrawCommandBuffer;
-    VkCommandBuffer vkTransferCommandBuffer;
-
-    VkSemaphore vkImageAvailableSemaphore;
-    VkSemaphore vkRenderFinishedSemaphore;
-    VkFence vkInFlightFence;
-
+    struct CommandBuffers
+	{
+		VkCommandBuffer vkDraw;
+		VkCommandBuffer vkTransfer;
+    } commandBuffers;
+    
+    struct SyncObjects
+	{
+		VkSemaphore vkImageAvailableSemaphore;
+		VkSemaphore vkRenderFinishedSemaphore;
+		VkFence vkInFlightFence;
+    } syncObjects;
+    
     vkt::vectors::searchable_map<int, vkt::Rendering::Mesh *> meshes;
     vkt::vectors::searchable_map<int, vkt::Rendering::Material> materials;
     vkt::vectors::searchable_map<int, vkt::Images::AllocatedImage *> textures;
@@ -101,31 +120,41 @@ class ReaShaderRenderer
 
     VkSampler vkSampler;
 
-    struct VirtualSceneData
+    struct VirtualScene
     {
         vkt::Buffers::AllocatedBuffer *cameraBuffer;
-        vkt::Buffers::AllocatedBuffer *sceneBuffer;
+        vkt::Buffers::AllocatedBuffer *environmentBuffer;
         vkt::Buffers::AllocatedBuffer *objectBuffer;
 
         vkt::Descriptors::DescriptorSet globalSet;
         vkt::Descriptors::DescriptorSet objectSet;
         vkt::Descriptors::DescriptorSet textureSet;
-    } virtualSceneData{};
 
         struct VirtualCameraData
-	{
-		glm::mat4 view;
-		glm::mat4 proj;
-		glm::mat4 viewproj;
-	} camData;
+		{
+			glm::mat4 view;
+			glm::mat4 proj;
+			glm::mat4 viewproj;
+		} camData;
 
-	struct VirtualEnvironmentData
+        struct VirtualEnvironmentData
+		{
+			glm::vec4 fogColor;		// w is for exponent
+			glm::vec4 fogDistances; // x for min, y for max, zw unused.
+			glm::vec4 ambientColor;
+			glm::vec4 sunlightDirection; // w for sun power
+			glm::vec4 sunlightColor;
+		} envData;
+
+    } virtualScene{};
+
+    struct PostProcess
 	{
-		glm::vec4 fogColor;		// w is for exponent
-		glm::vec4 fogDistances; // x for min, y for max, zw unused.
-		glm::vec4 ambientColor;
-		glm::vec4 sunlightDirection; // w for sun power
-		glm::vec4 sunlightColor;
-	} envData;
+		vkt::Descriptors::DescriptorSet globalSet;
+
+        std::vector<vkt::Buffers::AllocatedBuffer*> buffers;
+		std::vector<vkt::Images::AllocatedImage*> textures;
+
+	} postProcessData;
 };
 } // namespace ReaShader

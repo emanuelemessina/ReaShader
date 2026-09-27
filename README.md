@@ -35,6 +35,7 @@ The following libraries can be placed them next to the `x.x.x.x` folder inside t
 - [STB](https://github.com/nothings/stb)
 - [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) : to be built with cmake (both debug and release)
 - [glslang](https://github.com/KhronosGroup/glslang) has to be built with cmake (set the build dir to `/build`) (both debug and release!), then the project will automatically find the static library file paths. _(Vulkan sdk has it but the version is obsolete and has conflicts)_
+- [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) _(Same problem as glslang with the vulkan sdk, to be built)_
 
 <br>
 

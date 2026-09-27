@@ -152,8 +152,9 @@ namespace vkt
 
 		template <typename S, typename T>
 		/**
-		Returns a vector containing a reference wrapper to member, specified at offset, for each struct.
+		Returns a vector containing the member (copied), specified at offset, for each struct.
 		*/
+		
 		inline std::vector<T> extract_member_copy_vector(const std::vector<std::reference_wrapper<S>>& structs,
 														 size_t offset)
 		{
@@ -167,7 +168,7 @@ namespace vkt
 		}
 		template <typename S, typename T>
 		/**
-		Returns a vector containing the member (copied), specified at offset, for each struct.
+		Returns a vector containing a reference wrapper to member, specified at offset, for each struct.
 		*/
 		inline std::vector<std::reference_wrapper<T>> extract_member_ref_vector(const std::vector<S>& structs,
 																				size_t offset)

@@ -104,21 +104,23 @@ namespace ReaShader
 
 	void ReaShaderProcessor::receivedFileFromController(json&& info, std::vector<char>&& data)
 	{
-		if (info["paramId"] == Parameters::uCustomShaderName)
+		if (info["metadata"]["paramId"] == Parameters::uCustomShaderName)
 		{
 			// send shader to renderer (pp shader)
-			// -> init vulkan and device
-			// -> create the opaque material
-			// -> wait for the dedicated custom pp shader in the renderer before doing anything
-			// -> ..
-			// -> async create the shader module
-				// compile shader
-				// save spirv to file in shadersm folder
-				// set custom shader filename
-			// reflect, bind resources and register as new params
-			// -> refresh the new params in the ui
-			// -> receive new params from ui, allocate and unlock the pp material
-			// pp material will be drawn
+			reaShaderRenderer->changeCustomShader(std::move(data), [&](std::string&& msg) {
+				// status updates
+				LOG(INFO, toFile | toConsole, "ReaShaderRenderer", "Changing custom shader status: ", std::move(msg));
+				},
+				[&](std::string&& err) {
+					// compilation failed
+					LOG(WARNING, toFile | toConsole | toBox, "ReaShaderRenderer", "GLSL Compilation Failed",
+						std::move(err));
+				},
+				[&]() {
+					// succeded
+					LOG(INFO, toFile | toConsole, "ReaShaderRenderer", "Shader Changed Succesfully","");
+				}
+				);
 		}
 		return;
 	}
@@ -245,6 +247,11 @@ namespace ReaShader
 	{
 		_sendJSONToController(RSUI::MessageBuilder::buildRenderingDevicesList(
 			dynamic_cast<Parameters::Int8u&>(*processor_rsParams[Parameters::uRenderingDevice]).value, renderingDevicesList));
+	}
+
+	void ReaShaderProcessor::_webuiSendParamAdd(std::unique_ptr<Parameters::IParameter>& param)
+	{
+		_sendJSONToController(RSUI::MessageBuilder::buildParamAdd(param));
 	}
 
 	//-----------------------------------------

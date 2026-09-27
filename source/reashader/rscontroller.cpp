@@ -50,6 +50,7 @@ namespace ReaShader
 			.reactToVSTParamUpdate([&](Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue) {
 				dynamic_cast<Parameters::VSTParameter&>(*controller_rsParams[id]).value = newValue;
 				myPluginController->setParamNormalized(id, newValue); // update vst param value
+				myPluginController->performEdit(id, newValue); // inform the host about value update
 				_relayTextToProcessor(msg); // relay to processor to update processor params
 			}) 
 			.reactToParamUpdate([&](Steinberg::Vst::ParamID id, json newValue) { 
@@ -129,6 +130,7 @@ namespace ReaShader
 		info["size"] = size;
 		info["extension"] = extension;
 		info["name"] = name;
+		info["metadata"] = metadata;
 		_relayFileToProcessor(std::move(info), std::move(data));
 	}
 
@@ -212,6 +214,12 @@ namespace ReaShader
 			[&](Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue) {
 				// just update the internal controller param
 				dynamic_cast<Parameters::VSTParameter&>(*controller_rsParams[id]).value = newValue;
+			})
+			.reactToParamAdd([&](std::unique_ptr<Parameters::IParameter> newParam) {
+				// processor is adding new params
+				if (newParam->typeId() == Parameters::Type::VSTParameter)
+					_registerVSTParam(dynamic_cast<Parameters::VSTParameter&>(*newParam));
+				controller_rsParams.push_back(std::move(newParam));
 			});
 	}
 } // namespace ReaShader

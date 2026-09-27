@@ -57,6 +57,11 @@ export class MessageHandler {
         return this;
     }
 
+    handleParamAdd(callback) {
+        this.#_reactTo("paramAdd", callback);
+        return this;
+    }
+
     handleServerShutdown(callback) {
         this.#_reactTo("serverShutdown", callback);
         return this;

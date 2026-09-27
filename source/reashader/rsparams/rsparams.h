@@ -77,13 +77,13 @@ namespace ReaShader::Parameters
 
 		// TODO: specific error messages instead of bool
 
-#define IBASEPARAMETER_MEMBER_LIST Steinberg::Vst::ParamID id, std::string title, Group group
-#define IBASEPARAMETER_INITIALIZATION IParameter(id, title, group)
+#define IPARAMETER_MEMBER_LIST Steinberg::Vst::ParamID id, std::string title, Group group
+#define IPARAMETER_INITIALIZATION IParameter(id, title, group)
 
 		struct IParameter
 		{
 			IParameter() = default;
-			IParameter(IBASEPARAMETER_MEMBER_LIST) : id(id), title(title), group(group){};
+			IParameter(IPARAMETER_MEMBER_LIST) : id(id), title(title), group(group){};
 
 			Steinberg::Vst::ParamID id;
 
@@ -151,6 +151,54 @@ namespace ReaShader::Parameters
 				}
 		};
 
+		inline bool spawnParameter(size_t id, json& props, std::unique_ptr<IParameter>& dst)
+		{
+			Parameters::Type paramType = (Parameters::Type)props["typeId"];
+
+			if (paramType >= Parameters::Type::numParamTypes)
+			{
+				return false;
+			}
+
+			Parameters::TypeInstantiator ti{};
+			std::unique_ptr<Parameters::IParameter> newParam = ti.wield(paramType);
+			if (newParam == nullptr) // although it shouldn't because the previous check should've failed
+			{
+				return false;
+			}
+			newParam->fromJson(props);
+
+			dst = std::move(newParam);
+
+			return true;
+		}
+
+		inline bool spawnParameters(json paramsList, std::vector<std::unique_ptr<IParameter>>& dst,
+									std::function<void(std::unique_ptr<IParameter>&)> beforeMoveToDst)
+		{
+			dst.clear();
+			dst.reserve(paramsList.size());
+
+			for (const auto& item : paramsList)
+			{
+				for (auto it = item.begin(); it != item.end(); ++it)
+				{
+					auto id = std::stoi(it.key());
+					auto props = it.value();
+
+					std::unique_ptr<Parameters::IParameter> newParam;
+					if (!spawnParameter(id, props, newParam))
+						return false;
+
+					beforeMoveToDst(newParam);
+
+					dst.push_back(std::move(newParam));
+				}
+			}
+
+			return true;
+		}
+
 		class PresetStreamer
 		{
 			  public:
@@ -182,10 +230,10 @@ namespace ReaShader::Parameters
 		{ 
 			using IParameter::IParameter;
 
-			VSTParameter(IBASEPARAMETER_MEMBER_LIST, std::string units, Steinberg::Vst::ParamValue defaultValue = 0.5f,
+			VSTParameter(IPARAMETER_MEMBER_LIST, std::string units, Steinberg::Vst::ParamValue defaultValue = 0.5f,
 						 Steinberg::Vst::ParamValue value = 0.5f,
 						 Steinberg::int32 steinbergFlags = Vst::ParameterInfo::kCanAutomate)
-				: IBASEPARAMETER_INITIALIZATION,
+				: IPARAMETER_INITIALIZATION,
 				units(units), defaultValue(defaultValue), value(value), steinbergFlags(steinbergFlags){ }
 
 			std::string units;
@@ -213,7 +261,7 @@ namespace ReaShader::Parameters
 		{
 			using IParameter::IParameter;
 
-			Int8u(IBASEPARAMETER_MEMBER_LIST, uint8_t value) : IBASEPARAMETER_INITIALIZATION, value(value)
+			Int8u(IPARAMETER_MEMBER_LIST, uint8_t value) : IPARAMETER_INITIALIZATION, value(value)
 			{
 			}
 
@@ -239,7 +287,7 @@ namespace ReaShader::Parameters
 		{
 			using IParameter::IParameter;
 
-			String(IBASEPARAMETER_MEMBER_LIST, std::string value = "") : IBASEPARAMETER_INITIALIZATION, value(value)
+			String(IPARAMETER_MEMBER_LIST, std::string value = "") : IPARAMETER_INITIALIZATION, value(value)
 			{
 			}
 
@@ -259,6 +307,26 @@ namespace ReaShader::Parameters
 			void fromJsonDerived(json& derived) override;
 			bool serializeDerived(IBStreamer& streamer) const override;
 			bool deserializeDerived_v1(IBStreamer& streamer) override;
+		};
+
+		struct ShaderParameter : VSTParameter
+		{
+			using VSTParameter::VSTParameter;
+
+			ShaderParameter(IPARAMETER_MEMBER_LIST, std::string parentStructName, std::string parentVectorName,
+							std::string units,
+							Steinberg::Vst::ParamValue defaultValue = 0.5f,
+						 Steinberg::Vst::ParamValue value = 0.5f,
+						 Steinberg::int32 steinbergFlags = Vst::ParameterInfo::kCanAutomate)
+				: VSTParameter(id, title, group, units, defaultValue, value, steinbergFlags),
+				  parentStructName(parentStructName), parentVectorName(parentVectorName)
+			{
+			}
+
+			// always non empty, shader params are always bound to struct
+			std::string parentStructName;
+			// specified if component of a vector
+			std::string parentVectorName;
 		};
 
 		// -----------------------------------

@@ -19,6 +19,8 @@
 #include "vktimages.h"
 #include "vktrendering.h"
 
+#include <spirv_cross.hpp>
+
 namespace vkt
 {
 	namespace Pipeline
@@ -205,7 +207,7 @@ namespace vkt
 
 					return *this;
 				}
-				
+
 				PipelineBuilder& setDynamicStates(std::vector<VkDynamicState>&& dynamicStates)
 				{
 					dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
@@ -223,20 +225,20 @@ namespace vkt
 					return *this;
 				}
 				PipelineBuilder& setInputAssembly(VkPipelineInputAssemblyStateCreateInfo& inputAssembly)
-				{				
+				{
 					pipelineInfo.pInputAssemblyState = &inputAssembly;
 
 					return *this;
 				}
 				PipelineBuilder& setViewPortState(VkPipelineViewportStateCreateInfo& viewportState)
 				{
-					pipelineInfo.pViewportState = &viewportState;	
+					pipelineInfo.pViewportState = &viewportState;
 					return *this;
 				}
 				PipelineBuilder& setRasterizer(VkPipelineRasterizationStateCreateInfo& rasterizer)
 				{
 					pipelineInfo.pRasterizationState = &rasterizer;
-					return *this;	
+					return *this;
 				}
 				PipelineBuilder& setMultisampling(VkPipelineMultisampleStateCreateInfo& multisampling)
 				{
@@ -287,12 +289,12 @@ namespace vkt
 					//		pipeline
 					//////////////////////////
 
-					pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;					
+					pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 				};
 
 				MaterialBuilder* caller;
 
-					VkPipelineDynamicStateCreateInfo dynamicState{};
+				VkPipelineDynamicStateCreateInfo dynamicState{};
 				VkGraphicsPipelineCreateInfo pipelineInfo{};
 			};
 
@@ -304,7 +306,8 @@ namespace vkt
 				return *pipelineBuilder;
 			}
 
-			vkt::Rendering::Material build(){
+			vkt::Rendering::Material build()
+			{
 				return material;
 			};
 
@@ -319,59 +322,164 @@ namespace vkt
 			VkPipelineCacheCreateInfo pipelineCacheCreateInfo{};
 		};
 
-		inline bool compile_glsl_to_spirv(std::string& glslSource, EShLanguage stage,
-										  std::vector<uint32_t>& spirvCodeOut)
+		namespace Shader
 		{
-			glslang::InitializeProcess(); // Initialize glslang
-
-			// Create a shader object
-			glslang::TShader shader(stage);
-			const char* shaderStrings[1] = { glslSource.data() };
-			shader.setStrings(shaderStrings, 1);
-
-			// Set up shader compilation options
-			int defaultVersion = 100;		 // overridden by #version in the shader
-			EProfile profile = ECoreProfile; // Use core profile
-			const char* entryPoint = "main"; // Entry point function name
-
-			shader.setEnvInput(glslang::EShSourceGlsl, stage, glslang::EShClientVulkan, defaultVersion);
-			shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_3);
-			shader.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_3);
-
-			// Enable/disable options as needed
-			// shader.setAutoMapBindings(true);
-			// shader.setAutoMapLocations(true);
-
-			// Compile GLSL to SPIR-V
-			if (!shader.parse(GetDefaultResources(), defaultVersion, false, EShMsgDefault))
+			inline bool compile_glsl_to_spirv(std::string& glslSource, EShLanguage stage,
+											  std::vector<uint32_t>& spirvCodeOut, std::string& msgOut)
 			{
-				LOG(WARNING, toFile | toConsole | toBox, "ReaShaderRenderer", "GLSL Compilation Failed",
-					shader.getInfoLog());
-				glslang::FinalizeProcess();
-				return false;
+				glslang::InitializeProcess(); // Initialize glslang
+
+				// Create a shader object
+				glslang::TShader shader(stage);
+				const char* shaderStrings[1] = { glslSource.data() };
+				shader.setStrings(shaderStrings, 1);
+
+				// Set up shader compilation options
+				int defaultVersion = 100;		 // overridden by #version in the shader
+				EProfile profile = ECoreProfile; // Use core profile
+				const char* entryPoint = "main"; // Entry point function name
+
+				shader.setEnvInput(glslang::EShSourceGlsl, stage, glslang::EShClientVulkan, defaultVersion);
+				shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_3);
+				shader.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_3);
+
+				// Enable/disable options as needed
+				// shader.setAutoMapBindings(true);
+				// shader.setAutoMapLocations(true);
+
+				// Compile GLSL to SPIR-V
+				if (!shader.parse(GetDefaultResources(), defaultVersion, false, EShMsgDefault))
+				{
+					msgOut = shader.getInfoLog();
+					glslang::FinalizeProcess();
+					return false;
+				}
+
+				glslang::TProgram program;
+				program.addShader(&shader);
+
+				if (!program.link(EShMsgDefault))
+				{
+					msgOut = program.getInfoLog();
+					glslang::FinalizeProcess();
+					return false;
+				}
+
+				// Get the intermediate representation
+				const glslang::TIntermediate* intermediate = program.getIntermediate(stage);
+
+				// Convert GLSL to SPIR-V
+				glslang::GlslangToSpv(*intermediate, spirvCodeOut);
+
+				msgOut = "Compiled Succesfully";
+
+				glslang::FinalizeProcess(); // Clean up glslang
+				return true;
 			}
-
-			glslang::TProgram program;
-			program.addShader(&shader);
-
-			if (!program.link(EShMsgDefault))
+			inline bool compile_glsl_to_spirv(std::vector<char>&& glslData, EShLanguage stage,
+											  std::vector<uint32_t>& spirvCodeOut, std::string& msgOut)
 			{
-				LOG(WARNING, toFile | toConsole | toBox, "ReaShaderRenderer", "GLSL Linking Failed",
-					program.getInfoLog());
-				glslang::FinalizeProcess();
-				return false;
+				// convert to string
+				glslData.push_back('\0');
+				std::string vertSource(std::move(glslData.data()));
+				// compile
+				return compile_glsl_to_spirv(vertSource, stage, spirvCodeOut, msgOut);
 			}
+			
+			struct Variable
+			{
+				Variable() = default;
 
-			// Get the intermediate representation
-			const glslang::TIntermediate* intermediate = program.getIntermediate(stage);
+				std::string name;
+				spirv_cross::SPIRType::BaseType baseType;
 
-			// Convert GLSL to SPIR-V
-			glslang::GlslangToSpv(*intermediate, spirvCodeOut);
+				Variable(spirv_cross::Compiler& c, spirv_cross::Resource& res)
+					: name(res.name), baseType(c.get_type(res.base_type_id).basetype)
+				{
+				}
+			};
 
-			glslang::FinalizeProcess(); // Clean up glslang
-			return true;
+			struct Member : Variable
+			{
+				uint32_t rows, cols;
+
+				Member(spirv_cross::Compiler& c, const spirv_cross::SPIRType& parent, uint32_t memberIndex)
+				{
+					uint32_t memberId = parent.member_types[memberIndex];
+					const auto& memberType = c.get_type(memberId);
+
+					name = c.get_member_name(parent.self, memberIndex);
+					baseType = memberType.basetype;
+
+					rows = memberType.vecsize, cols = memberType.columns;
+				}
+
+				static void extractMembers(std::vector<std::unique_ptr<Member>>& dst, spirv_cross::Compiler& c, const spirv_cross::SPIRType& parent)
+				{
+					for (uint32_t i = 0; i < parent.member_types.size(); ++i)
+					{
+						std::unique_ptr<Member> m = std::make_unique<Member>(c, parent, i);
+
+						dst.push_back(std::move(m));
+					}
+				}
+			};
+
+			struct Struct : Variable
+			{
+				std::vector<std::unique_ptr<Member>> members;
+
+				Struct(spirv_cross::Compiler& c, spirv_cross::Resource& res) : Variable(c, res)
+				{
+					const auto& type = c.get_type(res.base_type_id);
+					Member::extractMembers(members, c, type);
+				}
+			};
+
+			struct BoundSet
+			{
+				uint32_t set;
+				uint32_t binding;
+
+				BoundSet(spirv_cross::Compiler& c, spirv_cross::Resource& res)
+				{
+					binding = c.get_decoration(res.id, spv::DecorationBinding);
+					set = c.get_decoration(res.id, spv::DecorationDescriptorSet);
+				}
+			};
+
+			struct UniformBuffer : Struct, BoundSet
+			{
+				uint32_t size;
+
+				UniformBuffer(spirv_cross::Compiler& c, spirv_cross::Resource& res) : Struct(c, res), BoundSet(c, res)
+				{
+					const auto& type = c.get_type(res.base_type_id);
+
+					size = c.get_declared_struct_size(type);
+				}
+			};
+
+			struct PushConstants : Struct
+			{
+				PushConstants(spirv_cross::Compiler& c, spirv_cross::Resource& res) : Struct(c,res)
+				{
+					
+				}
+			};
+
+			struct SampledImage : Variable, BoundSet
+			{
+				SampledImage(spirv_cross::Compiler& c, spirv_cross::Resource& res)
+					: Variable(c, res), BoundSet(c, res)
+				{
+
+				}
+			};
 		}
 
+		using namespace Shader;
+		
 		inline VkShaderModule createShaderModule(Logical::Device* vktDevice, const uint32_t* spvCode, size_t size)
 		{
 			VkShaderModuleCreateInfo createInfo{};
@@ -397,21 +505,18 @@ namespace vkt
 			return createShaderModule(vktDevice, reinterpret_cast<const uint32_t*>(code.data()), code.size());
 		}
 		inline VkShaderModule createShaderModule(Logical::Device* vktDevice, EShLanguage stage,
-												 std::vector<char>&& glslData)
+												 std::vector<char>&& glslData, std::string& msgOut)
 		{
-			// convert to string
-			glslData.push_back('\0');
-			std::string vertSource(std::move(glslData.data()));
-			// compile
 			std::vector<uint32_t> vertSpv;
-			compile_glsl_to_spirv(vertSource, stage, vertSpv);
+			compile_glsl_to_spirv(std::move(glslData), stage, vertSpv, msgOut);
 			// generate
 			return vkt::Pipeline::createShaderModule(vktDevice, vertSpv);
 		}
-		inline VkShaderModule createShaderModule(Logical::Device* vktDevice, EShLanguage stage, std::string glslPath)
+		inline VkShaderModule createShaderModule(Logical::Device* vktDevice, EShLanguage stage, std::string glslPath,
+												 std::string& msgOut)
 		{
 			std::vector<char> glslData = vkt::io::readFile(glslPath);
-			return vkt::Pipeline::createShaderModule(vktDevice, stage, std::move(glslData));
+			return vkt::Pipeline::createShaderModule(vktDevice, stage, std::move(glslData), msgOut);
 		}
 
 	}; // namespace Pipeline

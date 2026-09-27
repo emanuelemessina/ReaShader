@@ -69,10 +69,11 @@ namespace ReaShader::Parameters
 	}
 	void IParameter::fromJson(json& param)
 	{
+		id = param["id"];
 		title = param["title"];
 		group = (Parameters::Group)param["groupId"];
 
-		fromJsonDerived(param["derived"]);
+		fromJsonDerived(param);
 	}
 	bool IParameter::serialize(IBStreamer& streamer) const
 	{

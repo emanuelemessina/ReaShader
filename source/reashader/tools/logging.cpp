@@ -47,7 +47,7 @@ void log_to_file(LogLevel level, const char* sender, const char* title, const ch
 	std::string filePath = tools::paths::join({ VST3_BUNDLE_DIR, "rs.log" });
 	std::ofstream logFile;
 
-	logFile.open(filePath);
+	logFile.open(filePath, openMode | std::ios::out);
 
 	if (!logFile.is_open())
 	{
