@@ -66,6 +66,7 @@ namespace ReaShader
 		std::mutex rsparamsVectorMutex; // for locking during loadState (and halt the processing)
 		std::vector<std::unique_ptr<Parameters::IParameter>> processor_rsParams;
 		std::unique_ptr<ReaShaderRenderer> reaShaderRenderer;
+		friend class ReaShaderRenderer;
 
 	  protected:
 		MyPluginProcessor* myPluginProcessor;
@@ -89,6 +90,7 @@ namespace ReaShader
 		void _webuiSendVSTParamUpdate(Vst::ParamID id, Vst::ParamValue newValue);
 		void _webuiSendTrackInfo();
 		void _webuiSendRenderingDevicesList();
+		void _webuiSendParamAdd(std::unique_ptr<Parameters::IParameter>& param);
 
 		std::vector<VkPhysicalDeviceProperties> renderingDevicesList;
 		ReaShader::TrackInfo trackInfo{-1};

@@ -56,10 +56,9 @@ set(RS_VMA_PATH "$ENV{VK_SDK_PATH}/../VulkanMemoryAllocator" CACHE PATH "Vulkan 
 set(RS_TOL_PATH "$ENV{VK_SDK_PATH}/../tinyobjloader" CACHE PATH "Tiny Obj Loader path")
 set(RS_STB_PATH "$ENV{VK_SDK_PATH}/../stb" CACHE PATH "STB path")
 set(RS_GLSLANG_PATH "$ENV{VK_SDK_PATH}/../glslang" CACHE PATH "glslang path")
+set(RS_SPVC_PATH "$ENV{VK_SDK_PATH}/../SPIRV-Cross" CACHE PATH "spirv cross path")
 
 include_directories (
-    "$ENV{VK_SDK_PATH}/include"
-    
     "external/reaper-sdk/sdk"
     "external/reaper-sdk/WDL"
     
@@ -75,10 +74,17 @@ include_directories (
     "source/vst3"
     "source/reashader"
     
+    ${RS_SPVC_PATH}
+
+    # we use glslang headers in the vulkan sdk, since they work
+
     ${RS_GLM_PATH}
     "${RS_VMA_PATH}/include"
     ${RS_TOL_PATH}
     ${RS_STB_PATH}
+
+    # at the end because of the override with the manual downloaded libraries (glslang, spirv...)
+    "$ENV{VK_SDK_PATH}/include"
 )
 
 # C++ STANDARD
@@ -199,6 +205,10 @@ set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD ${CPP_ISO})
 target_link_directories(${PROJECT_NAME} PRIVATE
     "${RS_VMA_PATH}/build/src/Debug"
     "${RS_VMA_PATH}/build/src/Release"
+
+    # before glslang
+    "${RS_SPVC_PATH}/build/Debug"
+    "${RS_SPVC_PATH}/build/Release"
     
     "${RS_GLSLANG_PATH}/build/External/spirv-tools/source/opt/Debug"
     "${RS_GLSLANG_PATH}/build/External/spirv-tools/source/Debug"

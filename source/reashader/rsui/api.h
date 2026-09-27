@@ -167,6 +167,13 @@ namespace ReaShader
 				return *this;
 			}
 
+			MessageHandler& reactToParamsList(const std::function<void(json params)>& callback)
+			{
+				_reactTo(MessageType::ParamsList, [&](const json& msg) { callback(msg["params"]); });
+
+				return *this;
+			}
+
 			MessageHandler& reactToRenderingDeviceChange(const std::function<void(uint32_t)>& callback)
 			{
 				if (!(_hasField("id")))
@@ -334,6 +341,14 @@ namespace ReaShader
 
 					j["params"][rsParams[i]->id] = paramProps;
 				}
+
+				return j;
+			}
+			static json buildParamAdd(std::unique_ptr<Parameters::IParameter>& param)
+			{
+				json j;
+				j["type"] = typeStrings[RSUI::ParamAdd];
+				j["param"] = param->toJson();
 
 				return j;
 			}

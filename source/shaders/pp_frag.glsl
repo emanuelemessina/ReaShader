@@ -14,6 +14,28 @@ layout( push_constant ) uniform constants
 	float videoParam;
 } pushConstants;
 
+//------
+// test
+
+layout(set = 0, binding = 0) uniform  SceneData{
+    vec4 fogColor; // w is for exponent
+	vec4 fogDistances; //x for min, y for max, zw unused.
+	vec4 ambientColor;
+	vec4 sunlightDirection; //w for sun power
+	vec4 sunlightColor;
+} sceneData;
+
+struct ObjectData{
+	mat4 finalModelMatrix;
+};
+
+vec4 testVector;
+
+
+// storage buffers not supported
+
+//------
+
 void main()
 {
 	//outColor = vec4(fragColor + sceneData.ambientColor.xyz, 1.0);

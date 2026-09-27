@@ -55,6 +55,10 @@ socket.addEventListener('message', (event) => {
                     uiCreateParam(messager, paramId, param);
                 }
             })
+            .handleParamAdd((json) => {
+                let param = json["param"];
+                uiCreateParam(messager, param.id, param);
+            })
             .handleRenderingDevicesList((json) => {
                 uiCreateDeviceSelector(messager, json.devices, json.selected);
             })

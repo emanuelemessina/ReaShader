@@ -103,9 +103,9 @@ namespace vkt
 
 		// DescriptorSetWriter
 
-		DescriptorSetWriter DescriptorSetWriter::selectDescriptorSet(DescriptorSet descriptorSet)
+		DescriptorSetWriter& DescriptorSetWriter::selectDescriptorSet(DescriptorSet& descriptorSet)
 		{
-			currentDescSet = descriptorSet;
+			currentDescSet = &descriptorSet;
 
 			currentSetWrite = {};
 			currentSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -115,47 +115,51 @@ namespace vkt
 
 			return *this;
 		}
-		DescriptorSetWriter DescriptorSetWriter::selectBinding(int binding)
+		DescriptorSetWriter& DescriptorSetWriter::selectBinding(int binding)
 		{
 			currentSetWrite.dstBinding = binding;
 
 			VkDescriptorSetLayoutBinding bindInfo = vectors::findRef(
-				currentDescSet.bindings, [&](const VkDescriptorSetLayoutBinding& b) { return b.binding == binding; });
+				currentDescSet->bindings, [&](const VkDescriptorSetLayoutBinding& b) { return b.binding == binding; });
 
 			currentSetWrite.descriptorCount = bindInfo.descriptorCount; // the one set in the binding info
 			currentSetWrite.descriptorType = bindInfo.descriptorType;
 
+			// erase previous set pointers
+			currentSetWrite.pBufferInfo = nullptr;
+			currentSetWrite.pImageInfo = nullptr;
+
 			return *this;
 		}
 
-		DescriptorSetWriter DescriptorSetWriter::registerWriteBuffer(Buffers::AllocatedBuffer* aBuffer, size_t size,
+		DescriptorSetWriter& DescriptorSetWriter::registerWriteBuffer(Buffers::AllocatedBuffer* aBuffer, size_t size,
 																	 VkDeviceSize offset)
 		{
-			VkDescriptorBufferInfo binfo{};
-			binfo.buffer = aBuffer->getBuffer();
-			binfo.offset = offset;
-			binfo.range = size;
+			VkDescriptorBufferInfo* binfo = new VkDescriptorBufferInfo();
+			binfo->buffer = aBuffer->getBuffer();
+			binfo->offset = offset;
+			binfo->range = size;
 
 			bufferInfos.push_back(binfo);
 
-			currentSetWrite.pBufferInfo = &bufferInfos.back();
+			currentSetWrite.pBufferInfo = binfo;
 
 			setWrites.push_back(currentSetWrite);
 
 			return *this;
 		}
-		DescriptorSetWriter DescriptorSetWriter::registerWriteImage(Images::AllocatedImage* aImage, VkSampler sampler,
+		DescriptorSetWriter& DescriptorSetWriter::registerWriteImage(Images::AllocatedImage* aImage, VkSampler sampler,
 																	VkImageLayout imageLayout)
 		{
 
-			VkDescriptorImageInfo iInfo{};
-			iInfo.sampler = sampler;
-			iInfo.imageView = aImage->getImageView();
-			iInfo.imageLayout = imageLayout;
+			VkDescriptorImageInfo* iInfo = new VkDescriptorImageInfo();
+			iInfo->sampler = sampler;
+			iInfo->imageView = aImage->getImageView();
+			iInfo->imageLayout = imageLayout;
 
 			imageInfos.push_back(iInfo);
 
-			currentSetWrite.pImageInfo = &imageInfos.back();
+			currentSetWrite.pImageInfo = iInfo;
 
 			setWrites.push_back(currentSetWrite);
 

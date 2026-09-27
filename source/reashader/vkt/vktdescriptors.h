@@ -76,21 +76,33 @@ namespace vkt
 			{
 			}
 
-			DescriptorSetWriter selectDescriptorSet(DescriptorSet descriptorSet);
-			DescriptorSetWriter selectBinding(int binding);
+			~DescriptorSetWriter()
+			{
+				for (auto& binfo : bufferInfos)
+				{
+					delete binfo;
+				}
+				for (auto& iinfo : imageInfos)
+				{
+					delete iinfo;
+				}
+			}
 
-			DescriptorSetWriter registerWriteBuffer(Buffers::AllocatedBuffer* aBuffer, size_t size,
+			DescriptorSetWriter& selectDescriptorSet(DescriptorSet& descriptorSet);
+			DescriptorSetWriter& selectBinding(int binding);
+
+			DescriptorSetWriter& registerWriteBuffer(Buffers::AllocatedBuffer* aBuffer, size_t size,
 													VkDeviceSize offset);
-			DescriptorSetWriter registerWriteImage(Images::AllocatedImage* aImage, VkSampler sampler,
+			DescriptorSetWriter& registerWriteImage(Images::AllocatedImage* aImage, VkSampler sampler,
 												   VkImageLayout imageLayout);
 			void writeRegistered();
 
 		  private:
 			std::vector<VkWriteDescriptorSet> setWrites = {};
-			DescriptorSet currentDescSet{ VK_NULL_HANDLE };
+			DescriptorSet* currentDescSet;
 			VkWriteDescriptorSet currentSetWrite{};
-			std::vector<VkDescriptorBufferInfo> bufferInfos{};
-			std::vector<VkDescriptorImageInfo> imageInfos{};
+			std::vector<VkDescriptorBufferInfo*> bufferInfos{};
+			std::vector<VkDescriptorImageInfo*> imageInfos{};
 
 			Logical::Device* vktDevice;
 		};
