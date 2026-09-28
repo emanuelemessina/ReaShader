@@ -8,6 +8,9 @@
 
 #pragma once
 
+#include <atomic>
+#include <mutex>
+
 #include "tools/fwd_decl.h"
 
 #include "vkt/vktcommon.h"
@@ -40,6 +43,12 @@ class ReaShaderRenderer
 	void changeCustomShader(std::vector<char>&& glsl, std::function<void(std::string&& msg)> onStatus,
 							std::function<void(std::string&& msg)> onError, std::function<void(void)> onSuccess);
 
+    // Entry point for REAPER's video thread: runs checkFrameSize/loadBitsToImage/drawFrame/transferFrame
+    // as one unit. Never throws -- returns false (caller should pass the input frame through) if the
+    // renderer isn't initialized, is busy (device change/shutdown in progress), or hit a Vulkan error.
+    // A Vulkan error (e.g. VK_ERROR_DEVICE_LOST) disables rendering until the next init().
+    bool renderFrame(int w, int h, int *inputBits, double pushConstants[], int *outputBits);
+
     // public functions that drive the renderer, asynchronously called
     // make sure to invalidate the device if there's a device change in progress
     void checkFrameSize(int &w, int &h, void (*listener)() = nullptr);
@@ -51,7 +60,12 @@ class ReaShaderRenderer
 
   private:
     bool exceptionOnInitialize{false};
-    bool halted{false};
+    std::atomic<bool> halted{false};
+    std::atomic<bool> frameFailed{false};
+
+    // held by renderFrame (try_lock, so REAPER's video thread never waits on it) and by anything
+    // that creates/destroys GPU resources frames use (init, shutdown, changeRenderingDevice)
+    std::mutex frameMutex;
 
     // wrap low level faults and circumvent seh object unwinding
 
@@ -82,8 +96,8 @@ class ReaShaderRenderer
 		vkt::deletion_queue vktCustomShaderChanged{};
 	} deletionQueues;
     
-    vkt::Physical::Device *vktPhysicalDevice;
-    vkt::Logical::Device *vktDevice;
+    vkt::Physical::Device *vktPhysicalDevice{ nullptr };
+    vkt::Logical::Device *vktDevice{ nullptr };
 
 	struct RenderTargets
 	{

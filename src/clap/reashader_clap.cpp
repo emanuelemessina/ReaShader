@@ -70,19 +70,18 @@ namespace ReaShader
 				return nullptr;
 			}
 
-			auto* renderer = reaShaderPlugin->reaShaderRenderer.get();
-
-			renderer->checkFrameSize(w, h);
-			renderer->loadBitsToImage(inputBits);
-
 			// parmlist[0] is wet/dry; plugin param index i lands at parmlist index i+1 (confirmed
 			// working convention carried over from the pre-port VST3 code).
 			double videoParam = nparms > (int)Parameters::uVideoParam ? parmlist[Parameters::uVideoParam + 1] : 0.0;
 			double pushConstants[] = { project_time, frate, videoParam };
-			renderer->drawFrame(pushConstants);
-
 			int* outputBits = reinterpret_cast<int*>(outputVf->get_bits());
-			renderer->transferFrame(outputBits);
+
+			// never throws; false = renderer unavailable/busy/failed -> pass the input through untouched
+			if (!reaShaderPlugin->reaShaderRenderer->renderFrame(w, h, inputBits, pushConstants, outputBits))
+			{
+				outputVf->Release();
+				return inputVf;
+			}
 
 			inputVf->Release();
 			return outputVf;

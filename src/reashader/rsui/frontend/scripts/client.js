@@ -6,23 +6,28 @@
  * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
  *****************************************************************************/
 
-import { MessageHandler, Messager } from './api.js';
-import { uiVSTParamUpdate ,uiParamUpdate, uiCreateParamGroups, uiCreateParam, uiCreateDeviceSelector, setParamTypesList } from './rsui.js'
-
-const socket = new WebSocket(`ws://localhost:${window.location.port}/ws`);
+// Transport adapter over webview/webview's postToNative()/eval() bridge (see
+// webui_host_win32.cpp), duck-typed against the same { send(), addEventListener('message', cb) }
+// shape the old WebSocket object had -- postToNative is injected automatically by the C++ side's
+// webview.bind("postToNative", ...) call, before this script ever runs.
+const socket = {
+    send: (msg) => window.postToNative(msg),
+    addEventListener: (type, cb) => {
+        if (type === 'message')
+            window.__reashaderOnMessage = cb;
+    }
+};
 const messager = new Messager(socket);
 
-// Connection opened
-socket.addEventListener('open', (event) => {
-    // request info
-    messager
-        .sendRequestTrackInfo()
-        .sendRequestParamGroupsList()
-        .sendRequestParamsList()
-        .sendRequestRenderingDevicesList()
-        .sendRequestParamTypesList()
-        ;
-});
+// postToNative is already available by the time this (deferred) script runs, so request the
+// initial data straight away instead of waiting for a connection-opened event.
+messager
+    .sendRequestTrackInfo()
+    .sendRequestParamGroupsList()
+    .sendRequestParamsList()
+    .sendRequestRenderingDevicesList()
+    .sendRequestParamTypesList()
+    ;
 
 // Listen for messages
 socket.addEventListener('message', (event) => {

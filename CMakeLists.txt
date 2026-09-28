@@ -52,11 +52,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 #
 # GLM/VMA/tinyobjloader/STB are all header-only and vendored as git submodules
 # (external/glm, external/VulkanMemoryAllocator, external/tinyobjloader, external/stb)
-# -- no manual download/placement needed, unlike before. glslang and SPIRV-Cross are
-# NOT vendored: the installed Vulkan SDK already ships usable static libs for both
-# (see the find_library block below), so building/placing them by hand is no longer
-# required either. The Vulkan SDK itself remains the one dependency that has to be
-# installed manually -- it's a full installer, not something to vendor.
+# -- no manual download/placement needed. Keep both GLM and VMA as submodules rather
+# than sourcing either from the installed Vulkan SDK (see CLAUDE.md for why). glslang
+# and SPIRV-Cross are NOT vendored: the installed Vulkan SDK already ships usable static
+# libs for both (see the find_library block below), so building/placing them by hand is
+# no longer required either. The Vulkan SDK itself remains the one dependency that has
+# to be installed manually -- it's a full installer, not something to vendor.
 #
 # The SDK's own installer sets VULKAN_SDK, not VK_SDK_PATH (a pre-existing project
 # convention) -- check both, preferring VK_SDK_PATH for anyone who set it explicitly.
@@ -83,11 +84,6 @@ include_directories (
 
     "external/reaper-sdk/sdk"
     "external/WDL/WDL"
-
-    "external/restinio/dev/asio/include"
-    "external/restinio/dev/nodejs/http_parser"
-    "external/restinio/dev"
-    "external/restinio/dev/fmt/include"
 
     "external/cwalk"
     "external/json/include"
@@ -168,11 +164,9 @@ add_library(${PROJECT_NAME} MODULE
     src/reashader/rsparams/rsparams.cpp
     src/reashader/rsparams/serdes.cpp
 
-    src/reashader/rsui/backend/rsuiserver.cpp
-    src/reashader/rsui/backend/wshandler.cpp
-
     src/reashader/tools/logging.cpp
     src/reashader/tools/paths.cpp
+    src/reashader/tools/base64.cpp
 
     src/reashader/vkt/vktbuffers.cpp
     src/reashader/vkt/vktcommandpool.cpp
@@ -186,8 +180,6 @@ add_library(${PROJECT_NAME} MODULE
 
     # third-party sources these depend on (header-only otherwise)
     external/cwalk/cwalk.c
-    external/restinio/dev/fmt/src/format.cc
-    external/restinio/dev/nodejs/http_parser/http_parser.c
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan ${RS_VULKAN_RENDERER_LIBS})
@@ -198,13 +190,23 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 )
 
 if(WIN32)
+    # webview/webview embeds the web UI directly in the FX window (WebView2 under the hood on
+    # Windows) instead of RSUIServer/restinio relaying to an external browser tab. Only built here
+    # since clap.gui is Windows-only today -- see CLAUDE.md's Phase D notes. WEBVIEW_BUILD_SHARED_LIBRARY
+    # is off since we only need webview::core_static; docs/tests/examples default off already
+    # (WEBVIEW_IS_TOP_LEVEL_BUILD is false for a nested add_subdirectory).
+    set(WEBVIEW_BUILD_SHARED_LIBRARY OFF CACHE BOOL "" FORCE)
+    add_subdirectory(external/webview)
+
     target_sources(${PROJECT_NAME} PRIVATE
         src/clap/reashader_clap_gui_win32.cpp
+        src/clap/webui_host_win32.cpp
         external/boxer/src/boxer_win.cpp
     )
-    # restinio/Asio networking + boxer (MessageBox) + ShellExecute (gui's "open web UI" button)
-    # + Shlwapi (PathRemoveFileSpecA, used by tools::paths)
-    target_link_libraries(${PROJECT_NAME} PRIVATE ws2_32 mswsock user32 shell32 shlwapi)
+    # boxer (MessageBox) + Shlwapi (PathRemoveFileSpecA, used by tools::paths) + user32/shell32
+    # (window/shell APIs). webview::core_static pulls in its own required Windows libs
+    # (advapi32/ole32/version, plus user32/shell32/shlwapi again) transitively.
+    target_link_libraries(${PROJECT_NAME} PRIVATE user32 shell32 shlwapi webview::core_static)
 elseif(APPLE)
     target_sources(${PROJECT_NAME} PRIVATE external/boxer/src/boxer_mac.mm)
 else()

@@ -15,5 +15,6 @@
         "external/VulkanMemoryAllocator",
         "external/WDL",
         "external/reaper-sdk",
+        "external/webview",
     ],
 }

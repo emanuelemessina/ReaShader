@@ -71,8 +71,10 @@ namespace vkt
 												 const VkDescriptorSet* pDescriptorSets, uint32_t dynamicOffsetCount,
 												 const uint32_t* pDynamicOffsets)
 			{
-				registeredDescriptorSets.push_back(std::make_tuple(firstSet, descriptorSetCount, pDescriptorSets, dynamicOffsetCount,
-												   pDynamicOffsets));
+				// offsets are copied: callers typically pass a local array that's gone by draw time
+				registeredDescriptorSets.push_back(
+					std::make_tuple(firstSet, descriptorSetCount, pDescriptorSets,
+									std::vector<uint32_t>(pDynamicOffsets, pDynamicOffsets + dynamicOffsetCount)));
 				return *this;
 			}
 			// calls vkCmdBindDescriptorSets for all registered sets
@@ -81,8 +83,10 @@ namespace vkt
 				for (int i = 0; i < registeredDescriptorSets.size(); i++)
 				{
 					auto& r = registeredDescriptorSets[i];
+					auto& dynamicOffsets = std::get<3>(r);
 					vkCmdBindDescriptorSets(commandBuffer, bindPoint, pipelineLayout, std::get<0>(r), std::get<1>(r),
-											std::get<2>(r), std::get<3>(r), std::get<4>(r));
+											std::get<2>(r), static_cast<uint32_t>(dynamicOffsets.size()),
+											dynamicOffsets.data());
 				}
 			}
 
@@ -94,7 +98,7 @@ namespace vkt
 			}
 
 			private:
-			std::vector<std::tuple<uint32_t, uint32_t, const VkDescriptorSet*, uint32_t, const uint32_t*>>
+			std::vector<std::tuple<uint32_t, uint32_t, const VkDescriptorSet*, std::vector<uint32_t>>>
 				registeredDescriptorSets;
 		};
 

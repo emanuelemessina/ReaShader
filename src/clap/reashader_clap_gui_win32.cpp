@@ -6,19 +6,19 @@
  * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
  *****************************************************************************/
 
-// Minimal native clap.gui implementation (embedded, Win32 only) -- replaces the old VSTGUI
-// panel + system("start ...") combo with a plain child window and a button that shell-opens
-// the default browser at RSUIServer's URL. The real UI still lives entirely in that external
-// browser tab; this is just the tiny host-embedded launcher, same role the old VST3Editor panel
-// played. macOS/Linux are not implemented yet (matches the project's Windows-first precedent).
+// Minimal native clap.gui implementation (embedded, Win32 only) -- a plain child window that
+// hosts a WebUIHost (an embedded webview::webview, WebView2-backed) filling its client area,
+// loading rsui.html directly. Replaces the old RSUIServer/restinio + external-browser-tab design
+// (a "Open Web UI" button that ShellExecuteW'd the default browser at RSUIServer's URL) -- see
+// CLAUDE.md's Phase D notes. macOS/Linux are not implemented yet (matches the project's
+// Windows-first precedent).
 //
-// The window is created lazily, in set_parent() rather than create() -- a WS_CHILD window must
-// be created WITH its real parent HWND already known (CreateWindowExW rejects WS_CHILD combined
-// with a null hWndParent, failing with ERROR_TLW_WITH_WSCHILD/1406, "top-level window with
-// WS_CHILD style" -- easy to misread as some obscure class-registration/environment problem,
-// since the error text doesn't obviously map to "you passed the wrong hWndParent"). create()
-// only registers the window class and validates the requested API/mode; set_parent() is where
-// CreateWindowExW actually runs, with the host-provided HWND passed in directly.
+// The window is created in set_parent() rather than create() -- a WS_CHILD window must be
+// created WITH its real parent HWND already known (CreateWindowExW rejects WS_CHILD combined with
+// a null hWndParent, failing with ERROR_TLW_WITH_WSCHILD/1406). create() only registers the window
+// class; set_parent() creates the container synchronously (so the host's show() that follows has
+// a window to show) and constructs the WebUIHost, which returns immediately -- the webview itself
+// is built on WebUIHost's own thread.
 
 #ifdef _WIN32
 
@@ -26,34 +26,31 @@
 #include <string>
 
 #include <windows.h>
-#include <shellapi.h>
 
 #include "plugin_state.h"
+#include "tools/logging.h"
+#include "webui_host_win32.h"
 
 namespace ReaShader
 {
 	namespace
 	{
 		constexpr wchar_t kWindowClassName[] = L"ReaShaderGuiWindow";
-		constexpr int kButtonId = 1001;
-		constexpr uint32_t kWidth = 320;
-		constexpr uint32_t kHeight = 90;
+
+		// initial size reflecting rsui.scss's actual layout (100vw/100vh with a 500px-max-width
+		// inner panel) -- resizable afterwards, this is just a reasonable starting point.
+		constexpr uint32_t kDefaultWidth = 560;
+		constexpr uint32_t kDefaultHeight = 720;
+		constexpr uint32_t kMinWidth = 320;
+		constexpr uint32_t kMinHeight = 400;
 
 		LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		{
-			if (msg == WM_COMMAND && LOWORD(wParam) == kButtonId)
+			if (msg == WM_SIZE)
 			{
 				auto* state = reinterpret_cast<ClapPluginState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-				if (state && state->plugin)
-				{
-					std::string url = state->plugin->getWebUIUrl();
-					if (!url.empty())
-					{
-						// url is always plain ASCII ("http://localhost:<port>")
-						std::wstring wurl(url.begin(), url.end());
-						ShellExecuteW(nullptr, L"open", wurl.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-					}
-				}
+				if (state && state->webUIHost)
+					state->webUIHost->resize(LOWORD(lParam), HIWORD(lParam));
 				return 0;
 			}
 			return DefWindowProcW(hwnd, msg, wParam, lParam);
@@ -112,6 +109,9 @@ namespace ReaShader
 		void gui_destroy(const clap_plugin_t* plugin)
 		{
 			auto* state = static_cast<ClapPluginState*>(plugin->plugin_data);
+
+			delete state->webUIHost; // tears down the embedded webview first (clears the plugin's sender)
+			state->webUIHost = nullptr;
 			if (state->guiHwnd)
 			{
 				DestroyWindow((HWND)state->guiHwnd);
@@ -126,32 +126,45 @@ namespace ReaShader
 
 		bool get_size(const clap_plugin_t*, uint32_t* width, uint32_t* height)
 		{
-			*width = kWidth;
-			*height = kHeight;
+			*width = kDefaultWidth;
+			*height = kDefaultHeight;
 			return true;
 		}
 
 		bool can_resize(const clap_plugin_t*)
 		{
-			return false;
+			return true;
 		}
 
 		bool get_resize_hints(const clap_plugin_t*, clap_gui_resize_hints_t* hints)
 		{
 			*hints = {};
-			return false;
+			hints->can_resize_horizontally = true;
+			hints->can_resize_vertically = true;
+			hints->preserve_aspect_ratio = false;
+			return true;
 		}
 
 		bool adjust_size(const clap_plugin_t*, uint32_t* width, uint32_t* height)
 		{
-			*width = kWidth;
-			*height = kHeight;
+			if (*width < kMinWidth)
+				*width = kMinWidth;
+			if (*height < kMinHeight)
+				*height = kMinHeight;
 			return true;
 		}
 
-		bool set_size(const clap_plugin_t*, uint32_t, uint32_t)
+		bool set_size(const clap_plugin_t* plugin, uint32_t width, uint32_t height)
 		{
-			return false; // fixed size (can_resize is false)
+			auto* state = static_cast<ClapPluginState*>(plugin->plugin_data);
+			if (!state->guiHwnd)
+				return false;
+
+			// resizes our own container HWND, which sends it (synchronously, same thread) a WM_SIZE
+			// that WndProc forwards into WebUIHost::resize() to cascade down to the embedded webview
+			SetWindowPos((HWND)state->guiHwnd, nullptr, 0, 0, (int)width, (int)height,
+						 SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE);
+			return true;
 		}
 
 		bool set_parent(const clap_plugin_t* plugin, const clap_window_t* window)
@@ -166,23 +179,35 @@ namespace ReaShader
 			// against being called twice without an intervening destroy() anyway
 			if (state->guiHwnd)
 			{
+				delete state->webUIHost;
+				state->webUIHost = nullptr;
 				DestroyWindow((HWND)state->guiHwnd);
 				state->guiHwnd = nullptr;
 			}
 
-			HWND parentHwnd = (HWND)window->win32;
-
-			HWND hwnd = CreateWindowExW(0, kWindowClassName, L"", WS_CHILD, 0, 0, (int)kWidth, (int)kHeight,
-										 parentHwnd, nullptr, thisModuleHandle(), nullptr);
+			HWND hwnd = CreateWindowExW(0, kWindowClassName, L"", WS_CHILD, 0, 0, (int)kDefaultWidth,
+										 (int)kDefaultHeight, (HWND)window->win32, nullptr, thisModuleHandle(), nullptr);
 			if (!hwnd)
 				return false;
 
 			SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)state);
-
-			CreateWindowExW(0, L"BUTTON", L"Open Web UI", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 10, 10, 200, 30, hwnd,
-							 (HMENU)(INT_PTR)kButtonId, thisModuleHandle(), nullptr);
-
 			state->guiHwnd = hwnd;
+
+			try
+			{
+				state->webUIHost = new WebUIHost(hwnd, state->plugin.get());
+			}
+			catch (const std::exception& e)
+			{
+				LOG(WARNING, toConsole | toFile | toBox, "ReaShaderGui", "Failed to create embedded web UI",
+					std::string(e.what()));
+			}
+			catch (...)
+			{
+				LOG(WARNING, toConsole | toFile | toBox, "ReaShaderGui", "Failed to create embedded web UI",
+					std::string("unknown error"));
+			}
+
 			return true;
 		}
 

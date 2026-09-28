@@ -6,9 +6,6 @@
  * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
  *****************************************************************************/
 
-import { camelCaseToTitleCase } from './strings.js'
-import { DEFAULT_PARAM_IDS } from './api.js'
-
 function scaleNormalizedValue(units, normalizedValue) {
     switch (units) {
         case "%":
@@ -107,18 +104,18 @@ function createFileUploader(messager, metadata, container, accept, initialStatus
 
 // -------------------------------------
 
-export function uiVSTParamUpdate(paramId, newValue) {
+function uiVSTParamUpdate(paramId, newValue) {
     newValue = parseFloat(newValue);
     const slider = document.getElementById(paramId);
     slider.value = newValue; // Convert to slider range
     const valueLabel = document.getElementById(`value_${paramId}`);
     valueLabel.textContent = getParamDisplayValue(paramId, newValue); // TODO scaling of values based on units
 }
-export function uiParamUpdate(paramId, data) {
+function uiParamUpdate(paramId, data) {
     // to be implemented
 }
 
-export function uiCreateParamGroups(groups) {
+function uiCreateParamGroups(groups) {
     // get param container
     const paramsContainer = document.getElementById('paramsContainer');
     paramsContainer.innerHTML = ''; // Clear previous content
@@ -141,7 +138,7 @@ export function uiCreateParamGroups(groups) {
         paramsContainer.appendChild(groupContainer);
     }
 }
-export function uiCreateShaderSelector(messager, savedPath) {
+function uiCreateShaderSelector(messager, savedPath) {
     // get shader container
     const paramsContainer = document.getElementById('shader');
 
@@ -152,7 +149,7 @@ export function uiCreateShaderSelector(messager, savedPath) {
     paramsContainer.appendChild(info);
 }
 
-export function uiCreateParam(messager, paramId, param) {
+function uiCreateParam(messager, paramId, param) {
     const groupContainer = document.getElementById(param.group);
 
     // create ui based on type
@@ -223,7 +220,7 @@ export function uiCreateParam(messager, paramId, param) {
     }
 }
 
-export function uiCreateDeviceSelector(messager, devices, selected) {
+function uiCreateDeviceSelector(messager, devices, selected) {
     const groupContainer = document.getElementById('renderingDeviceSelect');
 
     for (let deviceId in devices) {
@@ -277,4 +274,4 @@ export function uiCreateDeviceSelector(messager, devices, selected) {
 
 var paramTypesList;
 
-export function setParamTypesList(list) { paramTypesList = list; }
+function setParamTypesList(list) { paramTypesList = list; }

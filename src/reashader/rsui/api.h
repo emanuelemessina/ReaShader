@@ -39,6 +39,7 @@ namespace ReaShader
 			RenderingDeviceChange,
 			ParamAdd,
 			ParamTypesList,
+			FileUpload,
 
 			numMessageTypes
 		};
@@ -55,7 +56,8 @@ namespace ReaShader
 												   "renderingDevicesList",
 												   "renderingDeviceChange",
 												   "paramAdd",
-												   "paramTypesList"
+												   "paramTypesList",
+												   "fileUpload"
 		};
 
 		/**
@@ -168,6 +170,21 @@ namespace ReaShader
 			MessageHandler& reactToParamsList(const std::function<void(json params)>& callback)
 			{
 				_reactTo(MessageType::ParamsList, [&](const json& msg) { callback(msg["params"]); });
+
+				return *this;
+			}
+
+			MessageHandler& reactToFileUpload(
+				const std::function<void(std::string name, std::string extension, size_t size, json metadata,
+										  const std::string& base64Data)>& callback)
+			{
+				if (!(_hasField("name") && _hasField("data")))
+					return *this;
+
+				_reactTo(MessageType::FileUpload, [&](const json& msg) {
+					callback(msg["name"], msg.value("extension", ""), msg.value("size", (size_t)0),
+							  msg.value("metadata", json::object()), msg["data"]);
+				});
 
 				return *this;
 			}
