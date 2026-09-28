@@ -1,9 +1,15 @@
 {
-    "cmake.configureOnOpen": false,
     "liveSassCompile.settings.generateMap": false,
-    "liveSassCompile.settings.formats": [{
-        "format": "compressed",
-        "extensionName": ".css",
-        "savePath": "~/.."
-    }]
+    "liveSassCompile.settings.formats": [
+        {
+            "format": "compressed",
+            "extensionName": ".css",
+            "savePath": "~/.."
+        }
+    ],
+    "git.ignoredRepositories": [
+        "external/json",
+        "external/WDL",
+        "external/reaper-sdk",
+    ],
 }
