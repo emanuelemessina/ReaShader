@@ -98,7 +98,7 @@ include_directories (
     "external/json/include"
     "external/boxer/include"
 
-    "source/reashader"
+    "src/reashader"
 
     ${RS_SPVC_PATH}
 
@@ -119,14 +119,14 @@ include_directories (
 #                                                                            #
 ##############################################################################
 
-# Phase A: a minimal CLAP shell only (source/clap/reashader_clap.cpp). It proves the
+# Phase A: a minimal CLAP shell only (src/clap/reashader_clap.cpp). It proves the
 # REAPER video tap works from CLAP (see spikes/clap-video-tap, now retired) and stands
 # up the build pipeline. It is NOT wired to ReaShaderProcessor/ReaShaderRenderer/rsparams/
 # rsui yet -- those use Steinberg VST3 types pervasively and need a real port (Phase B),
 # at which point their sources get added to this target.
 
 add_library(${PROJECT_NAME} MODULE
-    source/clap/reashader_clap.cpp
+    src/clap/reashader_clap.cpp
 )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
@@ -152,8 +152,8 @@ find_program(RS_GLSLC_EXECUTABLE glslc HINTS "$ENV{VK_SDK_PATH}/Bin" "$ENV{VULKA
 if(RS_GLSLC_EXECUTABLE)
     function(rs_compile_shader stage filename)
         get_filename_component(name_we ${filename} NAME_WE)
-        set(src "${CMAKE_SOURCE_DIR}/source/shaders/${filename}")
-        set(out "${CMAKE_SOURCE_DIR}/source/shaders/${name_we}.spv")
+        set(src "${CMAKE_SOURCE_DIR}/src/shaders/${filename}")
+        set(out "${CMAKE_SOURCE_DIR}/src/shaders/${name_we}.spv")
         add_custom_command(
             OUTPUT ${out}
             COMMAND ${RS_GLSLC_EXECUTABLE} -fshader-stage=${stage} ${src} -o ${out}
@@ -173,7 +173,7 @@ if(RS_GLSLC_EXECUTABLE)
     add_dependencies(${PROJECT_NAME} ReaShaderShaders)
 else()
     message(STATUS "glslc not found (no Vulkan SDK detected) -- shader recompilation skipped; "
-                    "the precompiled .spv files already committed under source/shaders are used as-is")
+                    "the precompiled .spv files already committed under src/shaders are used as-is")
 endif()
 
 ##############################################################################
@@ -188,10 +188,10 @@ endif()
 # locates them at runtime (e.g. resolving a path relative to the plugin binary).
 
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/resource/images" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/images"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/resource/meshes" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/meshes"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/source/shaders" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/shaders"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/source/reashader/rsui/frontend" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/rsui"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/res/images" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/images"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/res/meshes" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/meshes"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src/shaders" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/shaders"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src/reashader/rsui/frontend" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/rsui"
     COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_FILE_DIR:${PROJECT_NAME}>/rsui/styles"
     COMMENT "Staging ReaShader resources next to the built plugin"
 )
