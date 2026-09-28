@@ -50,12 +50,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ADDITIONAL INCLUDE DIRECTORIES (absolute or relative to this root)
 #
-# Phase A (CLAP build-system migration) note: reashader_clap.cpp only needs
-# external/clap + the REAPER SDK headers. Everything below this point (restinio,
-# cwalk, json, boxer, the Vulkan-ecosystem paths) is dead code until Phase B ports
-# ReaShaderProcessor/ReaShaderRenderer/rsparams/rsui onto this shell -- left wired
-# up here, unchanged, so Phase B doesn't have to re-discover this setup.
-#
 # GLM/VMA/tinyobjloader/STB are all header-only and vendored as git submodules
 # (external/glm, external/VulkanMemoryAllocator, external/tinyobjloader, external/stb)
 # -- no manual download/placement needed, unlike before. glslang and SPIRV-Cross are
@@ -63,16 +57,26 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # (see the find_library block below), so building/placing them by hand is no longer
 # required either. The Vulkan SDK itself remains the one dependency that has to be
 # installed manually -- it's a full installer, not something to vendor.
+#
+# The SDK's own installer sets VULKAN_SDK, not VK_SDK_PATH (a pre-existing project
+# convention) -- check both, preferring VK_SDK_PATH for anyone who set it explicitly.
+if(DEFINED ENV{VK_SDK_PATH} AND NOT "$ENV{VK_SDK_PATH}" STREQUAL "")
+    set(RS_VK_SDK_PATH "$ENV{VK_SDK_PATH}")
+else()
+    set(RS_VK_SDK_PATH "$ENV{VULKAN_SDK}")
+endif()
 
 set(RS_GLM_PATH "${CMAKE_CURRENT_LIST_DIR}/external/glm" CACHE PATH "GLM path")
 set(RS_VMA_PATH "${CMAKE_CURRENT_LIST_DIR}/external/VulkanMemoryAllocator" CACHE PATH "Vulkan Memory Allocator path")
 set(RS_TOL_PATH "${CMAKE_CURRENT_LIST_DIR}/external/tinyobjloader" CACHE PATH "Tiny Obj Loader path")
 set(RS_STB_PATH "${CMAKE_CURRENT_LIST_DIR}/external/stb" CACHE PATH "STB path")
 
-# SPIRV-Cross headers: defaults to the Vulkan SDK's copy. If a given SDK version turns
-# out to be incompatible (this has happened before -- see README), override this cache
-# variable to point at a manually built SPIRV-Cross checkout instead.
-set(RS_SPVC_PATH "$ENV{VK_SDK_PATH}/Include" CACHE PATH "SPIRV-Cross headers path")
+# SPIRV-Cross headers: defaults to the Vulkan SDK's copy, which nests them under
+# Include/spirv_cross/ (so #include <spirv_cross.hpp> resolves) -- unlike a from-source
+# SPIRV-Cross checkout, whose headers sit flat at the repo root. If a given SDK version
+# turns out to be incompatible (this has happened before -- see README), override this
+# cache variable to point at a manually built SPIRV-Cross checkout instead.
+set(RS_SPVC_PATH "${RS_VK_SDK_PATH}/Include/spirv_cross" CACHE PATH "SPIRV-Cross headers path")
 
 include_directories (
     "external/clap/include"
@@ -100,24 +104,35 @@ include_directories (
 
     # glslang headers also come from here (glslang/... is a subdir of the SDK's Include) --
     # at the end because of the override with any manually placed libraries above.
-    "$ENV{VK_SDK_PATH}/include"
+    "${RS_VK_SDK_PATH}/include"
 )
 
-# glslang / SPIRV-Cross static libraries: both ship prebuilt (release-only) inside the
-# installed Vulkan SDK's Lib/ folder, so nothing needs to be built by hand. These are
-# looked up optionally (like RS_GLSLC_EXECUTABLE below) -- a missing Vulkan SDK must not
-# break a build that doesn't need the renderer yet. Not linked into any target yet --
-# nothing consumes glslang/SPIRV-Cross symbols until the renderer is wired in (Phase B+1);
-# RS_VULKAN_RENDERER_LIBS is left populated here so that pass can just target_link_libraries
-# against it without re-discovering these paths.
+# glslang / SPIRV-Cross static libraries: both ship prebuilt inside the installed Vulkan
+# SDK's Lib/ folder (this SDK version ships debug ("d"-suffixed) and release variants of
+# each), so nothing needs to be built by hand. These are looked up optionally (like
+# RS_GLSLC_EXECUTABLE below) -- a missing Vulkan SDK must not break a build that doesn't
+# need the renderer. RS_VULKAN_RENDERER_LIBS is linked into the target below.
+# Note: OGLCompiler.lib doesn't exist in current glslang releases (folded away upstream) --
+# don't add it back. glslang-default-resource-limits is needed for GetDefaultResources(),
+# used by vktpipeline.h's compile_glsl_to_spirv(). SPIRV-Tools/-opt are needed because
+# vktpipeline.h pulls in glslang/SPIRV/SpvTools.h, which links against SPIRV-Tools' validator
+# and optimizer.
 
-set(RS_GLSLANG_LIB_NAMES glslang OSDependent MachineIndependent GenericCodeGen OGLCompiler)
+set(RS_GLSLANG_LIB_NAMES glslang OSDependent MachineIndependent GenericCodeGen
+                         glslang-default-resource-limits SPIRV-Tools-opt SPIRV-Tools)
 set(RS_SPVC_LIB_NAMES spirv-cross-core spirv-cross-glsl)
 set(RS_VULKAN_RENDERER_LIBS "")
 set(RS_VULKAN_RENDERER_LIBS_MISSING "")
 
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(RS_VK_LIB_SUFFIX "d")
+else()
+    set(RS_VK_LIB_SUFFIX "")
+endif()
+
 foreach(_rs_lib_name ${RS_GLSLANG_LIB_NAMES} ${RS_SPVC_LIB_NAMES})
-    find_library(RS_LIB_${_rs_lib_name} NAMES ${_rs_lib_name} HINTS "$ENV{VK_SDK_PATH}/Lib")
+    find_library(RS_LIB_${_rs_lib_name} NAMES "${_rs_lib_name}${RS_VK_LIB_SUFFIX}" ${_rs_lib_name}
+                 HINTS "${RS_VK_SDK_PATH}/Lib")
     if(RS_LIB_${_rs_lib_name})
         list(APPEND RS_VULKAN_RENDERER_LIBS ${RS_LIB_${_rs_lib_name}})
     else()
@@ -126,12 +141,14 @@ foreach(_rs_lib_name ${RS_GLSLANG_LIB_NAMES} ${RS_SPVC_LIB_NAMES})
 endforeach()
 
 if(RS_VULKAN_RENDERER_LIBS_MISSING)
-    message(STATUS "glslang/SPIRV-Cross libraries not found in Vulkan SDK (missing: "
-                    "${RS_VULKAN_RENDERER_LIBS_MISSING}) -- fine for now, only needed once "
-                    "the renderer is wired into the build")
+    message(FATAL_ERROR "glslang/SPIRV-Cross libraries not found in Vulkan SDK (missing: "
+                         "${RS_VULKAN_RENDERER_LIBS_MISSING}) -- rsrenderer.cpp/vkt need them. "
+                         "Install/update the Vulkan SDK (see README).")
 else()
     message(STATUS "glslang/SPIRV-Cross libraries found in Vulkan SDK")
 endif()
+
+find_package(Vulkan REQUIRED)
 
 ##############################################################################
 #                                                                            #
@@ -139,14 +156,14 @@ endif()
 #                                                                            #
 ##############################################################################
 
-# Phase B: rsparams/rsui/reashaderplugin are ported off VST3 and wired into this target.
-# ReaShaderRenderer/vkt (the Vulkan pipeline) are NOT wired in yet -- that's a separate, later
-# pass -- so process_frame still paints the Phase A diagnostic pattern instead of real video.
+# rsparams/rsui/reashaderplugin (ported off VST3) and ReaShaderRenderer/vkt (the Vulkan pipeline)
+# are both wired into this target -- process_frame drives real rendering.
 
 add_library(${PROJECT_NAME} MODULE
     src/clap/reashader_clap.cpp
 
     src/reashader/reashaderplugin.cpp
+    src/reashader/rsrenderer.cpp
 
     src/reashader/rsparams/rsparams.cpp
     src/reashader/rsparams/serdes.cpp
@@ -157,11 +174,23 @@ add_library(${PROJECT_NAME} MODULE
     src/reashader/tools/logging.cpp
     src/reashader/tools/paths.cpp
 
+    src/reashader/vkt/vktbuffers.cpp
+    src/reashader/vkt/vktcommandpool.cpp
+    src/reashader/vkt/vktcommon.cpp
+    src/reashader/vkt/vktdescriptors.cpp
+    src/reashader/vkt/vktdevices.cpp
+    src/reashader/vkt/vktimages.cpp
+    src/reashader/vkt/vktmesh.cpp
+    src/reashader/vkt/vktqueue.cpp
+    src/reashader/vkt/vktrenderpass.cpp
+
     # third-party sources these depend on (header-only otherwise)
     external/cwalk/cwalk.c
     external/restinio/dev/fmt/src/format.cc
     external/restinio/dev/nodejs/http_parser/http_parser.c
 )
+
+target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan ${RS_VULKAN_RENDERER_LIBS})
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
     PREFIX ""
@@ -190,10 +219,9 @@ endif()
 #
 # Generator-agnostic replacement for sln-make.inix's MSBuild pre-link shader step.
 # Each shader is a proper custom command with tracked input/output, so rebuilds are
-# incremental instead of "always recompile everything." Not linked into the Phase A
-# target yet (nothing consumes .spv output until the renderer is ported in Phase B) --
-# this just proves the pipeline and keeps the checked-in .spv files up to date if you
-# have the Vulkan SDK installed.
+# incremental instead of "always recompile everything." rsrenderer.cpp loads vert.spv/
+# frag.spv/pp_vert.spv at runtime (see SHADERS_DIR usage), so ReaShaderShaders is a real
+# build dependency of the plugin target now, not just a freestanding convenience target.
 
 find_program(RS_GLSLC_EXECUTABLE glslc HINTS "$ENV{VK_SDK_PATH}/Bin" "$ENV{VULKAN_SDK}/Bin")
 
@@ -232,8 +260,8 @@ endif()
 #
 # Generator-agnostic replacement for sln-make.inix's MSBuild pre-link resource-copy step.
 # CLAP plugins are a single flat file on Windows/Linux (no bundle folder like VST3), so
-# assets are staged next to the built .clap. Phase B decides how the ported renderer
-# locates them at runtime (e.g. resolving a path relative to the plugin binary).
+# assets are staged next to the built .clap -- ReaShaderRenderer locates them via
+# tools/paths.h's ASSETS_DIR (resolved relative to the plugin binary at runtime).
 
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/res/images" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/images"

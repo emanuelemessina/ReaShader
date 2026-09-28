@@ -9,11 +9,9 @@
 // CLAP plugin shell -- the thin, mandatory-plugin-API glue, playing the same role
 // src/vst3/ played for VST3 (mypluginentry.cpp + mypluginprocessor.cpp + myplugincontroller.cpp).
 //
-// Phase B status: owns a single ReaShaderPlugin instance (see reashaderplugin.h) and implements
-// the CLAP-facing surface (audio-ports, params, state, gui) against it. Real Vulkan rendering is
-// still NOT wired in -- process_frame below renders a REAPER project_time-driven diagnostic
-// pattern (color cycling + a sweeping bar) instead of calling into a renderer; that's a separate,
-// later pass.
+// Phase B+1 status: owns a single ReaShaderPlugin instance (see reashaderplugin.h) and implements
+// the CLAP-facing surface (audio-ports, params, state, gui) against it. process_frame below drives
+// the real ReaShaderPlugin::reaShaderRenderer pipeline (loadBitsToImage/drawFrame/transferFrame).
 //
 // REAPER video tap access path (confirmed working -- see spikes/clap-video-tap, now retired):
 //   host->get_extension(host, "cockos.reaper_extension")   -> reaper_plugin_info_t*
@@ -23,7 +21,6 @@
 //   video_CreateVideoProcessor(fxctx, VERSION)              -> IREAPERVideoProcessor*
 // (now implemented in ReaShaderPlugin::activate(), src/reashader/reashaderplugin.cpp)
 
-#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -34,6 +31,7 @@
 #include "video_frame.h"
 
 #include "plugin_state.h"
+#include "rsrenderer.h" // full ReaShaderRenderer type -- reashaderplugin.h only forward-declares it
 
 namespace ReaShader
 {
@@ -42,46 +40,52 @@ namespace ReaShader
 		constexpr const char* kPluginId = "com.emanuelemessina.reashader";
 		constexpr const char* kPluginName = "ReaShader";
 
-		// REAPER's 'RGBA' video fourcc is packed in memory as B,G,R,A (byte0 = B) -- confirmed
-		// empirically during the spike (a literal intended as opaque red rendered as opaque blue).
-		// Build pixels through this helper instead of hex literals.
-		inline int makePixelBGRA(uint8_t r, uint8_t g, uint8_t b, uint8_t a)
-		{
-			return (int)(((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b);
-		}
-
 		// -------- REAPER video processor callbacks --------
 
-		// Phase A placeholder, still in place: paints a project_time-driven diagnostic pattern so
-		// the pipeline stays verifiable end-to-end. A later pass replaces this with
-		// ReaShaderRenderer::drawFrame() et al.
-		IVideoFrame* processFrame(IREAPERVideoProcessor* vproc, const double* /*parmlist*/, int /*nparms*/,
-								   double project_time, double /*frate*/, int /*force_format*/)
+		// Drives the real pipeline. Two frames are involved: renderInputVideoFrame() returns
+		// REAPER's actual upstream video content and must be treated as immutable (return it or
+		// Release() it -- never write into it, per video_processor.h's own documented contract);
+		// newVideoFrame() creates the frame this function returns. REAPER's 'RGBA' fourcc is packed
+		// in memory as B,G,R,A (byte0 = B) -- confirmed empirically during the Phase A spike -- but
+		// that only matters for code building pixel values by hand, which this no longer does.
+		IVideoFrame* processFrame(IREAPERVideoProcessor* vproc, const double* parmlist, int nparms,
+								   double project_time, double frate, int /*force_format*/)
 		{
-			IVideoFrame* vf = vproc->newVideoFrame(640, 360, 'RGBA');
-			if (vf)
+			auto* reaShaderPlugin = static_cast<ReaShaderPlugin*>(vproc->userdata);
+			if (!reaShaderPlugin || !reaShaderPlugin->reaShaderRenderer)
+				return nullptr;
+
+			IVideoFrame* inputVf = vproc->renderInputVideoFrame(0, 'RGBA');
+			if (!inputVf)
+				return nullptr;
+
+			int w = inputVf->get_w();
+			int h = inputVf->get_h();
+			int* inputBits = reinterpret_cast<int*>(inputVf->get_bits()); // get_bits() returns char* upstream
+
+			IVideoFrame* outputVf = vproc->newVideoFrame(w, h, 'RGBA');
+			if (!outputVf)
 			{
-				int* bits = reinterpret_cast<int*>(vf->get_bits()); // get_bits() returns char* upstream
-				int w = vf->get_w();
-				int h = vf->get_h();
-				int rowspanInts = vf->get_rowspan() / (int)sizeof(int);
-
-				int phase = (int)std::fmod(project_time, 6.0) / 2; // 0, 1, or 2
-				int bg = makePixelBGRA(phase == 0 ? 255 : 0, phase == 1 ? 255 : 0, phase == 2 ? 255 : 0, 255);
-				int barColor = makePixelBGRA(255, 255, 255, 255);
-
-				double sweep = project_time - std::floor(project_time); // 0..1 over 1 second
-				int barX = (int)(sweep * w);
-				const int barWidth = 20;
-
-				for (int y = 0; y < h; y++)
-				{
-					int* row = bits + y * rowspanInts;
-					for (int x = 0; x < w; x++)
-						row[x] = (x >= barX && x < barX + barWidth) ? barColor : bg;
-				}
+				inputVf->Release();
+				return nullptr;
 			}
-			return vf;
+
+			auto* renderer = reaShaderPlugin->reaShaderRenderer.get();
+
+			renderer->checkFrameSize(w, h);
+			renderer->loadBitsToImage(inputBits);
+
+			// parmlist[0] is wet/dry; plugin param index i lands at parmlist index i+1 (confirmed
+			// working convention carried over from the pre-port VST3 code).
+			double videoParam = nparms > (int)Parameters::uVideoParam ? parmlist[Parameters::uVideoParam + 1] : 0.0;
+			double pushConstants[] = { project_time, frate, videoParam };
+			renderer->drawFrame(pushConstants);
+
+			int* outputBits = reinterpret_cast<int*>(outputVf->get_bits());
+			renderer->transferFrame(outputBits);
+
+			inputVf->Release();
+			return outputVf;
 		}
 
 		bool getVideoParamLocal(IREAPERVideoProcessor* vproc, int idx, double* valueOut)
@@ -319,7 +323,7 @@ namespace ReaShader
 															 "",
 															 "",
 															 "0.0.1",
-															 "THE Video Processor for Reaper (CLAP port, rendering not yet ported)",
+															 "THE Video Processor for Reaper",
 															 nullptr };
 
 		const clap_plugin_t* create_plugin(const clap_plugin_factory_t*, const clap_host_t* host, const char* pluginId)
@@ -376,7 +380,7 @@ namespace ReaShader
 	// translation unit) as the REAPER video-processor callbacks -- must have external linkage,
 	// hence defined here outside the anonymous namespace with names matching the header exactly.
 	// Kept as free functions since they're CLAP/REAPER-video-tap glue, not ReaShaderPlugin's own
-	// domain logic (they'll move once the renderer is ported).
+	// domain logic.
 	IVideoFrame* processVideoFrame(IREAPERVideoProcessor* vproc, const double* parmlist, int nparms,
 									double project_time, double frate, int force_format)
 	{

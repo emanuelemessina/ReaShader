@@ -35,11 +35,10 @@
 #include "vk_mem_alloc.h"
 
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
+#define GLM_ENABLE_EXPERIMENTAL // needed by gtx/transform.hpp and gtx/hash.hpp below, both experimental extensions
 #include "glm/glm.hpp"
 #include "glm/gtx/transform.hpp"
 #include "glm/vec2.hpp"
-
-#define GLM_ENABLE_EXPERIMENTAL
 #include "glm/gtx/hash.hpp"
 
 #define VK_CHECK_RESULT(f)                                                                                             \

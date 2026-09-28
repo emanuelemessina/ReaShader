@@ -14,7 +14,7 @@
     ],
     "tasks": [
         {
-            "label": "build",
+            "label": "build+deploy",
             "type": "shell",
             "detail": "Configures CMake (idempotent), then builds the chosen preset",
             "command": "cmake -DPROFILE=${input:buildProfile} -P build.cmake",

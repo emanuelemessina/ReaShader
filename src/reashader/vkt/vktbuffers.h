@@ -38,6 +38,7 @@ namespace vkt
 			AllocatedBuffer* map(void** data)
 			{
 				VK_CHECK_RESULT(vmaMapMemory(vktDevice->vmaAllocator, allocation, data));
+				return this;
 			}
 
 			AllocatedBuffer* unmap()

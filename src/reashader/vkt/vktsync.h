@@ -27,7 +27,7 @@ namespace  vkt {
 		template <VkSyncObject s>
 		inline void destroySyncObjects(Logical::Device* vktDevice, const s* first, int count) {
 			for (int i = 0; i < count; i++)
-				destroySyncObject(vktDevice, *s[i]);
+				destroySyncObject(vktDevice, first[i]);
 		}
 
 		inline VkFence createFence(Logical::Device* vktDevice, bool signaled, bool pushToDeletionQueue = true) {

@@ -7,8 +7,8 @@
  *****************************************************************************/
 
 #include "rsrenderer.h"
+#include "reashaderplugin.h"
 #include "rsparams/rsparams.h"
-#include "rsprocessor.h"
 #include "tools/compiler_codes.h"
 #include "tools/exceptions.h"
 #include "rsparams/rsparams.h"
@@ -50,8 +50,8 @@ namespace ReaShader
 	using ShaderUniformBuffer = vkt::Pipeline::Shader::UniformBuffer;
 	using ShaderSampledImage = vkt::Pipeline::Shader::SampledImage;
 
-	ReaShaderRenderer::ReaShaderRenderer(ReaShaderProcessor* reaShaderProcessor)
-		: reaShaderProcessor(reaShaderProcessor)
+	ReaShaderRenderer::ReaShaderRenderer(ReaShaderPlugin* reaShaderPlugin)
+		: reaShaderPlugin(reaShaderPlugin)
 	{
 	}
 
@@ -1007,22 +1007,22 @@ namespace ReaShader
 
 			std::reverse(devicesProperties.begin(), devicesProperties.end());
 
-			reaShaderProcessor->setRenderingDevicesList(devicesProperties);
+			std::vector<std::string> deviceNames;
+			for (auto& props : devicesProperties)
+				deviceNames.push_back(props.deviceName);
+			reaShaderPlugin->setRenderingDevicesList(deviceNames);
 
 			vkSuitablePhysicalDevices = deviceSelector.getDevices();
 
 			std::reverse(vkSuitablePhysicalDevices.begin(), vkSuitablePhysicalDevices.end());
 
 			// choose stored rendering device index
-			int renderingDeviceIndex = (int)(dynamic_cast<Parameters::Int8u&>(
-												 *reaShaderProcessor->processor_rsParams[Parameters::uRenderingDevice])
-												 .value);
+			int renderingDeviceIndex = (int)reaShaderPlugin->getRenderingDeviceIndex();
 			if (renderingDeviceIndex >=
 				vkSuitablePhysicalDevices.size()) // fall back to 0 if out of index (device list changed)
 			{
 				renderingDeviceIndex = 0;
-				dynamic_cast<Parameters::Int8u&>(*reaShaderProcessor->processor_rsParams[Parameters::uRenderingDevice])
-					.value = 0;
+				reaShaderPlugin->setRenderingDeviceIndex(0);
 			}
 
 			setUpDevice(renderingDeviceIndex);
@@ -1072,7 +1072,7 @@ namespace ReaShader
 
 		// vst param system
 		std::vector<std::unique_ptr<Parameters::IParameter>> newParameters;
-		int currentParamId = reaShaderProcessor->processor_rsParams.size();
+		int currentParamId = (int)reaShaderPlugin->rsParamsCount();
 
 		// descriptors
 		auto dslb = vkt::Descriptors::DescriptorSetLayoutBuilder(vktDevice);
@@ -1239,12 +1239,7 @@ namespace ReaShader
 		// add parameters
 
 		for (auto& ptr : newParameters)
-		{
-			// send a param add to controller
-			reaShaderProcessor->_webuiSendParamAdd(ptr);
-			// move param into processor list
-			reaShaderProcessor->processor_rsParams.push_back(std::move(ptr));
-		}
+			reaShaderPlugin->addRendererParam(ptr);
 
 		// wait for param population
 
