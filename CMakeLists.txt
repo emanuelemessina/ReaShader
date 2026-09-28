@@ -15,27 +15,14 @@ endif()
 
 # Dirs
 
-set(BUILD_DEPS_DIR "${BUILD_DIR}/deps")
-file(MAKE_DIRECTORY "${BUILD_DEPS_DIR}")
-
 # Build Deps
 
 # cmake-git-versioning
 
-set(CGV_PATH "${BUILD_DEPS_DIR}/cmake-git-versioning")
+set(CGV_PATH "${CMAKE_CURRENT_LIST_DIR}/external/cmake-git-versioning")
 
 if(NOT EXISTS "${CGV_PATH}/cmake-git-versioning.cmake")
-    message(STATUS "cmake-git-versioning not found at ${CGV_PATH} -- cloning it there...")
-    execute_process(
-        COMMAND ${GIT_EXECUTABLE} clone --depth 1
-                https://github.com/emanuelemessina/cmake-git-versioning.git
-                "${CGV_PATH}"
-        RESULT_VARIABLE RS_CGV_CLONE_RESULT
-    )
-    if(NOT RS_CGV_CLONE_RESULT EQUAL 0)
-        message(FATAL_ERROR "Failed to clone cmake-git-versioning into ${CGV_PATH} "
-                             "(pass -DRS_CGV_PATH=<path> to point at an existing checkout instead)")
-    endif()
+    message(FATAL_ERROR "cmake-git-versioning not found at ${CGV_PATH}")
 endif()
 
 include("${CGV_PATH}/cmake-git-versioning.cmake")
