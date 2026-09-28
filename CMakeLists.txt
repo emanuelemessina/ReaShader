@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.21)
 # Git
 
 find_package(Git)
-if(Git_FOUND)
+if(GIT_FOUND)
     message("Git found: ${GIT_EXECUTABLE}")
 else()
     message(FATAL_ERROR "Git not found!")
@@ -15,33 +15,30 @@ endif()
 
 # Dirs
 
-set(BUILD_DIR "${CMAKE_SOURCE_DIR}/build")
-file(MAKE_DIRECTORY "${BUILD_DIR}")
-
-set(BUILD_DEPS_DIR "${CMAKE_SOURCE_DIR}/build/deps")
+set(BUILD_DEPS_DIR "${BUILD_DIR}/deps")
 file(MAKE_DIRECTORY "${BUILD_DEPS_DIR}")
 
 # Build Deps
 
 # cmake-git-versioning
 
-set(RS_CGV_PATH "${BUILD_DEPS_DIR}/cmake-git-versioning")
+set(CGV_PATH "${BUILD_DEPS_DIR}/cmake-git-versioning")
 
-if(NOT EXISTS "${RS_CGV_PATH}/cmake-git-versioning.cmake")
-    message(STATUS "cmake-git-versioning not found at ${RS_CGV_PATH} -- cloning it there...")
+if(NOT EXISTS "${CGV_PATH}/cmake-git-versioning.cmake")
+    message(STATUS "cmake-git-versioning not found at ${CGV_PATH} -- cloning it there...")
     execute_process(
         COMMAND ${GIT_EXECUTABLE} clone --depth 1
                 https://github.com/emanuelemessina/cmake-git-versioning.git
-                "${RS_CGV_PATH}"
+                "${CGV_PATH}"
         RESULT_VARIABLE RS_CGV_CLONE_RESULT
     )
     if(NOT RS_CGV_CLONE_RESULT EQUAL 0)
-        message(FATAL_ERROR "Failed to clone cmake-git-versioning into ${RS_CGV_PATH} "
+        message(FATAL_ERROR "Failed to clone cmake-git-versioning into ${CGV_PATH} "
                              "(pass -DRS_CGV_PATH=<path> to point at an existing checkout instead)")
     endif()
 endif()
 
-include("${RS_CGV_PATH}/cmake-git-versioning.cmake")
+include("${CGV_PATH}/cmake-git-versioning.cmake")
 
 ##################
 # Project

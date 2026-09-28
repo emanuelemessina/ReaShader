@@ -17,22 +17,7 @@
             "label": "build",
             "type": "shell",
             "detail": "Configures CMake (idempotent), then builds the chosen preset",
-            "windows": {
-                // Ninja needs cl.exe on PATH.
-                // Locate the VS install via vswhere (shipped with Visual Studio Installer),
-                // then load MSVC environment with vcvars.
-                "command": "for /f \"usebackq delims=\" %i in (`\"%ProgramFiles(x86)%\\Microsoft Visual Studio\\Installer\\vswhere.exe\" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VSINSTALLPATH=%i & if \"!VSINSTALLPATH:~-1!\"==\" \" set \"VSINSTALLPATH=!VSINSTALLPATH:~0,-1!\" & call \"!VSINSTALLPATH!\\VC\\Auxiliary\\Build\\vcvars64.bat\" && cmake --preset windows-${input:buildProfile} && cmake --build --preset windows-${input:buildProfile}",
-                "options": {
-                    "shell": {
-                        "executable": "cmd.exe",
-                        "args": [
-                            "/d",
-                            "/v:on",
-                            "/c"
-                        ]
-                    }
-                }
-            },
+            "command": "cmake -DPROFILE=${input:buildProfile} -P build.cmake",
             "group": {
                 "kind": "build",
                 "isDefault": true
