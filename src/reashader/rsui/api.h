@@ -10,8 +10,6 @@
 
 #include "rsparams/rsparams.h"
 #include "tools/logging.h"
-#include "tools/strings.h"
-#include "vkt/vktcommon.h"
 
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
@@ -46,7 +44,7 @@ namespace ReaShader
 		};
 
 		// respect the messagetype enum order and size
-		static const std::string typeStrings[] = { 
+		static const std::string typeStrings[] = {
 			"vstParamUpdate",
 			"paramUpdate",
 												   "trackInfo",
@@ -111,10 +109,10 @@ namespace ReaShader
 				}
 			}
 
-			// vst params have a preferential path because they can be updated also from the processor
+			// numeric params have a preferential path because their value can also be updated by host automation
 			// other param types take the more general route
 			MessageHandler& reactToVSTParamUpdate(
-				const std::function<void(Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue newValue)>& callback)
+				const std::function<void(Parameters::Id, double newValue)>& callback)
 			{
 				if (!(_hasField("value")))
 					return *this;
@@ -127,7 +125,7 @@ namespace ReaShader
 			}
 
 			MessageHandler& reactToParamUpdate(
-				const std::function<void(Steinberg::Vst::ParamID, json data)>& callback)
+				const std::function<void(Parameters::Id, json data)>& callback)
 			{
 				if (!(_hasField("data")))
 					return *this;
@@ -143,7 +141,7 @@ namespace ReaShader
 			{
 				if (!(_hasField("param")))
 					return *this;
-				
+
 				Parameters::Type paramType = (Parameters::Type)msg["param"]["typeId"];
 
 				if (paramType >= Parameters::Type::numParamTypes)
@@ -264,7 +262,7 @@ namespace ReaShader
 		class MessageBuilder
 		{
 		  public:
-			static json buildVSTParamUpdate(Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue newValue)
+			static json buildVSTParamUpdate(Parameters::Id id, double newValue)
 			{
 				json j;
 				j["type"] = typeStrings[VSTParamUpdate];
@@ -272,7 +270,7 @@ namespace ReaShader
 				j["value"] = newValue;
 				return j;
 			}
-			static json buildParamUpdate(Steinberg::Vst::ParamID id, json newValue)
+			static json buildParamUpdate(Parameters::Id id, json newValue)
 			{
 				json j;
 				j["type"] = typeStrings[ParamUpdate];
@@ -358,17 +356,21 @@ namespace ReaShader
 				j["type"] = typeStrings[ServerShutdown];
 				return j;
 			}
-			static json buildRenderingDevicesList(int currentSelectedDevice, std::vector<VkPhysicalDeviceProperties>& suitableDevicesProperties)
+			// suitableDeviceNames: display names of the rendering-capable devices found by the
+			// renderer (was a std::vector<VkPhysicalDeviceProperties>& -- this layer shouldn't need
+			// to know about Vulkan types just to relay a list of names to the web UI).
+			static json buildRenderingDevicesList(int currentSelectedDevice,
+												   const std::vector<std::string>& suitableDeviceNames)
 			{
 				json j;
 				j["type"] = typeStrings[RSUI::RenderingDevicesList];
 
 				j["selected"] = currentSelectedDevice;
 
-				for (size_t i = 0; i < suitableDevicesProperties.size(); i++)
+				for (size_t i = 0; i < suitableDeviceNames.size(); i++)
 				{
 					json deviceProps;
-					deviceProps["name"] = suitableDevicesProperties[i].deviceName;
+					deviceProps["name"] = suitableDeviceNames[i];
 
 					j["devices"][i] = deviceProps;
 				}

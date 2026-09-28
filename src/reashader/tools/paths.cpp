@@ -66,7 +66,10 @@ namespace tools {
 			wchar_t path[MAX_PATH];
 			HMODULE hm = NULL;
 
-			if (GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+			// explicit "W" suffix -- GetModuleHandleEx/GetModuleFileName are ANSI/Unicode macros
+			// that resolve based on whether UNICODE is defined, which isn't guaranteed across
+			// compilers/toolchains; this code always wants the wide (wchar_t) variant.
+			if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
 				GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
 				(LPCWSTR)&getDynamicLibraryPath, &hm) == 0)
 			{
@@ -74,7 +77,7 @@ namespace tools {
 				fprintf(stderr, "GetModuleHandle failed, error = %d\n", ret);
 				// Return or however you want to handle an error.
 			}
-			if (GetModuleFileName(hm, path, sizeof(path)) == 0)
+			if (GetModuleFileNameW(hm, path, sizeof(path)) == 0)
 			{
 				int ret = GetLastError();
 				fprintf(stderr, "GetModuleFileName failed, error = %d\n", ret);

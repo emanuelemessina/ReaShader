@@ -44,7 +44,7 @@ void log_to_file(LogLevel level, const char* sender, const char* title, const ch
 	else
 		openMode |= std::ios::app;
 
-	std::string filePath = tools::paths::join({ VST3_BUNDLE_DIR, "rs.log" });
+	std::string filePath = tools::paths::join({ REASHADER_PLUGIN_DIR, "rs.log" });
 	std::ofstream logFile;
 
 	logFile.open(filePath, openMode | std::ios::out);

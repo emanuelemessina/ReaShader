@@ -11,10 +11,12 @@
 #include <string>
 #include <vector>
 
-#define VST3_BUNDLE_DIR tools::paths::goUp(tools::paths::getDynamicLibraryDir(), 1)
-#define RESOURCES_DIR tools::paths::join({VST3_BUNDLE_DIR,"Resources"})
+// CLAP plugins are a single flat file (no VST3-style bundle folder) -- resources are staged
+// directly next to the built .clap by CMakeLists.txt's POST_BUILD step, not under a "Resources"
+// subfolder one level up like the old VST3 layout assumed.
+#define REASHADER_PLUGIN_DIR tools::paths::getDynamicLibraryDir()
 
-#define GET_RESOURCE_DIR(resource_dirname) tools::paths::join({RESOURCES_DIR, resource_dirname})
+#define GET_RESOURCE_DIR(resource_dirname) tools::paths::join({REASHADER_PLUGIN_DIR, resource_dirname})
 
 #define ASSETS_DIR GET_RESOURCE_DIR("assets")
 #define RSUI_DIR GET_RESOURCE_DIR("rsui")

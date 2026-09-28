@@ -15,25 +15,23 @@
 
 	| preset version number (uint8) |
 	[list of serialized parameters]
-		| IBaseParam deserialization | param type id (int8) | derived struct serialization |
+		| IParameter fields | param type id (int8) | derived struct serialization |
 	| end magic (uint32) = -1 |
 
 	Parameter members order:
 
 	struct IParameter
 	{
-		Steinberg::Vst::ParamID id;
-
+		Parameters::Id id; // uint32
 		std::string title;
-
 		Group group;
 	}
-	struct VSTParameter : IParameter
+	struct NumericParameter : IParameter
 	{
 		std::string units;
-		Steinberg::Vst::ParamValue defaultValue = 0.5f;
-		Steinberg::Vst::ParamValue value = defaultValue;
-		Steinberg::int32 steinbergFlags = Vst::ParameterInfo::kCanAutomate;
+		double defaultValue = 0.5;
+		double value = defaultValue;
+		bool automatable = true;
 	}
 	struct Int8u : IParameter
 	{
@@ -62,7 +60,7 @@ namespace ReaShader::Parameters
 		j["group"] = paramGroupStrings[(uint8_t)group];
 		j["typeId"] = (uint8_t)typeId();
 		j["type"] = paramTypeStrings[(uint8_t)typeId()];
-		
+
 		toJsonDerived(j);
 
 		return j;
@@ -75,63 +73,63 @@ namespace ReaShader::Parameters
 
 		fromJsonDerived(param);
 	}
-	bool IParameter::serialize(IBStreamer& streamer) const
+	bool IParameter::serialize(ParamWriter& writer) const
 	{
 		return
-		// IParameter
+			// IParameter
 
-		// param id
-		streamer.writeInt32u(id) &&
-		// param title (null terminated)
-		streamer.writeStr8(title.c_str()) &&
-		// reashaderparam group
-		streamer.writeInt8u((uint8)group) &&
-		// param type id
-		streamer.writeInt8u((uint8)typeId()) &&
-		
-		// DerivedParam
-		serializeDerived(streamer);
+			// param id
+			writer.writeInt32u(id) &&
+			// param title (null terminated)
+			writer.writeStr8(title) &&
+			// reashaderparam group
+			writer.writeInt8u((uint8_t)group) &&
+			// param type id
+			writer.writeInt8u((uint8_t)typeId()) &&
+
+			// DerivedParam
+			serializeDerived(writer);
 	}
-	bool IParameter::deserialize_v1(TypeInstantiator* ti, IBStreamer& streamer, std::unique_ptr<IParameter>& out)
+	bool IParameter::deserialize_v1(TypeInstantiator* ti, ParamReader& reader, std::unique_ptr<IParameter>& out)
 	{
 		out = nullptr;
 
 		// param id
 		uint32_t id;
-		if (!streamer.readInt32u((Steinberg::uint32&)id))
+		if (!reader.readInt32u(id))
 			return false;
 
 		// check end magic
-		if (id == -1)
+		if (id == (uint32_t)-1)
 		{
 			return true;
 		}
 
 		// param title
 		std::string title;
-		if (!readStr8(streamer, title))
+		if (!reader.readStr8(title))
 			return false;
 
 		// reashaderparam group
-		Group group;
-		if (!streamer.readInt8u((uint8&)group))
+		uint8_t group;
+		if (!reader.readInt8u(group))
 			return false;
 
 		// param type id
-		Type typeId;
-		if (!streamer.readInt8u((uint8&)typeId))
+		uint8_t typeId;
+		if (!reader.readInt8u(typeId))
 			return false;
 
-		std::unique_ptr<IParameter> tmp = ti->wield(typeId);
+		std::unique_ptr<IParameter> tmp = ti->wield((Type)typeId);
 
 		if (tmp == nullptr)
 			return false;
 
 		tmp->id = id;
 		tmp->title = std::move(title);
-		tmp->group = group;
+		tmp->group = (Group)group;
 
-		if (!tmp->deserializeDerived_v1(streamer))
+		if (!tmp->deserializeDerived_v1(reader))
 			return false;
 
 		out = std::move(tmp);
@@ -139,50 +137,50 @@ namespace ReaShader::Parameters
 		return true;
 	}
 
-// ----------------------
+	// ----------------------
 
-	// VSTParameter
+	// NumericParameter
 
-	void VSTParameter::toJsonDerived(json& j) const
+	void NumericParameter::toJsonDerived(json& j) const
 	{
 		j["units"] = units;
 		j["defaultValue"] = defaultValue;
 		j["value"] = value;
 	}
-	void VSTParameter::fromJsonDerived(json& derived)
+	void NumericParameter::fromJsonDerived(json& derived)
 	{
 		units = derived["units"];
 		defaultValue = derived["defaultValue"];
 		value = derived["value"];
 	}
-	bool VSTParameter::serializeDerived(IBStreamer& streamer) const
+	bool NumericParameter::serializeDerived(ParamWriter& writer) const
 	{
 		return
-		// units (null terminated)
-		streamer.writeStr8(units.c_str()) &&
-		// default value
-		streamer.writeDouble(defaultValue) &&
-		// value
-		streamer.writeDouble(value) &&
-		// steinberg flags
-		streamer.writeInt32(steinbergFlags)
-		;
+			// units (null terminated)
+			writer.writeStr8(units) &&
+			// default value
+			writer.writeDouble(defaultValue) &&
+			// value
+			writer.writeDouble(value) &&
+			// automatable flag
+			writer.writeInt8u(automatable ? 1 : 0);
 	}
-	
-	bool VSTParameter::deserializeDerived_v1(IBStreamer& streamer)
+
+	bool NumericParameter::deserializeDerived_v1(ParamReader& reader)
 	{
-		return
-		// units
-		 readStr8(streamer, units) &&
-		// default value
-		streamer.readDouble(defaultValue) &&
-		// value
-		streamer.readDouble(value) &&
-		// steinberg flags
-		streamer.readInt32(steinbergFlags) 
-		;
+		uint8_t automatableByte = 1;
+		bool ok =
+			// units
+			reader.readStr8(units) &&
+			// default value
+			reader.readDouble(defaultValue) &&
+			// value
+			reader.readDouble(value) &&
+			// automatable flag
+			reader.readInt8u(automatableByte);
+		automatable = automatableByte != 0;
+		return ok;
 	}
-		
 
 	// Int8u
 
@@ -194,19 +192,17 @@ namespace ReaShader::Parameters
 	{
 		value = derived["value"];
 	}
-	bool Int8u::serializeDerived(IBStreamer& streamer) const
+	bool Int8u::serializeDerived(ParamWriter& writer) const
 	{
 		return
-		// value
-		streamer.writeInt8u(value)
-		;
+			// value
+			writer.writeInt8u(value);
 	}
-	bool Int8u::deserializeDerived_v1(IBStreamer& streamer)
+	bool Int8u::deserializeDerived_v1(ParamReader& reader)
 	{
 		return
-		// value
-		streamer.readInt8u(value)
-		;
+			// value
+			reader.readInt8u(value);
 	}
 
 	// String
@@ -219,18 +215,16 @@ namespace ReaShader::Parameters
 	{
 		value = derived["value"];
 	}
-	bool String::serializeDerived(IBStreamer& streamer) const 
-	{ 
-		return
-		// value
-		streamer.writeStr8(value.c_str())
-		;
-	}
-	bool String::deserializeDerived_v1(IBStreamer& streamer) 
+	bool String::serializeDerived(ParamWriter& writer) const
 	{
 		return
-		// value
-		readStr8(streamer, value)
-		;
+			// value
+			writer.writeStr8(value);
 	}
-}
+	bool String::deserializeDerived_v1(ParamReader& reader)
+	{
+		return
+			// value
+			reader.readStr8(value);
+	}
+} // namespace ReaShader::Parameters
