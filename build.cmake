@@ -40,14 +40,23 @@ else()
 endif()
 
 # Configure
+#
+# Only force a full configure the first time (fresh/cleaned build dir). 
+# After that, this build script re-runs configure on its own, 
+# whenever a tracked input (CMakeLists.txt, CMakePresets.json, relevant .git files, ...) 
+# actually changed since the last generate
 
-execute_process(
-    COMMAND ${CMAKE_COMMAND} --preset ${PRESET}
-    WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-    RESULT_VARIABLE CONFIGURE_RESULT
-)
-if(NOT CONFIGURE_RESULT EQUAL 0)
-    message(FATAL_ERROR "Configure failed (preset ${PRESET})")
+if(NOT EXISTS "${BUILD_PRESET_DIR}/CMakeCache.txt")
+
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} --preset ${PRESET}
+        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
+        RESULT_VARIABLE CONFIGURE_RESULT
+    )
+    if(NOT CONFIGURE_RESULT EQUAL 0)
+        message(FATAL_ERROR "Configure failed (preset ${PRESET})")
+    endif()
+
 endif()
 
 # Build
