@@ -55,17 +55,24 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # cwalk, json, boxer, the Vulkan-ecosystem paths) is dead code until Phase B ports
 # ReaShaderProcessor/ReaShaderRenderer/rsparams/rsui onto this shell -- left wired
 # up here, unchanged, so Phase B doesn't have to re-discover this setup.
+#
+# GLM/VMA/tinyobjloader/STB are all header-only and vendored as git submodules
+# (external/glm, external/VulkanMemoryAllocator, external/tinyobjloader, external/stb)
+# -- no manual download/placement needed, unlike before. glslang and SPIRV-Cross are
+# NOT vendored: the installed Vulkan SDK already ships usable static libs for both
+# (see the find_library block below), so building/placing them by hand is no longer
+# required either. The Vulkan SDK itself remains the one dependency that has to be
+# installed manually -- it's a full installer, not something to vendor.
 
-if(DEFINED $ENV{VK_SDK_PATH}) # env var
-    message(FATAL_ERROR "Vulkan SDK is not installed!")
-endif()
+set(RS_GLM_PATH "${CMAKE_CURRENT_LIST_DIR}/external/glm" CACHE PATH "GLM path")
+set(RS_VMA_PATH "${CMAKE_CURRENT_LIST_DIR}/external/VulkanMemoryAllocator" CACHE PATH "Vulkan Memory Allocator path")
+set(RS_TOL_PATH "${CMAKE_CURRENT_LIST_DIR}/external/tinyobjloader" CACHE PATH "Tiny Obj Loader path")
+set(RS_STB_PATH "${CMAKE_CURRENT_LIST_DIR}/external/stb" CACHE PATH "STB path")
 
-set(RS_GLM_PATH "$ENV{VK_SDK_PATH}/../glm" CACHE PATH "GLM path")
-set(RS_VMA_PATH "$ENV{VK_SDK_PATH}/../VulkanMemoryAllocator" CACHE PATH "Vulkan Memory Allocator path (contains include and build)")
-set(RS_TOL_PATH "$ENV{VK_SDK_PATH}/../tinyobjloader" CACHE PATH "Tiny Obj Loader path")
-set(RS_STB_PATH "$ENV{VK_SDK_PATH}/../stb" CACHE PATH "STB path")
-set(RS_GLSLANG_PATH "$ENV{VK_SDK_PATH}/../glslang" CACHE PATH "glslang path")
-set(RS_SPVC_PATH "$ENV{VK_SDK_PATH}/../SPIRV-Cross" CACHE PATH "spirv cross path")
+# SPIRV-Cross headers: defaults to the Vulkan SDK's copy. If a given SDK version turns
+# out to be incompatible (this has happened before -- see README), override this cache
+# variable to point at a manually built SPIRV-Cross checkout instead.
+set(RS_SPVC_PATH "$ENV{VK_SDK_PATH}/Include" CACHE PATH "SPIRV-Cross headers path")
 
 include_directories (
     "external/clap/include"
@@ -86,16 +93,45 @@ include_directories (
 
     ${RS_SPVC_PATH}
 
-    # we use glslang headers in the vulkan sdk, since they work
-
     ${RS_GLM_PATH}
     "${RS_VMA_PATH}/include"
     ${RS_TOL_PATH}
     ${RS_STB_PATH}
 
-    # at the end because of the override with the manual downloaded libraries (glslang, spirv...)
+    # glslang headers also come from here (glslang/... is a subdir of the SDK's Include) --
+    # at the end because of the override with any manually placed libraries above.
     "$ENV{VK_SDK_PATH}/include"
 )
+
+# glslang / SPIRV-Cross static libraries: both ship prebuilt (release-only) inside the
+# installed Vulkan SDK's Lib/ folder, so nothing needs to be built by hand. These are
+# looked up optionally (like RS_GLSLC_EXECUTABLE below) -- a missing Vulkan SDK must not
+# break a build that doesn't need the renderer yet. Not linked into any target yet --
+# nothing consumes glslang/SPIRV-Cross symbols until the renderer is wired in (Phase B+1);
+# RS_VULKAN_RENDERER_LIBS is left populated here so that pass can just target_link_libraries
+# against it without re-discovering these paths.
+
+set(RS_GLSLANG_LIB_NAMES glslang OSDependent MachineIndependent GenericCodeGen OGLCompiler)
+set(RS_SPVC_LIB_NAMES spirv-cross-core spirv-cross-glsl)
+set(RS_VULKAN_RENDERER_LIBS "")
+set(RS_VULKAN_RENDERER_LIBS_MISSING "")
+
+foreach(_rs_lib_name ${RS_GLSLANG_LIB_NAMES} ${RS_SPVC_LIB_NAMES})
+    find_library(RS_LIB_${_rs_lib_name} NAMES ${_rs_lib_name} HINTS "$ENV{VK_SDK_PATH}/Lib")
+    if(RS_LIB_${_rs_lib_name})
+        list(APPEND RS_VULKAN_RENDERER_LIBS ${RS_LIB_${_rs_lib_name}})
+    else()
+        list(APPEND RS_VULKAN_RENDERER_LIBS_MISSING ${_rs_lib_name})
+    endif()
+endforeach()
+
+if(RS_VULKAN_RENDERER_LIBS_MISSING)
+    message(STATUS "glslang/SPIRV-Cross libraries not found in Vulkan SDK (missing: "
+                    "${RS_VULKAN_RENDERER_LIBS_MISSING}) -- fine for now, only needed once "
+                    "the renderer is wired into the build")
+else()
+    message(STATUS "glslang/SPIRV-Cross libraries found in Vulkan SDK")
+endif()
 
 ##############################################################################
 #                                                                            #

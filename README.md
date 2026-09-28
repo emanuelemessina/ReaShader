@@ -33,7 +33,17 @@ Install [CMake](https://cmake.org/) (3.21+) and [Ninja](https://ninja-build.org/
 
 ### CMake modules
 
-- [cmake-git-versioning](https://github.com/emanuelemessina/cmake-git-versioning): automatically cloned
+- [cmake-git-versioning](https://github.com/emanuelemessina/cmake-git-versioning): vendored as a git submodule — initialize submodules (see below), CMake hard-fails at configure time if it's missing rather than fetching it automatically.
+
+### Submodules
+
+This repo uses git submodules for most vendored dependencies. After cloning:
+
+```
+git submodule update --init --recursive
+```
+
+(or clone with `git clone --recurse-submodules` in the first place)
 
 ### CLAP
 
@@ -41,16 +51,11 @@ Already vendored under `external/clap` (plain headers, MIT-licensed) — nothing
 
 ### Vulkan / graphics libraries (not needed yet)
 
-The Vulkan SDK and the graphics libraries below aren't required to build the plugin today — they're only wired into `CMakeLists.txt` in preparation for porting the real renderer onto the new CLAP shell. Skip this section unless you're working on that port.
+The Vulkan SDK isn't required to build the plugin today — it's only wired into `CMakeLists.txt` in preparation for porting the real renderer onto the new CLAP shell. Skip this section unless you're working on that port.
 
-Download [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/) and install (preferably in the default location), then place the following next to the `x.x.x.x` folder inside the Vulkan install location, as CMake has the include paths defaulted to there:
+GLM, Tiny Obj Loader, STB, and Vulkan Memory Allocator are all header-only and vendored as git submodules (see above) — nothing to download or build by hand.
 
-- [GLM](https://github.com/g-truc/glm)
-- [Tiny Obj Loader](https://github.com/tinyobjloader/tinyobjloader)
-- [STB](https://github.com/nothings/stb)
-- [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) : to be built with cmake (both debug and release)
-- [glslang](https://github.com/KhronosGroup/glslang) has to be built with cmake (set the build dir to `/build`) (both debug and release!), then the project will automatically find the static library file paths. _(Vulkan sdk has it but the version is obsolete and has conflicts)_
-- [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) _(Same problem as glslang with the vulkan sdk, to be built)_
+glslang and SPIRV-Cross are **not** vendored: install the [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/) (preferably in the default location) and CMake finds their headers/prebuilt static libraries directly inside the SDK install — no separate download, placement, or build step needed for either. If a given SDK's bundled version ever proves incompatible (this has happened in the past with older SDK releases), `RS_SPVC_PATH`/the glslang `find_library` hints in `CMakeLists.txt` can be overridden to point at a manually built checkout of [glslang](https://github.com/KhronosGroup/glslang) or [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) instead.
 
 ## Tasks
 
