@@ -1,9 +1,4 @@
-﻿/.vs
-.vs/
-
-!.vs/settings.json
-
-.claude
+﻿.claude
 
 test
 releases
@@ -11,3 +6,4 @@ releases
 build
 
 CMakeUserPresets.json
+*.bak
