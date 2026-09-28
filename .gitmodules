@@ -1,3 +1,6 @@
 [submodule "nlohmann-json"]
 	path = external/json
 	url = https://github.com/nlohmann/json
+[submodule "WDL"]
+	path = external/reaper-sdk/WDL
+	url = https://github.com/justinfrankel/WDL

@@ -1,8 +1,3 @@
-﻿/.vs
-.vs/
-
-!.vs/settings.json
-
 
 test
 releases
@@ -10,3 +5,4 @@ releases
 build
 
 CMakeUserPresets.json
+*.bak
