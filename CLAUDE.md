@@ -21,14 +21,17 @@ There is no test suite or lint step. Verification is manual, in REAPER, using th
 
 ### Prerequisites
 
-- **CMake ≥ 3.21** and **Ninja**.
-- **[cmake-git-versioning](https://github.com/emanuelemessina/cmake-git-versioning)** module, cloned anywhere — its path must be supplied as `RS_CGV_PATH` (either as a `-D` CMake cache variable, or via the `REASHADER_CGV_PATH` environment variable, which [CMakePresets.json](CMakePresets.json) reads automatically).
+- **CMake ≥ 3.21** and **Ninja**. That's it — everything else bootstraps itself (see below).
 - **CLAP headers** are vendored under `external/clap` (plain copied headers, MIT-licensed, no build step, not a submodule) — nothing to install.
 - Everything else currently in `external/` (`reaper-sdk`, `restinio`, `boxer`, `cwalk`, `json`) is wiring left over for Phase B; the Phase A build doesn't touch it. The Vulkan SDK and the manually-placed GLM/VMA/tinyobjloader/STB/glslang/SPIRV-Cross libraries (see the CMake cache variables `RS_GLM_PATH` etc. near the top of `CMakeLists.txt`) are **not required** to build today — they'll matter again once Phase B wires in the real renderer.
 
+**`cmake-git-versioning` bootstraps automatically**: `CMakeLists.txt` auto-clones [cmake-git-versioning](https://github.com/emanuelemessina/cmake-git-versioning) into `build/deps/cmake-git-versioning` on first configure if `RS_CGV_PATH` isn't pointed elsewhere (via `-D` or the `REASHADER_CGV_PATH` env var). It's a real, separate git clone (not vendored) so it shows up as its own repo in VS Code's multi-repo source control view — it's a project of the same author and may want editing in place. `build/` (including `build/deps/`) is gitignored.
+
 ### Configure & build
 
-Either open the repo in VS Code with the CMake Tools extension (it will read `CMakePresets.json` and prompt for a kit/toolchain), or from the CLI:
+**Quickest path**: run the **`build`** task (`.vscode/tasks.json` — Ctrl/Cmd+Shift+B, it's the default build task). There's also a **`clean`** task that wipes the whole preset build directory (CMake cache, object files, staged assets, the built `.clap`) for a fresh reconfigure. Both currently hardcode the `windows-debug` preset and, on Windows, load the MSVC environment via `vcvars64.bat` and invoke `cmake.exe` by full path first — update these as more presets/platforms get exercised (see the comments in `tasks.json`).
+
+Otherwise, open the repo in VS Code with the CMake Tools extension (it will read `CMakePresets.json` and prompt for a kit/toolchain), or from the CLI:
 
 ```
 cmake --preset windows-debug

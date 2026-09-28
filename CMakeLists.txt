@@ -1,19 +1,11 @@
+##################
+# CMake Preamble
+##################
+
 cmake_minimum_required(VERSION 3.21)
 
-##############################################################################
-#                                                                            #
-#                                 GLOBALS                                   #
-#                                                                            #
-##############################################################################
+# Git
 
-# SET VERSION NUMBER
-
-# set project name
-set(PROJECT_NAME ReaShader) # do not change !
-
-# include cmake-git-versioning
-
-# check git
 find_package(Git)
 if(Git_FOUND)
     message("Git found: ${GIT_EXECUTABLE}")
@@ -21,19 +13,51 @@ else()
     message(FATAL_ERROR "Git not found!")
 endif()
 
-set(RS_CGV_PATH CACHE PATH "cmake-git-versioning module path")
+# Dirs
 
-if(NOT EXISTS ${RS_CGV_PATH})
-    message(FATAL_ERROR "Invalid path to cmake-git-versioning!")
+set(BUILD_DIR "${CMAKE_SOURCE_DIR}/build")
+file(MAKE_DIRECTORY "${BUILD_DIR}")
+
+set(BUILD_DEPS_DIR "${CMAKE_SOURCE_DIR}/build/deps")
+file(MAKE_DIRECTORY "${BUILD_DEPS_DIR}")
+
+# Build Deps
+
+# cmake-git-versioning
+
+set(RS_CGV_PATH "${BUILD_DEPS_DIR}/cmake-git-versioning")
+
+if(NOT EXISTS "${RS_CGV_PATH}/cmake-git-versioning.cmake")
+    message(STATUS "cmake-git-versioning not found at ${RS_CGV_PATH} -- cloning it there...")
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} clone --depth 1
+                https://github.com/emanuelemessina/cmake-git-versioning.git
+                "${RS_CGV_PATH}"
+        RESULT_VARIABLE RS_CGV_CLONE_RESULT
+    )
+    if(NOT RS_CGV_CLONE_RESULT EQUAL 0)
+        message(FATAL_ERROR "Failed to clone cmake-git-versioning into ${RS_CGV_PATH} "
+                             "(pass -DRS_CGV_PATH=<path> to point at an existing checkout instead)")
+    endif()
 endif()
 
 include("${RS_CGV_PATH}/cmake-git-versioning.cmake")
+
+##################
+# Project
+##################
+
+set(PROJECT_NAME ReaShader)
 
 project(${PROJECT_NAME}
     VERSION ${PROJECT_VERSION_CMAKE}
     DESCRIPTION "${PROJECT_NAME} CLAP Plug-in"
     LANGUAGES CXX
 )
+
+##################
+# C++
+##################
 
 # C++ STANDARD
 

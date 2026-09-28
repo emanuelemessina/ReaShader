@@ -1,0 +1,72 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            // Configures (cheap, idempotent -- also bootstraps build/deps/cmake-git-versioning
+            // on a fresh checkout) then builds. Preset name is hardcoded here for now since
+            // windows-debug is the only one actually exercised so far -- update it (or add more
+            // tasks) as macOS/Linux/Release presets get used. See CMakePresets.json.
+            "label": "build",
+            "type": "shell",
+            "command": "cmake --preset windows-debug && cmake --build --preset windows-debug",
+            "windows": {
+                // Ninja needs cl.exe on PATH, which a plain VS Code terminal usually doesn't have
+                // unless its default profile is a "Developer" one -- so load the MSVC environment
+                // ourselves rather than assume it. cmake.exe is invoked by full path too, since a
+                // freshly-added PATH entry isn't always picked up by already-running shells/IDEs
+                // until they're restarted. Update these paths if VS/CMake are installed elsewhere.
+                "command": "\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat\" && cmake --preset windows-debug && cmake --build --preset windows-debug",
+                "options": {
+                    "shell": {
+                        "executable": "cmd.exe",
+                        "args": [
+                            "/d",
+                            "/c"
+                        ]
+                    }
+                }
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$msCompile"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": true
+            }
+        },
+        {
+            // Wipes the preset's whole build directory (CMakeCache, CMakeFiles, .ninja_log,
+            // object files, the staged assets, the built .clap -- everything generated). The
+            // next "build" reconfigures from scratch, which is fast enough not to matter.
+            "label": "clean",
+            "type": "shell",
+            "command": "cmake -E rm -rf \"${workspaceFolder}/build/windows-debug\"",
+            "windows": {
+                "command": "\"C:\\Program Files\\CMake\\bin\\cmake.exe\" -E rm -rf \"${workspaceFolder}\\build\\windows-debug\"",
+                "options": {
+                    "shell": {
+                        "executable": "cmd.exe",
+                        "args": [
+                            "/d",
+                            "/c"
+                        ]
+                    }
+                }
+            },
+            "group": {
+                "kind": "build",
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": true
+            }
+        }
+    ]
+}
