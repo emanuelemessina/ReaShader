@@ -1,18 +1,10 @@
-cmake_minimum_required(VERSION 3.14.0)
+cmake_minimum_required(VERSION 3.21)
 
 ##############################################################################
 #                                                                            #
-#                                 GLOBALS                                    #
-#                                                                            # 
+#                                 GLOBALS                                   #
+#                                                                            #
 ##############################################################################
-
-# SET VST-3-SDK PATH
-
-set(RS_VST3_SDK_DIR "" CACHE PATH "Path to vst3 sdk")
-
-if(NOT EXISTS ${RS_VST3_SDK_DIR})
-    message(FATAL_ERROR "Invalid path to vst3 sdk!")
-endif()
 
 # SET VERSION NUMBER
 
@@ -38,14 +30,23 @@ endif()
 include("${RS_CGV_PATH}/cmake-git-versioning.cmake")
 
 project(${PROJECT_NAME}
-    # This is your plug-in version number. Change it here only.
-    # Version number symbols usable in C++ can be found in
-    # source/version.h and ${PROJECT_BINARY_DIR}/projectversion.h.
-    VERSION ${PROJECT_VERSION_CMAKE} 
-    DESCRIPTION "${PROJECT_NAME} VST 3 Plug-in"
+    VERSION ${PROJECT_VERSION_CMAKE}
+    DESCRIPTION "${PROJECT_NAME} CLAP Plug-in"
+    LANGUAGES CXX
 )
 
-# ADDITIIONAL INCLUDE DIRECTORIES (absolute or relative to this root)
+# C++ STANDARD
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# ADDITIONAL INCLUDE DIRECTORIES (absolute or relative to this root)
+#
+# Phase A (CLAP build-system migration) note: reashader_clap.cpp only needs
+# external/clap + the REAPER SDK headers. Everything below this point (restinio,
+# cwalk, json, boxer, the Vulkan-ecosystem paths) is dead code until Phase B ports
+# ReaShaderProcessor/ReaShaderRenderer/rsparams/rsui onto this shell -- left wired
+# up here, unchanged, so Phase B doesn't have to re-discover this setup.
 
 if(DEFINED $ENV{VK_SDK_PATH}) # env var
     message(FATAL_ERROR "Vulkan SDK is not installed!")
@@ -59,21 +60,22 @@ set(RS_GLSLANG_PATH "$ENV{VK_SDK_PATH}/../glslang" CACHE PATH "glslang path")
 set(RS_SPVC_PATH "$ENV{VK_SDK_PATH}/../SPIRV-Cross" CACHE PATH "spirv cross path")
 
 include_directories (
+    "external/clap/include"
+
     "external/reaper-sdk/sdk"
     "external/reaper-sdk/WDL"
-    
+
     "external/restinio/dev/asio/include"
     "external/restinio/dev/nodejs/http_parser"
     "external/restinio/dev"
     "external/restinio/dev/fmt/include"
-    
+
     "external/cwalk"
     "external/json/include"
     "external/boxer/include"
 
-    "source/vst3"
     "source/reashader"
-    
+
     ${RS_SPVC_PATH}
 
     # we use glslang headers in the vulkan sdk, since they work
@@ -87,220 +89,110 @@ include_directories (
     "$ENV{VK_SDK_PATH}/include"
 )
 
-# C++ STANDARD
-
-set(CPP_ISO 20)
-
-# PREPROCESSOR DEFINITIONS
-
-add_compile_definitions(
-    _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING # codecvt silence deprecation warning
-)
-
-# SOURCES
-
-# quick recursive search
-file(GLOB_RECURSE SOURCE_FILES
-    "source/*.h"
-    "source/*.cpp"
-
-    "source/*.glsl"
-    
-    "source/*.html"
-    "source/*.css"
-    "source/*.js"
-    "source/*.scss"
-    "source/*.json"
-
-    "doc/*.md"
-
-    "scripts/*.ps1"
-
-    "external/reaper-sdk/WDL/lice/lice.cpp"
-    "external/cwalk/cwalk.c"
-    "external/restinio/dev/fmt/src/format.cc"
-    "external/restinio/dev/nodejs/http_parser/http_parser.c"
-    "external/boxer/src/*.cpp"
-    "external/boxer/src/*.mm"
-
-    "sln-make.inix"
-)
-# specific files
-file (GLOB SOURCE_FILES_2 LIST_DIRECTORIES FALSE
-    "README.md"
-    "resource/myplugineditor.uidesc"
-    ".clang-format"
-)
-# merge lists
-list (APPEND SOURCE_FILES ${SOURCE_FILES_2})
-
 ##############################################################################
-#
-#                               STEINBERG
-#
+#                                                                            #
+#                              CLAP PLUGIN                                  #
+#                                                                            #
 ##############################################################################
 
-# BOOTSTRAPPING VST PLUGIN (sets internal targets and variables)
+# Phase A: a minimal CLAP shell only (source/clap/reashader_clap.cpp). It proves the
+# REAPER video tap works from CLAP (see spikes/clap-video-tap, now retired) and stands
+# up the build pipeline. It is NOT wired to ReaShaderProcessor/ReaShaderRenderer/rsparams/
+# rsui yet -- those use Steinberg VST3 types pervasively and need a real port (Phase B),
+# at which point their sources get added to this target.
 
-# set vst3 sdk directory
+add_library(${PROJECT_NAME} MODULE
+    source/clap/reashader_clap.cpp
+)
 
-set(vst3sdk_SOURCE_DIR "${RS_VST3_SDK_DIR}")
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    PREFIX ""
+    SUFFIX ".clap"
+)
 
-if(NOT vst3sdk_SOURCE_DIR)
-    message(FATAL_ERROR "Path to VST3 SDK is empty!")
+##############################################################################
+#                                                                            #
+#                        SHADER COMPILATION (glslc)                        #
+#                                                                            #
+##############################################################################
+#
+# Generator-agnostic replacement for sln-make.inix's MSBuild pre-link shader step.
+# Each shader is a proper custom command with tracked input/output, so rebuilds are
+# incremental instead of "always recompile everything." Not linked into the Phase A
+# target yet (nothing consumes .spv output until the renderer is ported in Phase B) --
+# this just proves the pipeline and keeps the checked-in .spv files up to date if you
+# have the Vulkan SDK installed.
+
+find_program(RS_GLSLC_EXECUTABLE glslc HINTS "$ENV{VK_SDK_PATH}/Bin" "$ENV{VULKAN_SDK}/Bin")
+
+if(RS_GLSLC_EXECUTABLE)
+    function(rs_compile_shader stage filename)
+        get_filename_component(name_we ${filename} NAME_WE)
+        set(src "${CMAKE_SOURCE_DIR}/source/shaders/${filename}")
+        set(out "${CMAKE_SOURCE_DIR}/source/shaders/${name_we}.spv")
+        add_custom_command(
+            OUTPUT ${out}
+            COMMAND ${RS_GLSLC_EXECUTABLE} -fshader-stage=${stage} ${src} -o ${out}
+            DEPENDS ${src}
+            COMMENT "Compiling shader ${filename}"
+            VERBATIM
+        )
+        set(RS_COMPILED_SHADERS ${RS_COMPILED_SHADERS} ${out} PARENT_SCOPE)
+    endfunction()
+
+    rs_compile_shader(vertex vert.glsl)
+    rs_compile_shader(fragment frag.glsl)
+    rs_compile_shader(vertex pp_vert.glsl)
+    rs_compile_shader(fragment pp_frag.glsl)
+
+    add_custom_target(ReaShaderShaders DEPENDS ${RS_COMPILED_SHADERS})
+    add_dependencies(${PROJECT_NAME} ReaShaderShaders)
+else()
+    message(STATUS "glslc not found (no Vulkan SDK detected) -- shader recompilation skipped; "
+                    "the precompiled .spv files already committed under source/shaders are used as-is")
 endif()
 
-set(SMTG_VSTGUI_ROOT "${vst3sdk_SOURCE_DIR}")
-
-add_subdirectory(${vst3sdk_SOURCE_DIR} ${PROJECT_BINARY_DIR}/vst3sdk)
-smtg_enable_vst3_sdk()
-
-# bind source files (calls add_library and creates sources_list)
-
-smtg_add_vst3plugin(${PROJECT_NAME}
-    ${SOURCE_FILES}
-)
-
-#- VSTGUI Wanted ----
-if(SMTG_ADD_VSTGUI)
-    target_sources(${PROJECT_NAME}
-        PRIVATE
-            resource/myplugineditor.uidesc
-    )
-    target_link_libraries(${PROJECT_NAME}
-        PRIVATE
-            vstgui_support
-    )
-    smtg_target_add_plugin_resources(${PROJECT_NAME}
-        RESOURCES
-            "resource/myplugineditor.uidesc"
-    )
-endif(SMTG_ADD_VSTGUI)
-# -------------------
-
-smtg_target_add_plugin_snapshots (${PROJECT_NAME}
-    RESOURCES
-        resource/E0F1D00DC00B511782AD083BE3690071_snapshot.png
-        resource/E0F1D00DC00B511782AD083BE3690071_snapshot_2.0x.png
-)
-
-target_link_libraries(${PROJECT_NAME}
-    PRIVATE
-        sdk
-)
-
-smtg_target_configure_version_file(${PROJECT_NAME})
-
+##############################################################################
+#                                                                            #
+#                            RESOURCE STAGING                              #
+#                                                                            #
 ##############################################################################
 #
-#                   CUSTOM DELAYED (waited for target creation)
-#
-##############################################################################
+# Generator-agnostic replacement for sln-make.inix's MSBuild pre-link resource-copy step.
+# CLAP plugins are a single flat file on Windows/Linux (no bundle folder like VST3), so
+# assets are staged next to the built .clap. Phase B decides how the ported renderer
+# locates them at runtime (e.g. resolving a path relative to the plugin binary).
 
-# set c++ version
-set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD ${CPP_ISO})
-
-# ADDITIONAL LIBRARY INCLUDES (needs to be PRIVATE otherwise conflict with SMTG)
-
-target_link_directories(${PROJECT_NAME} PRIVATE
-    "${RS_VMA_PATH}/build/src/Debug"
-    "${RS_VMA_PATH}/build/src/Release"
-
-    # before glslang
-    "${RS_SPVC_PATH}/build/Debug"
-    "${RS_SPVC_PATH}/build/Release"
-    
-    "${RS_GLSLANG_PATH}/build/External/spirv-tools/source/opt/Debug"
-    "${RS_GLSLANG_PATH}/build/External/spirv-tools/source/Debug"
-    "${RS_GLSLANG_PATH}/build/External/spirv-tools/source/Debug"
-    "${RS_GLSLANG_PATH}/build/SPIRV/Debug"  
-    "${RS_GLSLANG_PATH}/build/glslang/Debug"  
-    
-    "${RS_GLSLANG_PATH}/build/External/spirv-tools/source/opt/Release"
-    "${RS_GLSLANG_PATH}/build/External/spirv-tools/source/Release"
-    "${RS_GLSLANG_PATH}/build/External/spirv-tools/source/Release"
-    "${RS_GLSLANG_PATH}/build/SPIRV/Release"  
-    "${RS_GLSLANG_PATH}/build/glslang/Release"  
-
-    # has to come last because it contains duplicates of glslang and spirv libs that are obsolete
-    "$ENV{VK_SDK_PATH}/Lib"
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/resource/images" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/images"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/resource/meshes" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/meshes"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/source/shaders" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/shaders"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/source/reashader/rsui/frontend" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/rsui"
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_FILE_DIR:${PROJECT_NAME}>/rsui/styles"
+    COMMENT "Staging ReaShader resources next to the built plugin"
 )
 
-target_link_libraries(${PROJECT_NAME} PRIVATE 
-    opengl32.lib 
-    vulkan-1.lib
+##############################################################################
+#                                                                            #
+#                    LOCAL DEV DEPLOY (per-user CLAP folder)               #
+#                                                                            #
+##############################################################################
+#
+# Generator-agnostic replacement for sln-make.inix's MSBuild post-build deploy step.
+# Deploys to the *per-user* CLAP plugin folder (confirmed working during the video-tap
+# spike), not an admin-owned system folder -- no more "take ownership of Program Files"
+# step like the old VST3 flow needed.
 
-    debug VulkanMemoryAllocatord.lib
-    optimized VulkanMemoryAllocator.lib
+if(WIN32)
+    set(RS_CLAP_USER_DIR "$ENV{LOCALAPPDATA}/Programs/Common/CLAP")
+elseif(APPLE)
+    set(RS_CLAP_USER_DIR "$ENV{HOME}/Library/Audio/Plug-Ins/CLAP")
+else()
+    set(RS_CLAP_USER_DIR "$ENV{HOME}/.clap")
+endif()
 
-    debug glslangd.lib
-    optimized glslang.lib
-    debug glslang-default-resource-limitsd.lib
-    optimized glslang-default-resource-limits.lib
-    debug MachineIndependentd.lib
-    optimized MachineIndependent.lib
-    debug GenericCodeGend.lib
-    optimized GenericCodeGen.lib
-
-    debug SPIRVd.lib
-    optimized SPIRV.lib
-    debug SPIRV-Toolsd.lib
-    optimized SPIRV-Tools.lib
-    debug SPIRV-Tools-optd.lib
-    optimized SPIRV-Tools-opt.lib
-
-    optimized spirv-cross-core.lib
-    debug spirv-cross-cored.lib
-    optimized spirv-cross-cpp.lib
-    debug spirv-cross-cppd.lib
-    optimized spirv-cross-reflect.lib
-    debug spirv-cross-reflectd.lib
-    optimized spirv-cross-glsl.lib
-    debug spirv-cross-glsld.lib
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${RS_CLAP_USER_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:${PROJECT_NAME}>" "${RS_CLAP_USER_DIR}/${PROJECT_NAME}.clap"
+    COMMENT "Deploying ${PROJECT_NAME}.clap to the per-user CLAP plugin folder (${RS_CLAP_USER_DIR}) for local testing"
 )
-
-# file groups (IDE)
-
-source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES ${SOURCE_FILES})
-
-##############################################################################
-#
-#                           PLATFORM SPECIFIC
-#
-##############################################################################
-
-# CONFIGURE MAC
-
-if(SMTG_MAC)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET 10.12)
-    smtg_target_set_bundle(${PROJECT_NAME}
-        BUNDLE_IDENTIFIER gvng.reashader
-        COMPANY_NAME "Emanuele Messina"
-    )
-
-# CONFIGURE WIN
-
-elseif(SMTG_WIN)
-
-    # windows only resource file
-    #target_sources(${PROJECT_NAME} PRIVATE 
-    #    resource/win32resource.rc
-    #)
-
-    # VISUAL STUDIO SPECIFIC
-
-    if(MSVC)
-
-        # startup project
-        set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${PROJECT_NAME}) 
-
-    endif()
-
-# CONFIGURE LINUX
-
-elseif(SMTG_LINUX)
-
-    
-
-endif(SMTG_MAC)
-
