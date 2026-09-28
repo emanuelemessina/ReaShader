@@ -1,26 +1,33 @@
 {
     "version": "2.0.0",
+    "inputs": [
+        {
+            "id": "buildProfile",
+            "type": "pickString",
+            "description": "Build profile",
+            "options": [
+                "debug",
+                "release"
+            ],
+            "default": "debug"
+        }
+    ],
     "tasks": [
         {
-            // Configures (cheap, idempotent -- also bootstraps build/deps/cmake-git-versioning
-            // on a fresh checkout) then builds. Preset name is hardcoded here for now since
-            // windows-debug is the only one actually exercised so far -- update it (or add more
-            // tasks) as macOS/Linux/Release presets get used. See CMakePresets.json.
             "label": "build",
             "type": "shell",
-            "command": "cmake --preset windows-debug && cmake --build --preset windows-debug",
+            "detail": "Configures CMake (idempotent), then builds the chosen preset",
             "windows": {
-                // Ninja needs cl.exe on PATH, which a plain VS Code terminal usually doesn't have
-                // unless its default profile is a "Developer" one -- so load the MSVC environment
-                // ourselves rather than assume it. cmake.exe is invoked by full path too, since a
-                // freshly-added PATH entry isn't always picked up by already-running shells/IDEs
-                // until they're restarted. Update these paths if VS/CMake are installed elsewhere.
-                "command": "\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat\" && cmake --preset windows-debug && cmake --build --preset windows-debug",
+                // Ninja needs cl.exe on PATH.
+                // Locate the VS install via vswhere (shipped with Visual Studio Installer),
+                // then load MSVC environment with vcvars.
+                "command": "for /f \"usebackq delims=\" %i in (`\"%ProgramFiles(x86)%\\Microsoft Visual Studio\\Installer\\vswhere.exe\" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VSINSTALLPATH=%i & if \"!VSINSTALLPATH:~-1!\"==\" \" set \"VSINSTALLPATH=!VSINSTALLPATH:~0,-1!\" & call \"!VSINSTALLPATH!\\VC\\Auxiliary\\Build\\vcvars64.bat\" && cmake --preset windows-${input:buildProfile} && cmake --build --preset windows-${input:buildProfile}",
                 "options": {
                     "shell": {
                         "executable": "cmd.exe",
                         "args": [
                             "/d",
+                            "/v:on",
                             "/c"
                         ]
                     }
@@ -40,27 +47,11 @@
             }
         },
         {
-            // Wipes the preset's whole build directory (CMakeCache, CMakeFiles, .ninja_log,
-            // object files, the staged assets, the built .clap -- everything generated). The
-            // next "build" reconfigures from scratch, which is fast enough not to matter.
             "label": "clean",
             "type": "shell",
-            "command": "cmake -E rm -rf \"${workspaceFolder}/build/windows-debug\"",
-            "windows": {
-                "command": "\"C:\\Program Files\\CMake\\bin\\cmake.exe\" -E rm -rf \"${workspaceFolder}\\build\\windows-debug\"",
-                "options": {
-                    "shell": {
-                        "executable": "cmd.exe",
-                        "args": [
-                            "/d",
-                            "/c"
-                        ]
-                    }
-                }
-            },
-            "group": {
-                "kind": "build",
-            },
+            "detail": "Wipes build products (CMakeCache, .ninja_log, .obj, etc.) for the chosen cmake preset.",
+            "command": "cmake -E rm -rf \"${workspaceFolder}/build/windows-${input:buildProfile}\"",
+            "group": "build",
             "problemMatcher": [],
             "presentation": {
                 "reveal": "always",
