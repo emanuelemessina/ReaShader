@@ -7,9 +7,9 @@ Reaper is a great and versatile DAW, capable of handling not just audio but also
 While it has its own video processing capabilities, currently (2024) the features are limited and the effects must be written by hand as custom scripts accessing an internal API.
 \
 \
-Thus, Reashader is my own experiment in trying to make a VST that acts as a video processor for Reaper.
+Thus, Reashader is my own experiment in trying to make a plugin that acts as a video processor for Reaper.
 \
-You install it the same way you would install a VST, and it will process video frames instead of audio samples.
+You install it the same way you would install any audio plugin, and it will process video frames instead of audio samples.
 \
 \
 It's a work in progress, proofs of concept are available in [Releases](https://github.com/emanuelemessina/ReaShader/releases).
@@ -21,31 +21,51 @@ Please cite me if you benefit from this project, as it required a lot of blood, 
 
 <br>
 
+## Plugin format: migrating from VST3 to CLAP
+
+<br>
+
+ReaShader is in the middle of moving from VST3 to [CLAP](https://cleveraudio.org/) — a lighter, C-ABI, header-only plugin format. REAPER's video-processing tap works just as well from CLAP as it did from VST3, and dropping the VST3 SDK removes most of the build-system pain (bundle folder structure, validator, processor/controller split, IDE-specific build hacks) while keeping the door open for future changes (e.g. embedding the UI in REAPER's FX window, a possible Rust rewrite).
+
+The build system has already been migrated (CMake + Ninja + VS Code, no Visual Studio/Xcode project generation needed); the actual rendering/parameter/UI code hasn't been ported off VST3 types yet, so the plugin currently only proves the pipeline works end-to-end rather than doing real video processing. See [CLAUDE.md](CLAUDE.md) for the up-to-date architecture and migration status.
+
+<br>
+
 ## Dependencies
 
 <br>
 
-### VST3 SDK
+### CMake and Ninja
 
 <br>
 
-Obtain a copy of the VST3 SDK from Steinberg.
+Install [CMake](https://cmake.org/) (3.21+) and [Ninja](https://ninja-build.org/). On Windows, build from a Developer Command Prompt (or let VS Code's CMake Tools extension pick an MSVC kit for you) so `cl.exe` is available to Ninja.
 
 <br>
 
-### VULKAN SDK
+### CMake modules
 
 <br>
 
-Donwload [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/) and install (preferably in the default location).
+- [cmake-git-versioning](https://github.com/emanuelemessina/cmake-git-versioning), cloned anywhere — pass its path as the `RS_CGV_PATH` CMake cache variable, or set the `REASHADER_CGV_PATH` environment variable (read automatically by `CMakePresets.json`).
 
 <br>
 
-### Graphics libraries
+### CLAP
 
 <br>
 
-The following libraries can be placed them next to the `x.x.x.x` folder inside the Vulkan install location as CMake has the include paths defaulted to there.
+Already vendored under `external/clap` (plain headers, MIT-licensed) — nothing to install.
+
+<br>
+
+### Vulkan / graphics libraries (not needed yet)
+
+<br>
+
+The Vulkan SDK and the graphics libraries below aren't required to build the plugin today — they're only wired into `CMakeLists.txt` in preparation for porting the real renderer onto the new CLAP shell. Skip this section unless you're working on that port.
+
+Download [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/) and install (preferably in the default location), then place the following next to the `x.x.x.x` folder inside the Vulkan install location, as CMake has the include paths defaulted to there:
 
 - [GLM](https://github.com/g-truc/glm)
 - [Tiny Obj Loader](https://github.com/tinyobjloader/tinyobjloader)
@@ -56,50 +76,20 @@ The following libraries can be placed them next to the `x.x.x.x` folder inside t
 
 <br>
 
-### Other libraries
-
-<br>
-
-The following libraries can be placed under `/external` , as they are logically source code
-
-- [nlohmann-json](https://github.com/nlohmann/json)
-
-<br>
-
-### CMake modules
-
-<br>
-
-The following CMake modules are required
-
-- [cmake-git-versioning](https://github.com/emanuelemessina/cmake-git-versioning)
-
-<br>
-
 ## Build steps
 
 <br>
 
-### CMake
+Either open the repo in VS Code with the CMake Tools extension installed (it reads `CMakePresets.json` and will prompt you to pick a kit/toolchain), or from the command line:
 
-<br>
+```
+cmake --preset windows-debug
+cmake --build --preset windows-debug
+```
 
-Run CMake with build generation directory `/build/<os>` folder.
-<br>
-- For Windows: `<os>` is `win` , Compiler is **Visual Studio**
-- For Mac: `<os>` is `mac` , Compiler is **Xcode**
+(`macos-debug`/`linux-debug` presets also exist but are untested — Windows is the only platform exercised so far.)
 
-Then build from the generated solution with the related IDE.
-
-<br>
-
-### sln-make (_Visual Studio_)
-
-<br>
-
-Use [sln-make](http://github.com/emanuelemessina/sln-make) to apply Visual Studio settings.
-
-Take ownership of `C:\Program Files\Common Files` as the plugin will be copied there after building.
+This alone compiles the plugin, stages its resources next to it, and deploys the built `.clap` to your per-user CLAP plugin folder (`%LOCALAPPDATA%\Programs\Common\CLAP` on Windows, `~/Library/Audio/Plug-Ins/CLAP` on macOS, `~/.clap` on Linux) — no admin rights needed, no separate IDE build step.
 
 <br>
 
@@ -114,9 +104,7 @@ Take ownership of `C:\Program Files\Common Files` as the plugin will be copied t
 
 - Make sure to have all the **VC Redist** updated to the latest version. It can be downloaded from Microsoft website.
 
-- Make sure to have the latest version of **Vulkan**. It's automatically shipped with the graphics driver, so update it if needed. Check the vulkan version with `vulkaninfo`.
-
-- If the plugin is still not recognised by Reaper, try running `validator.exe` on the actual `.vst3` and search for messages like `"exception"` or `"reashader crashed"`.
+- If REAPER doesn't list the plugin, make sure it has rescanned for CLAP plugins (Preferences → Plug-ins → Clear cache/re-scan).
 
 <br>
 
@@ -166,7 +154,7 @@ See [Development](doc/Development.md).
 
 <br>
 
-- [VST](https://www.steinberg.net/developers/) _by Steinberg Media Technologies GmbH_
+- [CLAP](https://cleveraudio.org/) _by the CLever Audio Plug-in project_
 - [Vulkan](https://vulkan.lunarg.com/) _by Khronos Group_
 - [Reaper SDK](https://github.com/justinfrankel/reaper-sdk) _by Cockos_
 

@@ -3,8 +3,11 @@
 
 !.vs/settings.json
 
+.claude
+
 test
+releases
 
 build
 
-releases
+CMakeUserPresets.json
