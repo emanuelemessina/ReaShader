@@ -9,6 +9,10 @@
     ],
     "git.ignoredRepositories": [
         "external/json",
+        "external/glm",
+        "external/stb",
+        "external/tinyobjloader",
+        "external/VulkanMemoryAllocator",
         "external/WDL",
         "external/reaper-sdk",
     ],
