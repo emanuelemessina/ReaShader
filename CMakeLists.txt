@@ -36,7 +36,7 @@ set(PROJECT_NAME ReaShader)
 project(${PROJECT_NAME}
     VERSION ${PROJECT_VERSION_CMAKE}
     DESCRIPTION "${PROJECT_NAME} CLAP Plug-in"
-    LANGUAGES CXX
+    LANGUAGES CXX C
 )
 
 ##################
@@ -71,7 +71,7 @@ include_directories (
     "external/clap/include"
 
     "external/reaper-sdk/sdk"
-    "external/reaper-sdk/WDL"
+    "external/WDL/WDL"
 
     "external/restinio/dev/asio/include"
     "external/restinio/dev/nodejs/http_parser"
@@ -103,20 +103,48 @@ include_directories (
 #                                                                            #
 ##############################################################################
 
-# Phase A: a minimal CLAP shell only (src/clap/reashader_clap.cpp). It proves the
-# REAPER video tap works from CLAP (see spikes/clap-video-tap, now retired) and stands
-# up the build pipeline. It is NOT wired to ReaShaderProcessor/ReaShaderRenderer/rsparams/
-# rsui yet -- those use Steinberg VST3 types pervasively and need a real port (Phase B),
-# at which point their sources get added to this target.
+# Phase B: rsparams/rsui/reashaderplugin are ported off VST3 and wired into this target.
+# ReaShaderRenderer/vkt (the Vulkan pipeline) are NOT wired in yet -- that's a separate, later
+# pass -- so process_frame still paints the Phase A diagnostic pattern instead of real video.
 
 add_library(${PROJECT_NAME} MODULE
     src/clap/reashader_clap.cpp
+
+    src/reashader/reashaderplugin.cpp
+
+    src/reashader/rsparams/rsparams.cpp
+    src/reashader/rsparams/serdes.cpp
+
+    src/reashader/rsui/backend/rsuiserver.cpp
+    src/reashader/rsui/backend/wshandler.cpp
+
+    src/reashader/tools/logging.cpp
+    src/reashader/tools/paths.cpp
+
+    # third-party sources these depend on (header-only otherwise)
+    external/cwalk/cwalk.c
+    external/restinio/dev/fmt/src/format.cc
+    external/restinio/dev/nodejs/http_parser/http_parser.c
 )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
     PREFIX ""
     SUFFIX ".clap"
 )
+
+if(WIN32)
+    target_sources(${PROJECT_NAME} PRIVATE
+        src/clap/reashader_clap_gui_win32.cpp
+        external/boxer/src/boxer_win.cpp
+    )
+    # restinio/Asio networking + boxer (MessageBox) + ShellExecute (gui's "open web UI" button)
+    # + Shlwapi (PathRemoveFileSpecA, used by tools::paths)
+    target_link_libraries(${PROJECT_NAME} PRIVATE ws2_32 mswsock user32 shell32 shlwapi)
+elseif(APPLE)
+    target_sources(${PROJECT_NAME} PRIVATE external/boxer/src/boxer_mac.mm)
+else()
+    target_sources(${PROJECT_NAME} PRIVATE external/boxer/src/boxer_linux.cpp)
+endif()
 
 ##############################################################################
 #                                                                            #
@@ -202,5 +230,10 @@ endif()
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${RS_CLAP_USER_DIR}"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:${PROJECT_NAME}>" "${RS_CLAP_USER_DIR}/${PROJECT_NAME}.clap"
-    COMMENT "Deploying ${PROJECT_NAME}.clap to the per-user CLAP plugin folder (${RS_CLAP_USER_DIR}) for local testing"
+    # the .clap binary alone isn't enough -- RSUIServer resolves ASSETS_DIR/RSUI_DIR relative to
+    # its own directory at runtime (see tools/paths.h), so the staged resource folders have to
+    # follow it to wherever it's actually deployed, not just live next to the build-tree copy
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets" "${RS_CLAP_USER_DIR}/assets"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "$<TARGET_FILE_DIR:${PROJECT_NAME}>/rsui" "${RS_CLAP_USER_DIR}/rsui"
+    COMMENT "Deploying ${PROJECT_NAME}.clap + resources to the per-user CLAP plugin folder (${RS_CLAP_USER_DIR}) for local testing"
 )
