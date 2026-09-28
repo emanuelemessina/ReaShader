@@ -8,10 +8,6 @@
                 "${workspaceFolder}/external/clap/include",
                 "${workspaceFolder}/external/reaper-sdk/sdk",
                 "${workspaceFolder}/external/WDL/WDL",
-                "${workspaceFolder}/external/restinio/dev/asio/include",
-                "${workspaceFolder}/external/restinio/dev/nodejs/http_parser",
-                "${workspaceFolder}/external/restinio/dev",
-                "${workspaceFolder}/external/restinio/dev/fmt/include",
                 "${workspaceFolder}/external/cwalk",
                 "${workspaceFolder}/external/json/include",
                 "${workspaceFolder}/external/boxer/include",
@@ -19,7 +15,6 @@
                 "${workspaceFolder}/external/VulkanMemoryAllocator/include",
                 "${workspaceFolder}/external/tinyobjloader",
                 "${workspaceFolder}/external/stb",
-                "${env:VK_SDK_PATH}/Include",
                 "${env:VK_SDK_PATH}/include"
             ],
             "defines": [

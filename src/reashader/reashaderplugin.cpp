@@ -10,6 +10,7 @@
 
 #include "reaper_plugin.h"
 #include "rsrenderer.h"
+#include "tools/base64.h"
 #include "tools/logging.h"
 
 #include <cstdio>
@@ -40,15 +41,6 @@ namespace ReaShader
 	{
 		_registerDefaultParams();
 
-		rsuiServer = std::make_unique<RSUIServer>(
-			[this](const std::string&& msg) { _receivedJSONFromWebUI(std::move(msg)); },
-			[this](json&& metadata, std::string&& name, std::string&& extension, size_t size,
-				   std::vector<char>&& data) {
-				_receivedFileFromWebUI(std::move(metadata), std::move(name), std::move(extension), size,
-										std::move(data));
-			},
-			[this](const std::vector<char>&& data) { _receivedBinaryFromWebUI(std::move(data)); });
-
 		// constructed here but Vulkan isn't touched until activate() calls init() -- matches CLAP's
 		// activate/deactivate lifecycle, so a GPU context is only grabbed once actually needed
 		reaShaderRenderer = std::make_unique<ReaShaderRenderer>(this);
@@ -57,12 +49,6 @@ namespace ReaShader
 	void ReaShaderPlugin::terminate()
 	{
 		reaShaderRenderer.reset();
-
-		if (rsuiServer)
-		{
-			std::string death = RSUI::MessageBuilder::buildServerShutdown().dump();
-			rsuiServer->sendWSTextMessage(death);
-		}
 	}
 
 	void ReaShaderPlugin::activate(const clap_host_t* host)
@@ -122,14 +108,15 @@ namespace ReaShader
 
 	void ReaShaderPlugin::deactivate()
 	{
-		if (reaShaderRenderer)
-			reaShaderRenderer->shutdown();
-
+		// stop REAPER's video callbacks first, then tear the renderer down
 		if (m_videoproc)
 		{
 			delete m_videoproc; // MUST delete here, otherwise REAPER keeps calling into a torn-down instance
 			m_videoproc = nullptr;
 		}
+
+		if (reaShaderRenderer)
+			reaShaderRenderer->shutdown();
 	}
 
 	// -------- clap.params support --------
@@ -328,11 +315,16 @@ namespace ReaShader
 
 	// -------- web UI --------
 
-	std::string ReaShaderPlugin::getWebUIUrl() const
+	void ReaShaderPlugin::setWebUISender(WebUISender sender)
 	{
-		if (!rsuiServer)
-			return "";
-		return "http://localhost:" + std::to_string(rsuiServer->getPort());
+		std::lock_guard<std::mutex> lock(_webUISenderMutex);
+		_webUISender = std::move(sender);
+	}
+
+	void ReaShaderPlugin::clearWebUISender()
+	{
+		std::lock_guard<std::mutex> lock(_webUISenderMutex);
+		_webUISender = nullptr;
 	}
 
 	double ReaShaderPlugin::getAudioGain() const
@@ -345,10 +337,13 @@ namespace ReaShader
 
 	void ReaShaderPlugin::_webuiSend(json msg)
 	{
-		if (!rsuiServer)
-			return;
-		std::string s = msg.dump();
-		rsuiServer->sendWSTextMessage(s);
+		WebUISender sender;
+		{
+			std::lock_guard<std::mutex> lock(_webUISenderMutex);
+			sender = _webUISender; // copy out under the lock, invoke outside it
+		}
+		if (sender)
+			sender(msg.dump());
 	}
 
 	void ReaShaderPlugin::_webuiSendParamUpdate(Parameters::Id id, double newValue)
@@ -370,7 +365,7 @@ namespace ReaShader
 		_webuiSend(RSUI::MessageBuilder::buildRenderingDevicesList(selected, renderingDeviceNames));
 	}
 
-	void ReaShaderPlugin::_receivedJSONFromWebUI(const std::string&& msg)
+	void ReaShaderPlugin::handleWebUIMessage(const std::string& msg)
 	{
 		RSUI::MessageHandler(msg.c_str())
 			.reactToVSTParamUpdate([&](Parameters::Id id, double newValue) {
@@ -432,6 +427,12 @@ namespace ReaShader
 				newParam->id = (Parameters::Id)rsParams.size();
 				rsParams.push_back(std::move(newParam));
 			})
+			.reactToFileUpload([&](std::string name, std::string extension, size_t size, json metadata,
+									const std::string& base64Data) {
+				std::vector<char> data = tools::base64::decode(base64Data);
+				_receivedFileFromWebUI(std::move(metadata), std::move(name), std::move(extension), size,
+										std::move(data));
+			})
 			.fallbackWarning("ReaShaderPlugin");
 	}
 
@@ -453,10 +454,5 @@ namespace ReaShader
 				LOG(WARNING, toConsole | toFile | toBox, "ReaShaderPlugin", "Shader upload failed", std::move(msg));
 			},
 			[]() { LOG(INFO, toConsole | toFile, "ReaShaderPlugin", "Shader upload", std::string("Finished.")); });
-	}
-
-	void ReaShaderPlugin::_receivedBinaryFromWebUI(const std::vector<char>&& data)
-	{
-		(void)data;
 	}
 } // namespace ReaShader

@@ -47,7 +47,7 @@
 		if (res != VK_SUCCESS)                                                                                         \
 		{                                                                                                              \
 			std::string msg = "Fatal : \"";                                                                            \
-			msg += res;                                                                                                \
+			msg += std::to_string((int)res);                                                                           \
 			msg += "\" in ";                                                                                           \
 			msg += __FILE__;                                                                                           \
 			msg += " at line ";                                                                                        \

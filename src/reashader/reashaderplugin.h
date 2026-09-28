@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -17,7 +18,6 @@
 
 #include "rsparams/rsparams.h"
 #include "rsui/api.h"
-#include "rsui/backend/backend.h"
 
 #include "wdltypes.h" // video_frame.h needs WDL_FIXALIGN/INT_PTR but doesn't include this itself
 #include "video_processor.h"
@@ -96,13 +96,22 @@ namespace ReaShader
 		size_t rsParamsCount() const;
 
 		// appends a renderer-created dynamic parameter (e.g. from a custom shader's reflected
-		// uniforms) and notifies the web UI, mirroring what _receivedJSONFromWebUI's reactToParamAdd
+		// uniforms) and notifies the web UI, mirroring what handleWebUIMessage's reactToParamAdd
 		// already does for web-UI-originated params.
 		void addRendererParam(std::unique_ptr<Parameters::IParameter>& param);
 
 		// -------- web UI --------
 
-		std::string getWebUIUrl() const;
+		// GUI-side transport seam: the embedded WebUIHost registers a sender once its webview is
+		// ready (setWebUISender) and clears it on teardown (clearWebUISender) -- replaces the old
+		// RSUIServer ownership. _webuiSend(...) no-ops when no sender is registered, same effective
+		// behavior as broadcasting to zero connected WS clients under the old design.
+		using WebUISender = std::function<void(const std::string&)>;
+		void setWebUISender(WebUISender sender);
+		void clearWebUISender();
+
+		// entry point for a JSON message coming from the web UI (called by the GUI's bind() callback)
+		void handleWebUIMessage(const std::string& msg);
 
 		double getAudioGain() const;
 
@@ -110,10 +119,8 @@ namespace ReaShader
 		void _registerDefaultParams();
 		template <typename P, typename... Args> void _registerParam(Args&&... args);
 
-		void _receivedJSONFromWebUI(const std::string&& msg);
 		void _receivedFileFromWebUI(json&& metadata, std::string&& name, std::string&& extension, size_t size,
 									 std::vector<char>&& data);
-		void _receivedBinaryFromWebUI(const std::vector<char>&& data);
 
 		void _webuiSendParamUpdate(Parameters::Id id, double newValue);
 		void _webuiSendTrackInfo();
@@ -126,15 +133,18 @@ namespace ReaShader
 		std::vector<std::unique_ptr<Parameters::IParameter>> rsParams;
 
 	  public:
-		// intentionally public: the CLAP shell owns the object but needs direct access for the
-		// video-tap callbacks and to construct RSUIServer's callbacks against `this`
-		std::unique_ptr<RSUIServer> rsuiServer;
-
-		// intentionally public, same reason as rsuiServer: processFrame() in reashader_clap.cpp
-		// (the REAPER video-tap callback) needs to reach it directly.
+		// intentionally public: processFrame() in reashader_clap.cpp (the REAPER video-tap
+		// callback) needs to reach it directly.
 		std::unique_ptr<ReaShaderRenderer> reaShaderRenderer;
 
 	  private:
+		std::mutex _webUISenderMutex; // guards _webUISender: setWebUISender()/clearWebUISender() run
+									  // on the GUI/UI thread, _webuiSend() can be called from other
+									  // threads (e.g. ReaShaderRenderer's device enumeration inside
+									  // activate()) -- a std::function is not safe to assign on one
+									  // thread while read-and-invoked on another without this.
+		WebUISender _webUISender;
+
 		std::mutex _pendingNotificationsMutex;
 		std::vector<std::pair<clap_id, double>> _pendingHostNotifications;
 

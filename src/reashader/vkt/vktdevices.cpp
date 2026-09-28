@@ -348,21 +348,17 @@ namespace vkt
 				createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 			}
 
-			if (enableVkValidationLayers)
-			{
-				createInfo.enabledLayerCount = static_cast<uint32_t>(vkValidationLayers.size());
-				createInfo.ppEnabledLayerNames = vkValidationLayers.data();
-			}
-			else
-			{
-				createInfo.enabledLayerCount = 0;
-			}
+			// device layers are deprecated (VUID-VkDeviceCreateInfo-enabledLayerCount-12384) -- validation
+			// is enabled on the instance only
+			createInfo.enabledLayerCount = 0;
 
 			createInfo.pNext = pNext;
 
-			if (vkCreateDevice(physicalDevice->vk(), &createInfo, nullptr, &vkDevice) != VK_SUCCESS)
+			VkResult deviceCreateResult = vkCreateDevice(physicalDevice->vk(), &createInfo, nullptr, &vkDevice);
+			if (deviceCreateResult != VK_SUCCESS)
 			{
-				throw std::runtime_error("failed to create logical device!");
+				throw std::runtime_error("failed to create logical device! VkResult: " +
+										  std::to_string((int)deviceCreateResult));
 			}
 
 			pDeletionQueue->push_function([=]() { vkDestroyDevice(vkDevice, nullptr); });

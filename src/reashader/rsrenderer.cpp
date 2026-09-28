@@ -62,6 +62,11 @@ namespace ReaShader
 
 	void ReaShaderRenderer::init()
 	{
+		std::lock_guard<std::mutex> lock(frameMutex);
+
+		exceptionOnInitialize = false;
+		frameFailed = false;
+
 		// init vulkan
 
 		try
@@ -82,6 +87,8 @@ namespace ReaShader
 
 	void ReaShaderRenderer::shutdown()
 	{
+		std::lock_guard<std::mutex> lock(frameMutex);
+
 		// clean up vulkan
 
 		if (exceptionOnInitialize)
@@ -95,6 +102,37 @@ namespace ReaShader
 		{
 			LOG(e, toFile | toConsole | toBox, "ReaShaderRenderer", "Exception: ", "ReaShader crashed...");
 		}
+	}
+
+	bool ReaShaderRenderer::renderFrame(int w, int h, int* inputBits, double pushConstants[], int* outputBits)
+	{
+		std::unique_lock<std::mutex> lock(frameMutex, std::try_to_lock);
+		if (!lock.owns_lock() || exceptionOnInitialize || frameFailed || halted || !vktDevice)
+			return false;
+
+		// this runs on REAPER's video thread: an exception escaping into REAPER is an unhandled
+		// exception there, which aborts the whole process (0x40000015 inside reaper.exe)
+		try
+		{
+			checkFrameSize(w, h);
+			loadBitsToImage(inputBits);
+			drawFrame(pushConstants);
+			transferFrame(outputBits);
+			return true;
+		}
+		catch (STDEXC e)
+		{
+			frameFailed = true;
+			LOG(e, toFile | toConsole, "ReaShaderRenderer", "Frame rendering failed, passing video through",
+				"Rendering disabled until the plugin is re-activated");
+		}
+		catch (...)
+		{
+			frameFailed = true;
+			LOG(EXCEPTION, toFile | toConsole, "ReaShaderRenderer", "Frame rendering failed, passing video through",
+				"Unknown exception -- rendering disabled until the plugin is re-activated");
+		}
+		return false;
 	}
 
 	// reutilized voids
@@ -1031,6 +1069,11 @@ namespace ReaShader
 
 	void ReaShaderRenderer::changeRenderingDevice(int renderingDeviceIndex)
 	{
+		std::lock_guard<std::mutex> lock(frameMutex);
+
+		if (!vktDevice) // renderer not initialized yet (e.g. a stray/early web UI message) -- nothing to switch from
+			return;
+
 		halted = true;
 
 		vktDevice->waitIdle();
@@ -1040,6 +1083,7 @@ namespace ReaShader
 
 		setUpDevice(renderingDeviceIndex);
 
+		frameFailed = false;
 		halted = false;
 	}
 
@@ -1528,11 +1572,14 @@ namespace ReaShader
 
 	void ReaShaderRenderer::_cleanupVulkan()
 	{
-		vktDevice->waitIdle();
+		if (vktDevice)
+			vkDeviceWaitIdle(vktDevice->vk()); // result ignored: a lost device must still be torn down
 		// flush deletion queues in reverse order
 		deletionQueues.vktFrameResized.flush();
 		deletionQueues.vktPhysicalDeviceChanged.flush();
 		deletionQueues.vktMain.flush();
+		vktDevice = nullptr;
+		vktPhysicalDevice = nullptr;
 	}
 
 } // namespace ReaShader
