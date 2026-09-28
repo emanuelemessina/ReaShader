@@ -9,6 +9,7 @@
 #include "reashaderplugin.h"
 
 #include "reaper_plugin.h"
+#include "rsrenderer.h"
 #include "tools/logging.h"
 
 #include <cstdio>
@@ -47,10 +48,16 @@ namespace ReaShader
 										std::move(data));
 			},
 			[this](const std::vector<char>&& data) { _receivedBinaryFromWebUI(std::move(data)); });
+
+		// constructed here but Vulkan isn't touched until activate() calls init() -- matches CLAP's
+		// activate/deactivate lifecycle, so a GPU context is only grabbed once actually needed
+		reaShaderRenderer = std::make_unique<ReaShaderRenderer>(this);
 	}
 
 	void ReaShaderPlugin::terminate()
 	{
+		reaShaderRenderer.reset();
+
 		if (rsuiServer)
 		{
 			std::string death = RSUI::MessageBuilder::buildServerShutdown().dump();
@@ -108,10 +115,16 @@ namespace ReaShader
 				trackInfo.number = (int)GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER");
 			}
 		}
+
+		if (reaShaderRenderer)
+			reaShaderRenderer->init();
 	}
 
 	void ReaShaderPlugin::deactivate()
 	{
+		if (reaShaderRenderer)
+			reaShaderRenderer->shutdown();
+
 		if (m_videoproc)
 		{
 			delete m_videoproc; // MUST delete here, otherwise REAPER keeps calling into a torn-down instance
@@ -274,6 +287,45 @@ namespace ReaShader
 		return true;
 	}
 
+	// -------- renderer support --------
+
+	uint8_t ReaShaderPlugin::getRenderingDeviceIndex() const
+	{
+		std::lock_guard<std::mutex> lock(rsParamsMutex);
+		if (Parameters::uRenderingDevice >= rsParams.size())
+			return 0;
+		return dynamic_cast<Parameters::Int8u&>(*rsParams[Parameters::uRenderingDevice]).value;
+	}
+
+	void ReaShaderPlugin::setRenderingDeviceIndex(uint8_t index)
+	{
+		std::lock_guard<std::mutex> lock(rsParamsMutex);
+		if (Parameters::uRenderingDevice < rsParams.size())
+			dynamic_cast<Parameters::Int8u&>(*rsParams[Parameters::uRenderingDevice]).value = index;
+	}
+
+	void ReaShaderPlugin::setRenderingDevicesList(const std::vector<std::string>& deviceNames)
+	{
+		{
+			std::lock_guard<std::mutex> lock(rsParamsMutex);
+			renderingDeviceNames = deviceNames;
+		}
+		_webuiSendRenderingDevicesList();
+	}
+
+	size_t ReaShaderPlugin::rsParamsCount() const
+	{
+		std::lock_guard<std::mutex> lock(rsParamsMutex);
+		return rsParams.size();
+	}
+
+	void ReaShaderPlugin::addRendererParam(std::unique_ptr<Parameters::IParameter>& param)
+	{
+		_webuiSend(RSUI::MessageBuilder::buildParamAdd(param));
+		std::lock_guard<std::mutex> lock(rsParamsMutex);
+		rsParams.push_back(std::move(param));
+	}
+
 	// -------- web UI --------
 
 	std::string ReaShaderPlugin::getWebUIUrl() const
@@ -363,11 +415,14 @@ namespace ReaShader
 				}
 			})
 			.reactToRenderingDeviceChange([&](int newIndex) {
-				std::lock_guard<std::mutex> lock(rsParamsMutex);
-				if (Parameters::uRenderingDevice < rsParams.size())
-					dynamic_cast<Parameters::Int8u&>(*rsParams[Parameters::uRenderingDevice]).value =
-						(uint8_t)newIndex;
-				// NOTE: no renderer owned yet (Phase B+1) -- nothing to actually switch device on
+				{
+					std::lock_guard<std::mutex> lock(rsParamsMutex);
+					if (Parameters::uRenderingDevice < rsParams.size())
+						dynamic_cast<Parameters::Int8u&>(*rsParams[Parameters::uRenderingDevice]).value =
+							(uint8_t)newIndex;
+				}
+				if (reaShaderRenderer)
+					reaShaderRenderer->changeRenderingDevice(newIndex);
 			})
 			.reactToParamAdd([&](std::unique_ptr<Parameters::IParameter> newParam) {
 				// TODO(renderer pass): dynamically adding a param while the host is active needs
@@ -383,12 +438,21 @@ namespace ReaShader
 	void ReaShaderPlugin::_receivedFileFromWebUI(json&& metadata, std::string&& name, std::string&& extension,
 												  size_t size, std::vector<char>&& data)
 	{
-		// TODO(renderer pass): forward to ReaShaderRenderer::changeCustomShader once it's owned here
 		(void)metadata;
 		(void)name;
 		(void)extension;
 		(void)size;
-		(void)data;
+
+		if (!reaShaderRenderer)
+			return;
+
+		reaShaderRenderer->changeCustomShader(
+			std::move(data),
+			[](std::string&& msg) { LOG(INFO, toConsole | toFile, "ReaShaderPlugin", "Shader upload", std::move(msg)); },
+			[](std::string&& msg) {
+				LOG(WARNING, toConsole | toFile | toBox, "ReaShaderPlugin", "Shader upload failed", std::move(msg));
+			},
+			[]() { LOG(INFO, toConsole | toFile, "ReaShaderPlugin", "Shader upload", std::string("Finished.")); });
 	}
 
 	void ReaShaderPlugin::_receivedBinaryFromWebUI(const std::vector<char>&& data)

@@ -22,18 +22,21 @@
 #include "wdltypes.h" // video_frame.h needs WDL_FIXALIGN/INT_PTR but doesn't include this itself
 #include "video_processor.h"
 
+#include "tools/fwd_decl.h"
+
 namespace ReaShader
 {
+	// Forward-declared, not included: keeps Vulkan/vkt headers out of this widely-included header,
+	// same reasoning as the "Restinio header note" in CLAUDE.md. The full type is only needed in
+	// reashaderplugin.cpp.
+	FWD_DECL(ReaShaderRenderer)
+
 	// Single unified plugin-logic object: owns the parameter list, the embedded web UI server,
 	// and the REAPER video-tap wiring, all directly. Replaces ReaShaderProcessor + ReaShaderController
 	// (VST3's forced processor/controller split, and the JSON+IMessage relay that only existed to
 	// keep their two separate parameter vectors in sync) -- there's one instance now, so there's
-	// nothing to relay: the web UI, the parameter engine, and (eventually) the renderer all read
-	// and write the same rsParams vector directly.
-	//
-	// Does NOT own a ReaShaderRenderer yet -- wiring the real Vulkan pipeline in is a separate,
-	// later pass (see CLAUDE.md's migration status). The REAPER video_frame callback still paints
-	// the Phase A diagnostic pattern, defined in reashader_clap.cpp.
+	// nothing to relay: the web UI, the parameter engine, and the renderer all read and write the
+	// same rsParams vector directly (the renderer through the narrow accessors below, not raw access).
 	class ReaShaderPlugin
 	{
 	  public:
@@ -78,6 +81,25 @@ namespace ReaShader
 		// Only NumericParameter-typed default params have a meaningful numeric value here.
 		bool getVideoTapParamValue(int idx, double* valueOut) const;
 
+		// -------- renderer support --------
+		// Narrow, mutex-guarded surface ReaShaderRenderer uses instead of the raw `friend`-based
+		// rsParams access ReaShaderProcessor used to grant it under VST3.
+
+		uint8_t getRenderingDeviceIndex() const;
+		void setRenderingDeviceIndex(uint8_t index);
+
+		// replaces the persisted rendering-device index with 0 and refreshes the web UI's device
+		// list immediately. Takes plain names (not VkPhysicalDeviceProperties) so this header never
+		// needs to include Vulkan types.
+		void setRenderingDevicesList(const std::vector<std::string>& deviceNames);
+
+		size_t rsParamsCount() const;
+
+		// appends a renderer-created dynamic parameter (e.g. from a custom shader's reflected
+		// uniforms) and notifies the web UI, mirroring what _receivedJSONFromWebUI's reactToParamAdd
+		// already does for web-UI-originated params.
+		void addRendererParam(std::unique_ptr<Parameters::IParameter>& param);
+
 		// -------- web UI --------
 
 		std::string getWebUIUrl() const;
@@ -108,18 +130,22 @@ namespace ReaShader
 		// video-tap callbacks and to construct RSUIServer's callbacks against `this`
 		std::unique_ptr<RSUIServer> rsuiServer;
 
+		// intentionally public, same reason as rsuiServer: processFrame() in reashader_clap.cpp
+		// (the REAPER video-tap callback) needs to reach it directly.
+		std::unique_ptr<ReaShaderRenderer> reaShaderRenderer;
+
 	  private:
 		std::mutex _pendingNotificationsMutex;
 		std::vector<std::pair<clap_id, double>> _pendingHostNotifications;
 
-		std::vector<std::string> renderingDeviceNames; // empty until the renderer is ported (Phase B+1)
+		std::vector<std::string> renderingDeviceNames; // populated by setRenderingDevicesList() once the renderer enumerates GPUs
 
 		TrackInfo trackInfo{ -1, nullptr };
 
 		IREAPERVideoProcessor* m_videoproc{ nullptr };
 	};
 
-	// REAPER video processor functions (Phase A diagnostic pattern; defined in reashader_clap.cpp)
+	// REAPER video processor functions (drive real rendering via reaShaderRenderer; defined in reashader_clap.cpp)
 	IVideoFrame* processVideoFrame(IREAPERVideoProcessor* vproc, const double* parmlist, int nparms,
 									double project_time, double frate, int force_format);
 	bool getVideoParam(IREAPERVideoProcessor* vproc, int idx, double* valueOut);

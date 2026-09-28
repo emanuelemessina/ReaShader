@@ -23,7 +23,7 @@ Please cite me if you benefit from this project, as it required a lot of blood, 
 
 ReaShader is in the middle of moving from VST3 to [CLAP](https://cleveraudio.org/) — a lighter, C-ABI, header-only plugin format. REAPER's video-processing tap works just as well from CLAP as it did from VST3, and dropping the VST3 SDK removes most of the build-system pain (bundle folder structure, validator, processor/controller split, IDE-specific build hacks) while keeping the door open for future changes (e.g. embedding the UI in REAPER's FX window, a possible Rust rewrite).
 
-The build system has already been migrated (CMake + Ninja + VS Code, no Visual Studio/Xcode project generation needed); the actual rendering/parameter/UI code hasn't been ported off VST3 types yet, so the plugin currently only proves the pipeline works end-to-end rather than doing real video processing. See [CLAUDE.md](CLAUDE.md) for the up-to-date architecture and migration status.
+The build system, parameter/UI code, and the Vulkan renderer have all been ported off VST3 types and wired into the CLAP shell — real video processing (a custom fragment shader + 3D scene + post-process pass, confirmed working in REAPER against real video content). See [CLAUDE.md](CLAUDE.md) for the up-to-date architecture and migration status.
 
 ## Dependencies
 
@@ -49,9 +49,9 @@ git submodule update --init --recursive
 
 Already vendored under `external/clap` (plain headers, MIT-licensed) — nothing to install.
 
-### Vulkan / graphics libraries (not needed yet)
+### Vulkan / graphics libraries
 
-The Vulkan SDK isn't required to build the plugin today — it's only wired into `CMakeLists.txt` in preparation for porting the real renderer onto the new CLAP shell. Skip this section unless you're working on that port.
+The Vulkan SDK is required to build the plugin — the renderer (`vkt/`/`rsrenderer.cpp`) is wired into the build.
 
 GLM, Tiny Obj Loader, STB, and Vulkan Memory Allocator are all header-only and vendored as git submodules (see above) — nothing to download or build by hand.
 

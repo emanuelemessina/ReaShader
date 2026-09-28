@@ -20,18 +20,18 @@
 
 namespace ReaShader
 {
-	FWD_DECL(ReaShaderProcessor)
+	FWD_DECL(ReaShaderPlugin)
 
 class ReaShaderRenderer
 {
   protected:
-    ReaShaderProcessor *reaShaderProcessor;
+    ReaShaderPlugin *reaShaderPlugin;
 
     // must be greater than 0
     uint32_t FRAME_W{1}, FRAME_H{1};
 
   public:
-    ReaShaderRenderer(ReaShaderProcessor *reaShaderProcessor);
+    ReaShaderRenderer(ReaShaderPlugin *reaShaderPlugin);
 
     void init();
     void shutdown();
