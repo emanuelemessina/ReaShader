@@ -64,7 +64,12 @@ namespace ReaShader
 			// thread entry point: an escaping exception would std::terminate()
 			try
 			{
-				auto wv = std::make_unique<webview::webview>(/* debug */ false, _impl->parentHwnd);
+#ifdef NDEBUG
+				constexpr bool devTools = false;
+#else
+				constexpr bool devTools = true; // right click -> Inspect
+#endif
+				auto wv = std::make_unique<webview::webview>(devTools, _impl->parentHwnd);
 
 				wv->bind("postToNative", [this](const std::string& req) -> std::string {
 					// req is the JSON array of the JS call's arguments: ["<message-json>"]

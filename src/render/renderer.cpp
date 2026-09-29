@@ -24,9 +24,9 @@ namespace ReaShader
 	{
 		gpu::CompiledShader compileDefaultShader()
 		{
-			std::ifstream file(util::paths::assetsDir() / "shaders" / "default.frag");
+			std::ifstream file(util::paths::assetsDir() / "shaders" / "effects" / "default.frag");
 			if (!file)
-				throw std::runtime_error("Missing assets/shaders/default.frag");
+				throw std::runtime_error("Missing assets/shaders/effects/default.frag");
 			std::stringstream source;
 			source << file.rdbuf();
 			return gpu::compileShader(source.str(), "default.frag");
@@ -248,8 +248,6 @@ namespace ReaShader
 			shaderInputs.time = (float)inputs.time;
 			shaderInputs.frameRate = (float)inputs.frameRate;
 			shaderInputs.frame = frameCount++;
-			shaderInputs.videoParam =
-				Parameters::VideoParam < inputs.paramCount ? (float)inputs.paramValues[Parameters::VideoParam] : 0.0f;
 
 			targets->writeInput(*context, input);
 			shaderPass->writeParams(*context, shaderParams, shaderParamCount);

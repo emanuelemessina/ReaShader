@@ -23,7 +23,6 @@ namespace ReaShader::gpu
 		float time;
 		float frameRate;
 		int32_t frame;
-		float videoParam;
 	};
 
 	// One slider: a float (or a vector component) in the shader's Params block.

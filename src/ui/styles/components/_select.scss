@@ -1,0 +1,26 @@
+/******************************************************************************
+ * Copyright (c) Emanuele Messina (https://github.com/emanuelemessina)
+ * All rights reserved.
+ *
+ * This code is licensed under the MIT License.
+ * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
+ *****************************************************************************/
+
+@use './palette' as c;
+
+select {
+    color: white;
+    background-color: c.$background;
+    border: 1px solid c.$accent;
+    padding: .4rem;
+    cursor: pointer;
+
+    &:focus {
+        outline: none;
+        border-color: white;
+    }
+
+    option {
+        background-color: c.$background;
+    }
+}

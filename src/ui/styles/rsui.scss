@@ -14,6 +14,7 @@
 @use './components/textarea';
 @use './components/input-file';
 @use './components/bars';
+@use './components/select';
 
 $img_background: "images/background.png";
 
@@ -112,4 +113,40 @@ fieldset{
 .radio-button-container{
     display: flex;
     margin-bottom: 10px;
+}
+
+#shader .picker{
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+
+    select{
+        flex-grow: 1;
+    }
+
+    small{
+        width: 100%;
+        color: c.$w-50;
+        font-size: .65rem;
+        overflow-wrap: anywhere;
+    }
+}
+
+#shaderStatus{
+    display: block;
+    margin: 6px 0 10px;
+    font-family: monospace;
+    font-size: .75rem;
+    white-space: pre-wrap;
+    text-align: left;
+
+    &.error{
+        color: #ff7a7a;
+    }
+
+    &:empty{
+        display: none;
+    }
 }

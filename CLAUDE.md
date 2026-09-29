@@ -67,7 +67,7 @@ There is no test suite or lint step. Verification is manual, in REAPER.
 **Manual testing:**
 1. Load "ReaShader" (CLAP) on a track that has a video item.
 2. Check the FX window shows the embedded web UI and resizes with the window.
-3. Check REAPER's generic parameter list shows "Audio Gain" and "Video Param", and that they sync both ways with the web UI sliders.
+3. Check REAPER's generic parameter list shows "Audio Gain" plus the current shader's params (the default effect has "Brightness"), and that shader params sync both ways with the web UI sliders.
 4. Check REAPER's Video window shows the logo mesh composited over the video.
 
 ## Architecture
@@ -102,7 +102,7 @@ src/shaders/                 built-in GLSL shaders, staged as assets/shaders/
   | video | renderer, `try_lock` only |
   | webview | UI messages, device switch, shader upload |
 - **`clap.params`:**
-  - Params with `automatable = true` are exposed as CLAP params. Today that is Audio Gain and Video Param.
+  - Params with `automatable = true` are exposed as CLAP params: Audio Gain (host-only, not in the web UI) and every shader param.
   - **Host automation:** arrives in `process()`/`flush()` (`handleParamEvents()`) and goes into `applyHostParamValue()`, which is lock-free. It then requests a main-thread callback, and `onMainThread()` echoes the values to the web UI.
   - **Web UI edits:** flagged with `ParamList::flagForHost()`, plus `host_params->request_flush()`. They are drained into `out_events` by `takeParamChangeForHost()`, which is lock-free.
 - **`clap.state`:** one JSON document: `{ version: 1, params: { name: value }, device, shader: { name, source } }`.
@@ -119,7 +119,7 @@ src/shaders/                 built-in GLSL shaders, staged as assets/shaders/
   `deactivate()` deletes the video processor. The renderer stays initialized across activate/deactivate cycles; a failed renderer starts over on the next `activate()`.
 - **Shaders:**
   - The current shader is `shaderName` + `shaderSource`, saved in state. It starts as `effects/default.frag`.
-  - Built-in effects are the `*.frag` files in `assets/shaders/effects/` (`src/shaders/effects/`). The UI picks one by name (`shaderSelect`) or uploads a file (`shaderUpload`).
+  - Built-in effects are the `*.frag` files in `assets/shaders/effects/` (`src/shaders/effects/`). The UI picks one by name (`shaderSelect`), rescans the folder (`refresh`, so users can drop in their own), or uploads a file from anywhere (`shaderUpload`). Every outcome goes to the UI as `shaderStatus`: `Loaded <name>`, or the compiler's error.
   - `_loadShader()` compiles through the renderer, and only a shader that compiles becomes current.
   - `tests/shaders/` holds shaders for manual testing, such as `broken.frag`; they are not shipped.
 - **Shader params are host params (restart + rescan):**
@@ -153,7 +153,10 @@ REAPER calls `ReaShaderPlugin::_processVideoFrame` (`plugin/plugin.cpp`), instal
   - `webview::terminate()` is **not** cross-thread-safe on Win32: it is a bare `PostQuitMessage`.
   - So `~WebUIHost()` dispatches `terminate()` onto the webview thread.
   - It then waits with `MsgWaitForMultipleObjects(QS_SENDMESSAGE)` + `PeekMessageW`, not a plain `join()`. Child-window teardown can `SendMessage` to the UI-thread container, and a plain `join()` from the UI thread deadlocks REAPER.
-- **Sizing:** the embedded widget starts at size 0, so the webview thread sizes it with `MoveWindow` after `navigate()`.
+- **Sizing:**
+  - The embedded widget starts at size 0, so the webview thread sizes it with `MoveWindow` after `navigate()`.
+  - The container fills the host window (`fillParent()`) in `set_parent()` and `show()`: REAPER doesn't call `set_size()` when switching from its generic UI to ours.
+- **DevTools:** debug builds create the webview with devtools on (right click → Inspect), for the console and the DOM.
 - **Transport:**
   - JS → C++: `bind("postToNative")` → `ReaShaderPlugin::handleWebUIMessage`.
   - C++ → JS: `eval()` → `window.__reashaderOnMessage`.
@@ -169,10 +172,12 @@ Plain JSON objects with a `"type"` field. They're documented in `plugin/plugin.c
 
 | Direction | Message | Payload / effect |
 |---|---|---|
-| to UI | `snapshot` | `{ track, params, devices, shader }`. The UI rebuilds itself from it; sent on `ready`, activate, state load, device and shader changes |
+| to UI | `snapshot` | `{ track, params, devices, shader, shaders, shadersDir }`. The UI rebuilds itself from it (except the shader status line); sent on `ready`/`refresh`, activate, state load, device and shader changes |
 | to UI | `paramValue` | `{ id, value }`: host automation |
 | to UI | `shaderStatus` | `{ status, error }` |
 | from UI | `ready` | — |
+| from UI | `refresh` | —: a new snapshot, rescanning the built-in effects |
+| from UI | `shaderSelect` | `{ name }`: a built-in effect's file name |
 | from UI | `paramValue` | `{ id, value }` |
 | from UI | `renderingDevice` | `{ index }` |
 | from UI | `shaderUpload` | `{ name, source }`: GLSL sent as text |
@@ -180,7 +185,7 @@ Plain JSON objects with a `"type"` field. They're documented in `plugin/plugin.c
 ### Parameters (`plugin/params.*`)
 
 - **`Param`:** one plain struct: id, name (the state key), label (display), group (`Main` or `Shader`), units, default, min, max, automatable. Values are plain, within min..max: the defaults are 0..1, and shader params use their `//@param` range. CLAP param info uses the same range.
-- **Ids:** a param's id is its index in the list, and also its CLAP param id. The defaults (`AudioGain`, `VideoParam`) come first.
+- **Ids:** a param's id is its index in the list, and also its CLAP param id. The plugin's own params (`AudioGain`, group `Main`, not shown in the web UI) come first, then the shader's (group `Shader`).
 - **`ParamList`:**
   - Metadata is behind a mutex.
   - Values are a fixed array of `std::atomic<double>` (`maxCount` = 256), so the audio and video threads never lock.
@@ -207,12 +212,12 @@ Plain JSON objects with a `"type"` field. They're documented in `plugin/plugin.c
   - `in vec2 uv` (0..1, top left = 0,0);
   - `out vec4 fragColor`;
   - `sampler2D iChannel0` (the input frame);
-  - push constants `iResolution`, `iTime`, `iFrameRate`, `iFrame`, `videoParam`.
+  - push constants `iResolution`, `iTime`, `iFrameRate`, `iFrame`.
 
   A user `#version` is dropped, and `#extension` lines are hoisted above the preamble. `#line 1` keeps error line numbers matching the user's file.
 - **`Params`:** members must be `float`/`vec2`/`vec3`/`vec4`. Each component becomes one slider, named `member` or `member.x`, in reflection order. It is auto-bound to binding 1; any other resource is rejected with an error.
 - **Annotations:** `//@param member 'Label' default min max` (anywhere in the source; label and numbers optional, in that order) sets a slider's label, default and range. Without one: label = member name, 0.5, 0..1. Inspired by REAPER's video processor `//@param`, but keyed by member name, not index.
-- **Keep in sync:** `gpu::ShaderInputs` must match `ReaShaderInputs` in the preamble (std430 push-constant layout, 24 bytes).
+- **Keep in sync:** `gpu::ShaderInputs` must match `ReaShaderInputs` in the preamble (std430 push-constant layout, 20 bytes).
 
 ### Logging
 

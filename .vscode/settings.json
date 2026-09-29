@@ -1,13 +1,5 @@
 {
     "files.encoding": "utf8",
-    "liveSassCompile.settings.generateMap": false,
-    "liveSassCompile.settings.formats": [
-        {
-            "format": "compressed",
-            "extensionName": ".css",
-            "savePath": "~/.."
-        }
-    ],
     "git.ignoredRepositories": [
         "external/boxer",
         "external/clap",

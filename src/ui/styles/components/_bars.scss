@@ -39,7 +39,8 @@
 
 ::-webkit-scrollbar, ::-webkit-scrollbar-corner{
     background-color: c.$background;
-    width: 2px;
+    width: 10px;
+    height: 10px;
 }
 
 ::-webkit-scrollbar-thumb{

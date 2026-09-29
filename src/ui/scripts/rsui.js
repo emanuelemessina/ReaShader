@@ -17,17 +17,19 @@ function renderSnapshot(snapshot) {
     document.title = `${snapshot.track.number} | ${snapshot.track.name}`;
     renderParams(snapshot.params);
     renderDevices(snapshot.devices.names, snapshot.devices.selected);
-    renderShaderPicker(snapshot.shaders, snapshot.shader.name);
+    renderShaderPicker(snapshot.shaders, snapshot.shader.name, snapshot.shadersDir);
+    renderShaderUploader();
 }
 
 // -------- params --------
 
+// only the shader's params have sliders (the plugin's own, like Audio Gain, are host-only)
 function renderParams(params) {
-    for (const group of ["main", "shader"]) {
-        document.querySelector(`#${group} .params`).replaceChildren();
-    }
+    const container = document.querySelector('#shader .params');
+    container.replaceChildren();
     for (const param of params) {
-        document.querySelector(`#${param.group} .params`).appendChild(createSlider(param));
+        if (param.group === "shader")
+            container.appendChild(createSlider(param));
     }
 }
 
@@ -112,25 +114,47 @@ function renderDevices(names, selected) {
 
 // -------- shader --------
 
-function renderShaderPicker(builtinShaders, currentName) {
-    const uploader = document.querySelector('#shader .uploader');
-    uploader.replaceChildren();
+// the built-in effects: .frag files in the plugin's effects folder (plus the current shader, if uploaded)
+function renderShaderPicker(builtinShaders, currentName, shadersDir) {
+    const picker = document.querySelector('#shader .picker');
+    picker.replaceChildren();
 
-    // built-in effects (plus the current one, if it was uploaded)
-    const picker = document.createElement('select');
+    const label = document.createElement('label');
+    label.textContent = 'Built-in effects';
+    label.title = `Add your own .frag files to ${shadersDir}, then refresh`;
+
+    const select = document.createElement('select');
     const names = builtinShaders.includes(currentName) ? builtinShaders : [...builtinShaders, currentName];
     for (const name of names) {
         const option = document.createElement('option');
         option.value = name;
         option.textContent = builtinShaders.includes(name) ? name : `${name} (uploaded)`;
         option.selected = name === currentName;
-        picker.appendChild(option);
+        select.appendChild(option);
     }
-    picker.addEventListener('change', () => {
-        if (builtinShaders.includes(picker.value))
-            native.shaderSelect(picker.value);
+    select.addEventListener('change', () => {
+        if (builtinShaders.includes(select.value)) {
+            setShaderStatus(`Loading ${select.value}...`, false);
+            native.shaderSelect(select.value);
+        }
     });
-    uploader.appendChild(picker);
+
+    const refreshButton = document.createElement('button');
+    refreshButton.type = 'button';
+    refreshButton.textContent = '↻';
+    refreshButton.title = 'Rescan the effects folder';
+    refreshButton.addEventListener('click', () => native.refresh());
+
+    const folder = document.createElement('small');
+    folder.textContent = shadersDir;
+
+    picker.append(label, select, refreshButton, folder);
+}
+
+// uploads a shader file from anywhere
+function renderShaderUploader() {
+    const uploader = document.querySelector('#shader .uploader');
+    uploader.replaceChildren();
 
     const container = document.createElement('div');
     container.classList.add('input-file-container');
@@ -144,29 +168,26 @@ function renderShaderPicker(builtinShaders, currentName) {
 
     const submitButton = document.createElement('button');
     submitButton.type = 'button';
-    submitButton.textContent = 'Submit';
+    submitButton.textContent = 'Upload';
     submitButton.disabled = true;
-
-    const status = document.createElement('label');
-    status.id = 'shaderStatus';
-    status.textContent = `Current shader: ${currentName}`;
 
     fileInput.addEventListener('change', () => {
         submitButton.disabled = fileInput.files.length === 0;
     });
     submitButton.addEventListener('click', () => {
         submitButton.disabled = true;
-        status.textContent = 'Uploading...';
+        setShaderStatus(`Loading ${fileInput.files[0].name}...`, false);
         native.shaderUpload(fileInput.files[0]).catch(error => setShaderStatus(String(error), true));
     });
 
     selector.append(fileInput, submitButton);
-    container.append(selector, status);
+    container.append(selector);
     uploader.appendChild(container);
 }
 
+// the last shader action's outcome; kept across snapshots
 function setShaderStatus(text, isError) {
     const status = document.getElementById('shaderStatus');
-    if (status)
-        status.textContent = isError ? `Error: ${text}` : text;
+    status.textContent = text;
+    status.classList.toggle('error', isError);
 }

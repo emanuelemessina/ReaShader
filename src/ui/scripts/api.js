@@ -27,6 +27,11 @@ const native = {
         this.send({ type: "renderingDevice", index: index });
     },
 
+    // ask for a fresh snapshot (rescans the built-in effects)
+    refresh() {
+        this.send({ type: "refresh" });
+    },
+
     // one of the built-in effects, by file name
     shaderSelect(name) {
         this.send({ type: "shaderSelect", name: name });
