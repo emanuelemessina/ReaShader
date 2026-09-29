@@ -17,6 +17,7 @@ function renderSnapshot(snapshot) {
     document.title = `${snapshot.track.number} | ${snapshot.track.name}`;
     renderParams(snapshot.params);
     renderDevices(snapshot.devices.names, snapshot.devices.selected);
+    document.getElementById('showLogo').checked = snapshot.logo;
     renderShaderPicker(snapshot.shaders, snapshot.shader.name);
     renderShaderUploader();
 }

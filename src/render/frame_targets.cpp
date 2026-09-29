@@ -46,9 +46,10 @@ namespace ReaShader::gpu
 						VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT);
 
 		input.create(context.device, context.allocator, extent, kFrameFormat,
-					 VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+					 VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 		output.create(context.device, context.allocator, extent, kFrameFormat,
-					  VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+					  VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+						  VK_IMAGE_USAGE_TRANSFER_DST_BIT);
 	}
 
 	void FrameTargets::destroy(Context& context)
@@ -92,6 +93,28 @@ namespace ReaShader::gpu
 				   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT,
 				   VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
 				   VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+	}
+
+	void FrameTargets::recordInputToOutput(VkCommandBuffer commandBuffer)
+	{
+		transition(commandBuffer, input.image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+				   VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+		transition(commandBuffer, output.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				   VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_COPY_BIT,
+				   VK_ACCESS_2_TRANSFER_WRITE_BIT);
+
+		VkImageCopy region{};
+		region.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+		region.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+		region.extent = { extent.width, extent.height, 1 };
+		vkCmdCopyImage(commandBuffer, input.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, output.image,
+					   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+		transition(commandBuffer, output.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				   VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+				   VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+				   VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 	}
 
 	void FrameTargets::recordDownload(VkCommandBuffer commandBuffer)

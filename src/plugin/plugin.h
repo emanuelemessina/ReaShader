@@ -121,6 +121,7 @@ namespace ReaShader
 		mutable std::mutex stateMutex;
 		int renderingDevice{ 0 };
 		std::vector<std::string> renderingDeviceNames;
+		bool showLogo{ false };
 		std::string shaderName; // empty = no shader
 		std::string shaderData; // the current shader's compiled form (JSON)
 		Parameters::ValueMap savedShaderValues; // restored when the shader's params appear

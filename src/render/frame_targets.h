@@ -25,8 +25,12 @@ namespace ReaShader::gpu
 		void writeInput(Context& context, const FrameView& inputFrame);
 		void readOutput(Context& context, const FrameView& outputFrame);
 
-		// GPU side: input ends up readable by shaders, output is copied back from a color attachment
+		// GPU side:
+		// - upload: input ends up readable by shaders
+		// - passes leave output as a color attachment
+		// - download: output is copied back
 		void recordUpload(VkCommandBuffer commandBuffer);
+		void recordInputToOutput(VkCommandBuffer commandBuffer); // stands in for passes: output = input
 		void recordDownload(VkCommandBuffer commandBuffer);
 
 		VkExtent2D extent{};

@@ -84,6 +84,8 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 
 set(INTERNAL_SHADERS
     fullscreen.vert
+    scene.vert
+    scene.frag
 )
 
 foreach(_shader ${INTERNAL_SHADERS})
@@ -135,6 +137,7 @@ target_sources(${PROJECT_NAME} PRIVATE
     src/render/frame_targets.cpp
     src/render/shader_pass.cpp
     src/render/shader_compiler.cpp
+    src/render/scene.cpp
     src/render/gpu.cpp
 
     src/util/logging.cpp

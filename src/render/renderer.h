@@ -26,6 +26,7 @@ namespace ReaShader
 		struct FrameTargets;
 		struct CompiledShader;
 		class ShaderPass;
+		class Scene;
 	} // namespace gpu
 
 	// Renders REAPER's video frames through the current shader on the GPU.
@@ -51,6 +52,9 @@ namespace ReaShader
 		// no shader: frames pass through unchanged
 		void clearShader();
 
+		// the spinning ReaShader logo over the video (the easter egg); off by default
+		void setLogoEnabled(bool enabled);
+
 		struct FrameInputs
 		{
 			double time;
@@ -58,7 +62,7 @@ namespace ReaShader
 			const double* paramValues; // all the plugin's params, by id
 			size_t paramCount;
 		};
-		// false: nothing rendered (inactive, busy, failed or no shader), the caller passes the input through
+		// false: nothing rendered (inactive, busy, failed, or no shader and no logo): the caller passes the input through
 		bool renderFrame(const FrameView& input, const FrameView& output, const FrameInputs& inputs);
 
 	  private:
@@ -66,6 +70,7 @@ namespace ReaShader
 		void _destroyDevice();
 		void _teardown(); // device + instance
 		void _installShader(); // builds the pass for `shader`
+		void _createScene();
 
 		ReaShaderPlugin* plugin;
 
@@ -74,6 +79,8 @@ namespace ReaShader
 		std::unique_ptr<gpu::FrameTargets> targets;
 		std::unique_ptr<gpu::ShaderPass> shaderPass;
 		std::unique_ptr<gpu::CompiledShader> shader; // kept to rebuild the pass on a device change
+		std::unique_ptr<gpu::Scene> scene;			 // created while the logo is enabled
+		bool logoEnabled = false;
 		bool failed = false;						 // a Vulkan error stops rendering until the next init()
 		int32_t frameCount = 0;
 	};
