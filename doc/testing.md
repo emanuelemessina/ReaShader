@@ -56,7 +56,7 @@ Or run the binary directly, which is faster when only tests changed: `build/test
 test/
   CMakeLists.txt       the test application's own CMake project (never included by the main build)
   main.cpp             doctest's runner, plus teardown of the shared GPU instance
-  support/             helpers shared by the unit tests (no tests here)
+  support/             helpers shared by the cases (no tests here): support.* for GPU unit tests, host_helpers.h for host tests
   host/                the fake REAPER host (no tests here; Windows only)
   cases/               the tests: one file per area, each a TEST_SUITE
   shaders/             fixtures: broken.frag
@@ -69,6 +69,7 @@ Test suites:
 | `shader_compiler` | `cases/shader_compiler.cpp` | the shader contract: the examples compile, `Params` reflection and offsets, `//@param`, error line numbers, rejected resources, the stored JSON form. No GPU. |
 | `render` | `cases/render.cpp` | the renderer's building blocks on **every GPU**, checked pixel by pixel: an example shader at an odd width with padded rows, `Params` values and B,G,R,A order, defaults for params not given, the logo scene over a plain copy. |
 | `host` | `cases/host_lifecycle.cpp` | the built plugin in the fake host: its descriptor, the initial param list, activate/process/deactivate twice (audio unchanged at gain 1, the video processor created and deleted), video passthrough with no shader, destroying an active plugin. |
+| `host` | `cases/host_scenarios.cpp` | project scenarios: a shader arriving with a project while active (restart, rescan, its params, frames through it) or before activation (no restart); param values at video time vs. the plugin's own; the state round trip (shader, values by name, logo); the logo over video; an unrecognized state. |
 
 **The build (`test/CMakeLists.txt`)** follows the main build's structure:
 - it compiles the plugin sources under unit test (`src/render/*`, `src/util/logging`, `src/util/paths`) straight into `reashader_tests`, with the plugin's warning flags;
@@ -139,6 +140,8 @@ test::forEachGpu([&](gpu::Context& context) {
 - **`idle()`** is REAPER's main-thread timer: it calls `on_main_thread` when the plugin asked for a callback, restarts the plugin (`deactivate` + `activate`) when it asked for a restart, and flushes params when asked.
 - **Audio:** `processAudio(blocks, input)` runs stereo 256-sample blocks of a constant input and returns the output.
 - **Video:** `renderVideo(frame, time)` hands the frame to `process_frame` as REAPER's upstream frame, with wet/dry 1 and the host's param values, and returns what the plugin returned. It also says whether that was the input frame itself (passthrough).
+- **State:** `saveState()` / `loadState(data)`, on the main thread, like saving and opening a project. The host feeds the state to the plugin in chunks of 1000 bytes.
+- **Automation:** `automate(id, value)` changes the host's value right away (what `process_frame` gets), and queues a CLAP param event for the next audio block. `params()` and `param(name)` are the host's view after the last scan. `pluginValue(id)` asks the plugin (`params.get_value`).
 - **The REAPER API** the plugin uses, through the `cockos.reaper_extension` host extension and its `GetFunc`:
   - `clap_get_reaper_context` (4 = the FX's FxDsp, 1 = its track);
   - `video_CreateVideoProcessor`, which returns a `host::VideoProcessor` that the plugin deletes on deactivate;
@@ -157,9 +160,11 @@ test::forEachGpu([&](gpu::Context& context) {
 
 **Observed and assumed.** Every REAPER behavior in the host is commented as either:
 - **observed:** verified in REAPER (e.g. the REAPER extension and the contexts 4 and 1, which the plugin's working video tap relies on);
-- **assumed:** not verified yet (e.g. the order of calls in `idle()`, the frames' row padding, `force_format` 0).
+- **assumed:** not verified yet (e.g. the order of calls in `idle()`, the frames' row padding, `force_format` 0, state in 1000-byte chunks, the plugin counting as inactive from the start of `deactivate`).
 
 When REAPER turns out to behave differently from the host, fix the host first and mark it observed. Then add a test that fails the way REAPER did, and fix the plugin.
+
+**Shaders in host tests** arrive the way they do in a saved project, with no test hooks in the plugin. `test::projectState("brightness.frag", logo)` (`support/host_helpers.h`) compiles an example shader with the shader compiler, as the plugin would have on upload, and embeds it in a state document. Load it with `loadState()`, then `idle()` to let the plugin apply the new params (a restart if it's active).
 
 **A host test:**
 
@@ -175,6 +180,6 @@ TEST_CASE("what it checks")
 
     reaper.idle();
     reaper.destroyPlugin();
-    checkNoProblems(reaper); // FAIL_CHECK on each of reaper.problems()
+    test::checkNoProblems(reaper); // FAIL_CHECK on each of reaper.problems()
 }
 ```

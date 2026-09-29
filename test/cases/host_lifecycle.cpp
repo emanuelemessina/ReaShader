@@ -8,34 +8,11 @@
 
 // The built plugin in the fake REAPER host: loading, the CLAP lifecycle, audio, and video passthrough.
 
-#include "host/reaper.h"
-#include "host/video.h"
+#include "support/host_helpers.h"
 
 #include <doctest/doctest.h>
 
 #include <string>
-
-namespace
-{
-	// every test ends with this: nothing the host would consider wrong happened
-	void checkNoProblems(const host::Reaper& reaper)
-	{
-		for (const std::string& problem : reaper.problems())
-			FAIL_CHECK(problem);
-	}
-
-	host::Frame gradient(int width, int height)
-	{
-		host::Frame frame(width, height, host::rowspanFor(width));
-		for (int y = 0; y < height; y++)
-			for (int x = 0; x < width; x++)
-			{
-				uint8_t* p = frame.at(x, y);
-				p[0] = (uint8_t)x, p[1] = (uint8_t)y, p[2] = (uint8_t)(x + y), p[3] = 255;
-			}
-		return frame;
-	}
-} // namespace
 
 TEST_SUITE("host")
 {
@@ -53,7 +30,7 @@ TEST_SUITE("host")
 		CHECK(std::string(descriptor->id) == "com.emanuelemessina.reashader.debug");
 		CHECK(std::string(descriptor->name) == "ReaShader (Debug)");
 #endif
-		checkNoProblems(reaper);
+		test::checkNoProblems(reaper);
 	}
 
 	TEST_CASE("a new plugin lists only Audio Gain, at 1")
@@ -66,7 +43,7 @@ TEST_SUITE("host")
 		CHECK(reaper.params()[0].value == 1.0);
 
 		reaper.destroyPlugin();
-		checkNoProblems(reaper);
+		test::checkNoProblems(reaper);
 	}
 
 	TEST_CASE("the lifecycle, twice: activate, process, deactivate")
@@ -90,7 +67,7 @@ TEST_SUITE("host")
 		}
 
 		reaper.destroyPlugin();
-		checkNoProblems(reaper);
+		test::checkNoProblems(reaper);
 	}
 
 	TEST_CASE("with no shader, video frames pass through unchanged")
@@ -99,7 +76,7 @@ TEST_SUITE("host")
 		reaper.createPlugin();
 		reaper.activate();
 
-		host::Frame input = gradient(321, 17);
+		host::Frame input = test::gradientFrame(321, 17);
 		for (int frame = 0; frame < 3; frame++)
 		{
 			INFO("frame ", frame);
@@ -110,7 +87,7 @@ TEST_SUITE("host")
 
 		reaper.idle();
 		reaper.destroyPlugin();
-		checkNoProblems(reaper);
+		test::checkNoProblems(reaper);
 	}
 
 	TEST_CASE("destroying an active plugin deactivates it first")
@@ -121,6 +98,6 @@ TEST_SUITE("host")
 		reaper.destroyPlugin();
 
 		CHECK_FALSE(reaper.hasVideoProcessor());
-		checkNoProblems(reaper);
+		test::checkNoProblems(reaper);
 	}
 }

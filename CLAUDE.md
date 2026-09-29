@@ -15,22 +15,18 @@ Docs for human developers, in `doc/`. They describe only what exists: no roadmap
 **Roadmap** (each phase a separate batch):
 1. **Done:** `test/` with doctest, the unit suites `shader_compiler` and `render`, the `test` task.
 2. **Done:** the fake REAPER host (`test/host/`, described for humans in `doc/testing.md` §4) and the `host` suite: descriptor, param list, lifecycle twice, passthrough, destroy while active.
-3. **Next, host scenarios:**
-   - a shader via state: restart + rescan, the param list, frames rendered through it (this is the first host test that renders on the GPU, so it's the first where the plugin's validation messages can show up);
-   - the state round trip;
-   - automation values at video time;
-   - the logo.
-4. **More unit tests:** `ParamList` and the web UI protocol (`handleWebUIMessage` with a `WebUISender` that records replies).
+3. **Done:** host scenarios (`cases/host_scenarios.cpp`): a shader via state while active (restart + rescan) or before activation, video-time values vs. the plugin's, the state round trip, the logo, an unrecognized state. A deliberately broken barrier in the plugin fails the 4 host tests that render, so host validation checking works.
+4. **Next, more unit tests:** `ParamList` and the web UI protocol (`handleWebUIMessage` with a `WebUISender` that records replies).
 
-**Agreed design for phase 3:**
-- **A shader reaches the plugin through state:** compile it with the linked `gpu::compileShader` (tooling), embed `gpu::toJson` in a state JSON (`{ version: 2, params, device, logo, shader: { name, compiled } }`), then `state.load`. No test hooks in the plugin.
-- **Host tests talk to the plugin only through CLAP and the REAPER extension.**
+**Host test rules:** host tests talk to the plugin only through CLAP and the REAPER extension, with no test hooks in the plugin. A shader arrives through state (`test::projectState`, which compiles with the linked `gpu::compileShader` as tooling).
 
 **Host facts still to verify in REAPER** (all marked *assumed* in `test/host/`):
 - whether `state.load` comes before or after `activate`, and whether it's wrapped in `deactivate`;
 - how and when `request_restart` is answered (the host: `idle()`, `deactivate` + `activate`);
 - `force_format`, the input frame's row padding, and the parmlist order (the host: CLAP param index order);
-- which thread `params.flush` runs on when not processing.
+- which thread `params.flush` runs on when not processing;
+- state streams in chunks (the host: 1000 bytes);
+- the plugin counting as inactive from the start of `deactivate`, where it calls `rescan(ALL)` (the host allows that).
 
 When one is verified, change the host, mark it *observed*, and update `doc/testing.md` §4.
 
@@ -110,9 +106,9 @@ There is no lint step. The test application (`test/`, see Testing) runs before t
 - **Its own CMake project** (`test/CMakeLists.txt`, executable `reashader_tests`), never included by the main build. [doctest](https://github.com/doctest/doctest) is the submodule `external/doctest` (`v2.5.3`).
 - **Layout:**
   - `main.cpp` (doctest runner + GPU teardown);
-  - `support/` (helpers: `repoPath`, `readFile`, `TestFrame`, `forEachGpu`, `render`);
+  - `support/` (helpers: `support.*` with `repoPath`, `readFile`, `TestFrame`, `forEachGpu`, `render`; `host_helpers.h` with `checkNoProblems`, frames, `brightnessMismatches`, `projectState`);
   - `host/` (the fake REAPER, Windows only: `reaper.*`, `video.*`, `thread.h`, `reaper_sdk.h`);
-  - `cases/` (one `TEST_SUITE` per file: `shader_compiler`, `render`, `host` in `host_lifecycle.cpp`);
+  - `cases/` (`TEST_SUITE`s: `shader_compiler`, `render`, `host` in `host_lifecycle.cpp` + `host_scenarios.cpp`);
   - `shaders/` (fixtures).
 - **Unit tests** compile the plugin sources under test (`src/render/*`, `src/util/{logging,paths}`) into the test binary with the plugin's warning flags.
 - **Host tests** load the built `.clap` (`REASHADER_CLAP`: the main build's preset of the same profile) through `clap_entry` with `host::Reaper`:
@@ -120,7 +116,8 @@ There is no lint step. The test application (`test/`, see Testing) runs before t
   - **Problems:** `problems()` collects message boxes (a watcher closes them; verified with a probe box), validation lines in `<clap dir>/rs.log` (deleted before load), and broken contracts.
   - **One `host::Reaper` at a time**, because `GetFunc` is context-free.
   - **Per-test ending:** every host test ends with `checkNoProblems(reaper)`.
-  - **Rendering:** no shader and no logo means the renderer returns `false` before any GPU work, so today's host tests exercise only `init()` on the GPU.
+  - **Rendering:** no shader and no logo means the renderer returns `false` before any GPU work. The scenario tests (shader, logo) render on the GPU.
+  - **`reaper_sdk.h`** defines `NOMINMAX` before `<windows.h>` (test code only; the plugin doesn't).
 - **`test::forEachGpu`** runs a body per GPU on one shared instance and fails the test on any validation message logged to `build/tests-<profile>/rs.log` meanwhile. In debug that includes sync validation, and it was verified to catch a broken barrier.
 - **Running a subset:** `build/tests-debug/reashader_tests --test-suite=render`, or `--test-case="*logo*"`.
 

@@ -77,6 +77,14 @@ namespace host
 		// REAPER's main-thread idle: on_main_thread when requested, a restart when requested
 		void idle();
 
+		// clap.state, on the main thread (a project save / load)
+		std::string saveState();
+		void loadState(const std::string& state);
+
+		// Host automation of a param: the host's value (what process_frame gets) changes now, and the next
+		// audio block carries it to the plugin as a CLAP param event
+		void automate(clap_id id, double value);
+
 		// `blocks` audio blocks of constant `input` through process(), on the audio thread.
 		// Returns the last block's first output channel.
 		std::vector<float> processAudio(int blocks, float input);
@@ -92,6 +100,8 @@ namespace host
 		// -------- observations --------
 
 		const std::vector<Param>& params() const;
+		const Param* param(const std::string& name) const; // by name, null if absent
+		double pluginValue(clap_id id) const;			   // params.get_value: the plugin's own value
 		bool isActive() const;
 		bool hasVideoProcessor() const;
 		int restarts() const; // restarts done for request_restart
@@ -103,7 +113,7 @@ namespace host
 		std::vector<std::string> problems() const;
 
 	  private:
-		void problem(std::string what);
+		void problem(std::string what) const;
 		void scanParams();
 		void watchForMessageBoxes();
 
@@ -141,6 +151,8 @@ namespace host
 		const clap_plugin_t* plugin = nullptr;
 		const clap_plugin_params_t* pluginParams = nullptr;
 		std::vector<Param> paramList;
+		std::mutex automationMutex;
+		std::vector<clap_event_param_value_t> automation; // for the next audio block
 		bool active = false;
 
 		std::thread::id mainThread;
@@ -151,7 +163,7 @@ namespace host
 		std::atomic<VideoProcessor*> videoProcessor{ nullptr };
 
 		mutable std::mutex problemsMutex;
-		std::vector<std::string> problemList;
+		mutable std::vector<std::string> problemList;
 
 		std::atomic<bool> watching{ true };
 		std::thread boxWatcher;
