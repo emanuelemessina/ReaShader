@@ -46,3 +46,39 @@ The project is mid-migration from VST3 to **CLAP** (a lighter, C-ABI, header-onl
 - The deploy step must copy `assets/`/`rsui/` alongside the `.clap`, not just the binary — `WebUIHost`/`ReaShaderRenderer` resolve `ASSETS_DIR`/`RSUI_DIR` relative to wherever the plugin binary *actually ends up running from* (`tools::paths::getDynamicLibraryDir()`), not the build tree. Deploying only the `.clap` file leaves the web UI unable to find `rsui.html` at runtime even though the build tree looks correct.
 - **glslang/SPIRV-Cross resolve from the installed Vulkan SDK, not a manual build**: the SDK's `Lib/` folder ships both debug (`d`-suffixed, e.g. `glslangd.lib`) and release variants of `glslang.lib` + `OSDependent`/`MachineIndependent`/`GenericCodeGen`/`glslang-default-resource-limits` and `spirv-cross-core`/`spirv-cross-glsl` — `CMakeLists.txt`'s `find_library` block picks the matching variant for `CMAKE_BUILD_TYPE` automatically, confirmed working end-to-end in a Debug build (this contradicted an earlier assumption here, written before checking the actual `Lib/` contents, that the SDK only ships release libs — corrected after actually looking). Two SDK-version-specific naming gotchas worth knowing if this breaks on a different SDK version: `OGLCompiler.lib` doesn't exist in current glslang releases (it's been folded away upstream — don't add it back to `RS_GLSLANG_LIB_NAMES`), and `GetDefaultResources()` (used by `vktpipeline.h`'s `compile_glsl_to_spirv`) now lives in its own `glslang-default-resource-limits.lib`, not the core `glslang.lib`. `RS_SPVC_PATH` defaults to `Include/spirv_cross` (not `Include` — the SDK nests SPIRV-Cross headers one level deeper than a from-source checkout would) and can be overridden to a manually built checkout if a future SDK version's bundled copy proves incompatible.
 - **`vkt/SpvTools.h` needs SPIRV-Tools linked too**: `vktpipeline.h` includes `glslang/SPIRV/SpvTools.h` for validation/optimization, which pulls in `spvtools::Optimizer`/`spv*` C-API symbols from `SPIRV-Tools.lib`/`SPIRV-Tools-opt.lib` — easy to miss since nothing in `rsrenderer.cpp` calls these directly; they're only needed because that header is included at all. Both are in `RS_GLSLANG_LIB_NAMES` in `CMakeLists.txt`.
+
+## Cleanup and renderer rewrite (September 2026)
+
+A seven-phase cleanup made the code skimmable and replaced the renderer, without dropping features.
+
+- **Hygiene:** removed the VST3 sources and editor files, dead utilities (MIME types, MSVC warning codes, string helpers, `FWD_DECL`, global flag operators), and migration-era comments. The migration narrative moved here.
+- **Build:**
+  - Vulkan is found with `find_package(Vulkan)`.
+  - Third-party headers are `SYSTEM` includes, and our own code builds with `-Wall -Wextra -Wpedantic -Wshadow -Wconversion` and zero warnings.
+  - The UI's SCSS and the internal shaders are compiled by the build, and staging runs on every build.
+  - The plugin deploys into its own `ReaShader/` folder, skipping with a warning if REAPER holds the file.
+- **Dependencies:** cwalk was replaced by `std::filesystem`. CLAP and Boxer became submodules, and vk-bootstrap and SPIRV-Reflect were added. glslang/SPIRV-Tools/SPIRV-Cross, looked up by hand in the SDK, were replaced by shaderc.
+- **Parameters, state, UI protocol:**
+  - The polymorphic parameter hierarchy became one `Param` struct with lock-free values.
+  - State became one JSON document.
+  - The fluent message handler became a plain dispatch on `type`, with a single `snapshot` message that the UI rebuilds itself from.
+- **Layering:**
+  - New folders: `clap/` (shell), `plugin/`, `render/`, `util/`, `ui/`.
+  - The video tap moved into the plugin, and the renderer became private.
+  - The GUI is owned through RAII.
+- **Renderer:**
+  - The hand-rolled `vkt` toolkit (about 3,300 lines) and the old renderer (about 1,600) were replaced by about 2,000 lines of plain structs on Vulkan 1.3 with dynamic rendering.
+  - Each frame is now one submit and one fence wait, instead of three submits and four stalls.
+  - Row strides are respected, and the renderer never throws.
+- **Shaders:**
+  - User shaders write only `main()` and an optional `Params` block with `//@param` annotations.
+  - They are compiled once, on upload, and stored as JSON.
+  - Their params are host params, through CLAP's restart + rescan.
+  - The plugin starts with no shader, so video passes through. Example shaders ship as sources.
+- **Logo:** the old 3D scene became `render/scene.*` (meshes, textures, depth), shown as an easter egg while the about box is open.
+
+Findings along the way:
+- **REAPER hung at 100% CPU** once the webview had keyboard focus. The dialog's tab navigation looped forever, because the GUI container lacked `WS_EX_CONTROLPARENT`.
+- **A real bug hidden by `flagoperators.h`:** its global `operator|` made `VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT` a single-bit `VkShaderStageFlagBits`. Removing it surfaced the bug.
+- **A UI-only edit never reached the plugin** when the staging step was a post-link step of the `.clap`, because it only ran when C++ changed.
+- **The web UI's sliders never appeared:** the JS matched `"vstParameter"` while C++ sent `"numericParameter"`.

@@ -50,7 +50,7 @@ namespace ReaShader
 	{
 		constexpr wchar_t kWindowClassName[] = L"ReaShaderGuiWindow";
 
-		// initial size fitting rsui's layout (500px max-width panel); resizable afterwards
+		// initial size fitting the UI's layout (560px max-width panel); resizable afterwards
 		constexpr uint32_t kDefaultWidth = 560;
 		constexpr uint32_t kDefaultHeight = 720;
 		constexpr uint32_t kMinWidth = 320;

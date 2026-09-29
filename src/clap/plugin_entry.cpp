@@ -255,7 +255,7 @@ namespace ReaShader
 															 "https://github.com/emanuelemessina/ReaShader",
 															 "",
 															 "",
-															 "0.0.1",
+															 REASHADER_VERSION,
 															 "THE Video Processor for Reaper",
 															 nullptr };
 

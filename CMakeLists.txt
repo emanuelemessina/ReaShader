@@ -142,6 +142,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 
     src/util/logging.cpp
     src/util/paths.cpp
+    src/util/shell.cpp
 )
 
 # External sources (warnings disabled)
@@ -199,6 +200,10 @@ target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE
 # Compiler options
 #################################
 
+# Version define
+target_compile_definitions(${PROJECT_NAME} PRIVATE REASHADER_VERSION="${PROJECT_VERSION_STRING}")
+
+# Flags
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(${PROJECT_NAME} PRIVATE
         -Wall -Wextra -Wpedantic -Wshadow -Wconversion

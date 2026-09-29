@@ -14,27 +14,36 @@
 </head>
 <body>
 	<div id="background"></div>
-	<div id="logo">
+	<div id="logo" title="About ReaShader">
 		<img src="images/reashader-logo-hr.png"/>
 	</div>
 	<div id="paramsContainer">
 		<fieldset id="renderingDevice">
 			<legend>Rendering Device</legend>
 		</fieldset>
-		<fieldset id="extras">
-			<legend>Extras</legend>
-			<div class="checkbox-container">
-				<input type="checkbox" id="showLogo">
-				<label for="showLogo">3D logo</label>
-			</div>
-		</fieldset>
 		<fieldset id="shader">
 			<legend>Shader</legend>
 			<div class="picker"></div>
-			<div class="uploader"></div>
 			<div id="shaderStatus"><span class="spinner"></span><span class="text"></span></div>
 			<div class="params"></div>
 		</fieldset>
+	</div>
+
+	<!-- about box: opened by the logo, shows the 3D logo over the video while open -->
+	<div id="about" class="modal" hidden>
+		<div class="modal-box">
+			<div class="modal-content">
+				<button type="button" class="close" title="Close">&times;</button>
+				<h2>ReaShader</h2>
+				<p class="version"></p>
+				<p class="tagline">GLSL shaders on REAPER's video, on the GPU with Vulkan.</p>
+				<dl class="credits">
+					<dt>Author</dt><dd>Emanuele Messina</dd>
+					<dt>License</dt><dd>MIT</dd>
+				</dl>
+				<a href="#" data-url="https://github.com/emanuelemessina/ReaShader">github.com/emanuelemessina/ReaShader</a>
+			</div>
+		</div>
 	</div>
 </body>
 </html>

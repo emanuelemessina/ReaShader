@@ -20,6 +20,7 @@
 $img_background: "images/background.png";
 
 body {
+    overflow-x: hidden;
     display: flex;
     flex-direction: column;
     align-content: center;
@@ -57,6 +58,13 @@ flex-grow: 1;
 
     img{
         width: 100%;
+        cursor: pointer;
+        transition: transform .2s, filter .2s;
+
+        &:hover{
+            transform: scale(1.03);
+            filter: drop-shadow(0 0 10px c.$accent);
+        }
     }
 }
 
@@ -123,12 +131,20 @@ fieldset{
 #shader .picker{
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
+    align-items: stretch;
     gap: 8px;
     margin-bottom: 10px;
 
     select{
         flex-grow: 1;
+    }
+
+    .icon-button{
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 .5rem;
+        cursor: pointer;
     }
 
     small{
@@ -170,6 +186,106 @@ fieldset{
 
     &.busy .spinner{
         display: inline-block;
+    }
+}
+
+.modal{
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: c.$b-50;
+
+    &[hidden]{
+        display: none;
+    }
+}
+
+.modal-box{
+    // a rotating gradient behind the content, showing through as a 2px border
+    position: relative;
+    width: min(360px, 90vw);
+    padding: 2px;
+    overflow: hidden;
+    box-shadow: 0 0 6px c.$b-50;
+
+    &::before{
+        content: "";
+        position: absolute;
+        inset: -100%;
+        background: conic-gradient(transparent 0 60%, c.$accent 80%, white 90%, c.$accent 95%, transparent);
+        animation: spin 4s linear infinite;
+    }
+}
+
+.modal-content{
+    position: relative;
+    box-sizing: border-box;
+    padding: 1.5rem;
+    background-color: c.$background;
+    text-align: center;
+
+    h2{
+        margin: 0;
+        letter-spacing: .1em;
+    }
+
+    .version{
+        margin: .25rem 0 1rem;
+        color: c.$w-50;
+        font-family: monospace;
+        font-size: .75rem;
+    }
+
+    .tagline{
+        margin: 0 0 1.25rem;
+        font-size: .95rem;
+        line-height: 1.4;
+        color: rgb(255 255 255 / 85%);
+    }
+
+    .credits{
+        display: grid;
+        grid-template-columns: auto auto;
+        justify-content: center;
+        gap: .3rem 1rem;
+        margin: 0 0 1.25rem;
+        font-size: .85rem;
+
+        dt{
+            text-align: right;
+            color: c.$w-50;
+            text-transform: uppercase;
+            font-size: .7rem;
+            letter-spacing: .08em;
+            align-self: center;
+        }
+
+        dd{
+            margin: 0;
+            text-align: left;
+        }
+    }
+
+    a{
+        color: #d68bd8;
+        text-decoration: none;
+        font-size: .85rem;
+
+        &:hover{
+            color: white;
+        }
+    }
+
+    .close{
+        position: absolute;
+        top: 0;
+        right: 0;
+        padding: 0 .6rem;
+        font-size: 1.2rem;
+        line-height: 1.6;
+        cursor: pointer;
     }
 }
 

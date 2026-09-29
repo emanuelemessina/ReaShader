@@ -1,4 +1,4 @@
-[submodule "nlohmann-json"]
+[submodule "external/json"]
 	path = external/json
 	url = https://github.com/nlohmann/json
 [submodule "external/reaper-sdk"]

@@ -31,6 +31,11 @@ const native = {
         this.send({ type: "logo", enabled: enabled });
     },
 
+    // https links open in the system browser (the webview must stay on the UI)
+    openUrl(url) {
+        this.send({ type: "openUrl", url: url });
+    },
+
     // a compiled shader by name, "" = none
     shaderSelect(name) {
         this.send({ type: "shaderSelect", name: name });

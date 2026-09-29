@@ -6,26 +6,9 @@ Guidance for Claude Code (claude.ai/code) when working in this repository. It de
 
 ReaShader is a **CLAP** video-effect plugin for REAPER. It taps REAPER's video frames, runs them through a Vulkan pipeline (GLSL shaders) and hands them back. Its HTML/JS/SCSS UI is embedded in REAPER's FX window through a native webview ([webview/webview](https://github.com/webview/webview)).
 
-## Cleanup in progress
+## Proposals (the user's, not started)
 
-A multi-phase cleanup is underway. The plan lives at `~/.claude/plans/picking-up-on-this-snug-aurora.md`.
-- **Phases:** 1 deletions/hygiene → 2 build → 3 utilities → 4 params/state/protocol → 5 layering → 6 renderer rewrite (vkt → vk-bootstrap + plain structs) → 7 docs.
-- **How it runs:** before each batch of changes, give the user a brief rationale and wait for approval. The user commits between phases.
-- **Status:** phase 6 in progress.
-  - **Done** (built, standalone GPU test passes, awaiting the REAPER test): the new renderer; shaders compiled on upload and stored; `//@param`; shader params as host params through restart + rescan.
-  - **6b done** (built, standalone GPU test passes, awaiting the REAPER test): `render/scene.*`, the logo easter egg behind an off-by-default "3D logo" switch.
-  - **Still to do:** 6d, delete `render/vkt/` (no longer built).
-
-## Proposals for after the cleanup (user's, not started)
-
-- **Test application.** A small host that loads the plugin the way REAPER does, to verify features and stability programmatically before manual REAPER tests.
-  - When a REAPER test disagrees with it, update the test app to match what REAPER actually does.
-  - It must be clearly separate from the main `CMakeLists.txt` and sources.
-  - Tests are standardized, and kept apart from the test app's own code.
-  - The standalone GPU test from phase 6 (see Debugging) and `tests/shaders/` are natural seeds.
-- **Render doc for humans.** A Markdown doc explaining the renderer in plain terms: Vulkan concepts, what each `render/` file does, and why each decision maps to how Vulkan works.
-  - It is kept updated with every render change.
-  - It's separate from CLAUDE.md: that doc is for humans, this file is for Claude.
+A **test application** (a fake REAPER host plus standardized tests, separate from the main build; the seed is `tests/seed/`) and a **render doc for humans** (`doc/rendering.md`, kept up to date with every render change). The full handoff, with requirements, what REAPER does to the plugin, the suggested designs and open questions, is in [doc/proposals.md](doc/proposals.md).
 
 ## Hard rules
 
@@ -35,6 +18,7 @@ A multi-phase cleanup is underway. The plan lives at `~/.claude/plans/picking-up
 - REAPER's `'RGBA'` frames are laid out in memory as **B,G,R,A** (byte 0 = B).
 - **Encoding:** frontend files must be UTF-8 (`file index.html` must not say "UTF-16"). A UTF-16 `index.html` loaded via `file://` renders as garbage text.
 - **Comments:** they describe what the code does and why, for a reader with no session context. Investigation narratives go in `doc/history.md`, not in code.
+- **Changes:** before a batch of changes, give the user a brief rationale and wait for approval.
 - **Commits:** the user commits. Don't run `git commit` unless asked.
 
 ## Build
@@ -77,6 +61,7 @@ There is no test suite or lint step. Verification is manual, in REAPER.
 3. With no shader (the initial state) video passes through unchanged.
 4. Upload `resources/shaders/examples/*.frag` from the plugin folder: each appears in the shader list, its sliders appear, and REAPER's generic parameter list shows "Audio Gain" plus the shader's params, synced both ways with the web UI sliders.
 5. Upload `tests/shaders/broken.frag`: the compile error shows in the UI, and the current shader stays.
+6. Click the UI's logo: the about box opens and the 3D logo spins in the video window; closing it removes the logo.
 
 ## Architecture
 
@@ -95,12 +80,12 @@ src/render/shader_pass.*     gpu::ShaderPass: fullscreen pipeline for a compiled
 src/render/scene.*           gpu::Scene: textured meshes (tinyobjloader, stb) + depth, drawn over the frame; today the logo
 src/render/gpu.*             Vulkan helpers: VK_CHECK, Buffer, Image, createPipeline(), transition(); VMA implementation
 src/render/frame_view.h      FrameView: a CPU frame (BGRA, rowBytes)
-src/render/vkt/              old Vulkan toolkit, not built, to be deleted (6d)
-src/util/                    logging, paths, exceptions
+src/util/                    logging, paths, shell (openUrl)
 src/ui/                      the web UI: index.html, scripts/{api,ui,client}.js, styles/ui.scss; staged as ui/
 src/shaders/examples/        example shader sources + README for users, staged as resources/shaders/examples/
 src/shaders/internal/        shaders built into the plugin (fullscreen.vert, scene.vert/.frag), compiled by glslc at build time
 tests/shaders/               shaders for manual testing (broken.frag), not shipped
+tests/seed/                  standalone GPU test (own CMake project, not part of the plugin build)
 ```
 
 ### ReaShaderPlugin (one object, no processor/controller split)
@@ -121,7 +106,11 @@ tests/shaders/               shaders for manual testing (broken.frag), not shipp
   - The compiled shader (its stored JSON) is embedded, so projects are self-contained and never recompile.
   - Unknown or old state loads defaults.
   - Values of shader params are restored by name, once the shader is loaded.
-- **Logo (easter egg):** `showLogo`, off by default, saved in state as `logo`, set by the UI's "3D logo" checkbox (`logo` message). Not a host param. It calls `ReaShaderRenderer::setLogoEnabled()`.
+- **Logo (easter egg):**
+  - `showLogo`, off by default, saved in state as `logo`. Not a host param.
+  - The UI's header logo opens the about box, which sends `logo { enabled: true }`. Closing it (×, a click outside, Escape) sends `false`. The box is open whenever the snapshot's `logo` is true.
+  - It calls `ReaShaderRenderer::setLogoEnabled()`.
+- **Version:** `REASHADER_VERSION`, a compile definition from the last git tag (`PROJECT_VERSION_STRING` of cmake-git-versioning). It is used by the CLAP descriptor and the snapshot (about box).
 - **Rendering device:** not a host param. It lives in state and the web UI. Changing it (from the UI or on state load) calls `changeRenderingDevice()`.
 - **REAPER video tap:** `activate()` does:
   1. `host->get_extension(host, "cockos.reaper_extension")`, cast to `reaper_plugin_info_t*`;
@@ -187,14 +176,15 @@ Plain JSON objects with a `"type"` field. They're documented in `plugin/plugin.c
 
 | Direction | Message | Payload / effect |
 |---|---|---|
-| to UI | `snapshot` | `{ track, params, devices, logo, shader, shaders }`. The UI rebuilds itself from it (except the shader status line); its shader list is rescanned each time, e.g. when the UI opens and after an upload; sent on `ready`, activate, state load, device and shader changes |
+| to UI | `snapshot` | `{ version, track, params, devices, logo, shader, shaders }`. The UI rebuilds itself from it (except the shader status line); its shader list is rescanned each time, e.g. when the UI opens and after an upload; sent on `ready`, activate, state load, device and shader changes |
 | to UI | `paramValue` | `{ id, value }`: host automation |
 | to UI | `shaderStatus` | `{ status, state }`, state = `busy`/`ok`/`error` |
 | from UI | `ready` | — |
 | from UI | `shaderSelect` | `{ name }`: a compiled shader, `""` = none (passthrough) |
 | from UI | `paramValue` | `{ id, value }` |
 | from UI | `renderingDevice` | `{ index }` |
-| from UI | `logo` | `{ enabled }`: the 3D logo switch |
+| from UI | `logo` | `{ enabled }`: the 3D logo, on while the about box is open |
+| from UI | `openUrl` | `{ url }`: `https://` only, opened in the system browser (`util::shell::openUrl`); the webview itself must never navigate away |
 | from UI | `shaderUpload` | `{ name, source }`: GLSL sent as text |
 
 ### Parameters (`plugin/params.*`)
@@ -210,12 +200,13 @@ Plain JSON objects with a `"type"` field. They're documented in `plugin/plugin.c
 
 - **Vulkan 1.3** with dynamic rendering and synchronization2, so there are no render pass or framebuffer objects.
 - **GPU list:** usable GPUs are the ones vk-bootstrap selects; the UI's device index is an index into that list.
-- **Lifetimes, three tiers, each a plain struct with `create()`/`destroy()` listing its handles:**
+- **Lifetimes: plain structs with `create()`/`destroy()` listing their handles, no deletion queues:**
   - `Context` (instance, device);
   - `FrameTargets` (frame size);
-  - `ShaderPass` (per shader).
+  - `ShaderPass` (per shader);
+  - `Scene` (while the logo is on; its depth buffer per frame size).
 
-  No deletion queues. A device switch destroys the targets, the pass and the device, then recreates the device and the pass. The targets come back with the next frame.
+  A device switch destroys the targets, the pass, the scene and the device, then recreates the device, the pass and the scene. The targets come back with the next frame.
 - **Errors:** `VK_CHECK` throws `std::runtime_error`, and `ReaShaderRenderer`'s public functions catch everything.
 - **Shader changes:** the renderer never compiles. `setShader(CompiledShader)` swaps the pass under `frameMutex`. Frames render one at a time and wait on the fence, so the old pass is idle. With no device (inactive), the shader is kept and installed by the next `init()`. `clearShader()` removes it. With no shader, `renderFrame` returns `false` (passthrough).
 - **Internal shaders** (`fullscreen.vert`, `scene.vert`, `scene.frag`) are SPIR-V arrays compiled at build time, never read from disk.
@@ -281,4 +272,4 @@ Plain JSON objects with a `"type"` field. They're documented in `plugin/plugin.c
   - Debug builds request the Khronos validation layer (if installed). Its warnings and errors go to `rs.log` through vk-bootstrap's debug messenger.
   - The log has none in normal use, so any is a bug.
   - `VK_LOADER_DEBUG=layer` shows whether the layer was loaded.
-- **Testing the GPU code without REAPER:** a small executable that compiles `render/{gpu,context,frame_targets,shader_pass,shader_compiler,scene}.cpp` plus `util/` (and includes the generated `*.inc`; the scene needs `resources/{meshes,images}` next to the exe) and runs frames through `FrameTargets` + `ShaderPass` checks output pixels exactly. This is how the renderer rewrite was verified, on both GPUs of the dev machine.
+- **Testing the GPU code without REAPER:** `tests/seed/` (`cmake -S tests/seed -B build/tests-seed -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++`, build, run `build/tests-seed/gpu_test`). It runs frames through `FrameTargets` + `ShaderPass` + `Scene` and the shader compiler on every GPU, and checks the output pixels exactly. It prints `ALL PASSED`.

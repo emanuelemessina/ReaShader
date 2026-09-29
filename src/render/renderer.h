@@ -32,7 +32,7 @@ namespace ReaShader
 	// Renders REAPER's video frames through the current shader on the GPU.
 	// - every public function holds frameMutex; renderFrame only tries it, so REAPER's video thread
 	//   never waits (the frame passes through instead)
-	// - never throws: errors are logged, or reported through the callbacks
+	// - never throws: errors are logged, or returned (setShader)
 	class ReaShaderRenderer
 	{
 	  public:
