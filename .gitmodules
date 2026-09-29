@@ -25,3 +25,6 @@
 [submodule "external/webview"]
 	path = external/webview
 	url = https://github.com/webview/webview
+[submodule "external/boxer"]
+	path = external/boxer
+	url = https://github.com/aaronmjacobs/Boxer

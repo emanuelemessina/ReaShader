@@ -102,7 +102,7 @@ namespace ReaShader
 					msg = json::parse(json);
 					_checkMsg();
 				}
-				catch (STDEXC e)
+				catch (const std::exception& e)
 				{
 					LOG(WARNING, toConsole | toFile, "RSUI Message Handler", "Cannot parse JSON message",
 						std::format("Received: {} | Error: {}", json, e.what()));

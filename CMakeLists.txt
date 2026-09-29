@@ -25,7 +25,7 @@ set(PROJECT_NAME ReaShader)
 project(${PROJECT_NAME}
     VERSION ${PROJECT_VERSION_CMAKE}
     DESCRIPTION "${PROJECT_NAME} CLAP Plugin"
-    LANGUAGES CXX C
+    LANGUAGES CXX
 )
 
 set(CMAKE_CXX_STANDARD 20)
@@ -95,6 +95,16 @@ if(WIN32)
     add_subdirectory(external/webview SYSTEM)
 endif()
 
+# Boxer
+
+if(APPLE)
+    message(WARNING "TODO: boxer on macOS is untested (needs Objective-C++ for boxer_mac.mm)")
+elseif(NOT WIN32)
+    message(WARNING "TODO: boxer on Linux is untested (needs GTK3)")
+endif()
+
+add_subdirectory(external/boxer SYSTEM)
+
 #################################
 # Target
 #################################
@@ -104,7 +114,7 @@ add_library(${PROJECT_NAME} MODULE)
 set_target_properties(${PROJECT_NAME} PROPERTIES
     PREFIX ""
     SUFFIX ".clap"
-    LIBRARY_OUTPUT_DIRECTORY "${RS_STAGE_DIR}"
+    LIBRARY_OUTPUT_DIRECTORY "${PLUGIN_STAGE_DIR}"
 )
 
 #################################
@@ -128,11 +138,11 @@ foreach(_shader ${RS_SHADERS})
     cmake_path(GET _file STEM _name)
 
     set(_src "${CMAKE_SOURCE_DIR}/src/shaders/${_file}")
-    set(_out "${RS_SHADERS_STAGE_DIR}/${_name}.spv")
+    set(_out "${SHADERS_STAGE_DIR}/${_name}.spv")
 
     add_custom_command(
         OUTPUT ${_out}
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${RS_SHADERS_STAGE_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADERS_STAGE_DIR}"
         COMMAND Vulkan::glslc -fshader-stage=${_stage} ${_src} -o ${_out}
         DEPENDS ${_src}
         COMMENT "Compiling shader ${_file}"
@@ -175,11 +185,6 @@ target_sources(${PROJECT_NAME} PRIVATE
     src/reashader/vkt/vktrenderpass.cpp
 )
 
-# External sources
-target_sources(${PROJECT_NAME} PRIVATE 
-    external/cwalk/cwalk.c
-)
-
 # Platform-specific sources
 
 set(PLATFORM_SPECIFIC_SOURCES "")
@@ -189,21 +194,10 @@ if(WIN32)
         src/clap/reashader_clap_gui_win32.cpp
         src/clap/webui_host_win32.cpp
     )
-    list(APPEND PLATFORM_SPECIFIC_SOURCES 
-        external/boxer/src/boxer_win.cpp
-    )
 elseif(APPLE)
     message(WARNING "TODO: clap.gui and embedded webview are not implemented on macOS yet")
-    message(WARNING "TODO: boxer on macOS requires Objective-C++ enabled and Cocoa linked")
-    list(APPEND PLATFORM_SPECIFIC_SOURCES 
-        external/boxer/src/boxer_mac.mm
-    )
 else()
     message(WARNING "TODO: clap.gui and embedded webview are not implemented on Linux yet")
-    message(WARNING "TODO: boxer on Linux requires GTK3 linked")
-    list(APPEND PLATFORM_SPECIFIC_SOURCES 
-        external/boxer/src/boxer_linux.cpp
-    )
 endif()
 
 target_sources(${PROJECT_NAME} PRIVATE ${PLATFORM_SPECIFIC_SOURCES})
@@ -222,9 +216,7 @@ target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE
     external/clap/include
     external/reaper-sdk/sdk
     external/WDL/WDL
-    external/cwalk
     external/json/include
-    external/boxer/include
     external/glm
     external/VulkanMemoryAllocator/include
     external/tinyobjloader
@@ -241,23 +233,22 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         -Wall -Wextra -Wpedantic -Wshadow -Wconversion
         -Werror=return-type
     )
-    set_source_files_properties(${RS_THIRD_PARTY_SOURCES} PROPERTIES COMPILE_OPTIONS "-w")
 endif()
 
 #################################
 # Link
 #################################
 
-target_link_libraries(${PROJECT_NAME} PRIVATE 
-    Vulkan::Vulkan 
-    ${VULKAN_RENDERER_LIBS}
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    Vulkan::Vulkan
+    ${VULKAN_SDK_LIBS}
+    Boxer
 )
 
 if(WIN32)
-    target_link_libraries(${PROJECT_NAME} PRIVATE 
-        user32 
-        shell32 
-        shlwapi 
+    target_link_libraries(${PROJECT_NAME} PRIVATE
+        user32
+        shell32
         webview::core_static
     )
     # The Vulkan SDK debug static libraries omit PDB symbols
