@@ -33,7 +33,6 @@ layout(push_constant) uniform ReaShaderInputs
     float iTime;      // project time in seconds
     float iFrameRate;
     int iFrame;       // frames rendered since the shader was loaded
-    float videoParam; // the plugin's Video Param, in [0, 1]
 };
 )";
 

@@ -49,7 +49,6 @@ namespace ReaShader::Parameters
 	enum DefaultId : Id
 	{
 		AudioGain,
-		VideoParam,
 
 		DefaultCount
 	};

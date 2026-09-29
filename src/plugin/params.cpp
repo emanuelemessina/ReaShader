@@ -28,7 +28,6 @@ namespace ReaShader::Parameters
 	{
 		params = {
 			{ AudioGain, "Audio Gain", "Audio Gain", Group::Main, "%", 1.0, 0.0, 1.0, true }, // 1.0 = unchanged audio
-			{ VideoParam, "Video Param", "Video Param", Group::Main, "%", 0.5, 0.0, 1.0, true },
 		};
 		for (const Param& p : params)
 			values[p.id] = p.defaultValue;

@@ -68,6 +68,15 @@ namespace ReaShader
 			return DefWindowProcW(hwnd, msg, wParam, lParam);
 		}
 
+		// resizes the container to fill the host's window (WM_SIZE then resizes the webview)
+		void fillParent(HWND window)
+		{
+			RECT parentRect{};
+			if (GetClientRect(GetParent(window), &parentRect) && parentRect.right > 0 && parentRect.bottom > 0)
+				SetWindowPos(window, nullptr, 0, 0, parentRect.right, parentRect.bottom,
+							 SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE);
+		}
+
 		HMODULE thisModuleHandle()
 		{
 			HMODULE hm = nullptr;
@@ -185,6 +194,7 @@ namespace ReaShader
 										 (int)kDefaultHeight, (HWND)window->win32, nullptr, thisModuleHandle(), nullptr);
 			if (!hwnd)
 				return false;
+			fillParent(hwnd); // the host may not call set_size() when switching to this UI
 
 			std::unique_ptr<Gui, GuiDeleter> gui(new Gui());
 			gui->window = hwnd;
@@ -221,6 +231,7 @@ namespace ReaShader
 			auto* state = static_cast<ClapPluginState*>(plugin->plugin_data);
 			if (!state->gui)
 				return false;
+			fillParent(state->gui->window);
 			ShowWindow(state->gui->window, SW_SHOW);
 			return true;
 		}

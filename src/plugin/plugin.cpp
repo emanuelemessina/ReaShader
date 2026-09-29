@@ -437,6 +437,7 @@ namespace ReaShader
 					shaderName = name;
 					shaderSource = source;
 				}
+				_webuiSendShaderStatus("Loaded " + name, false);
 				_webuiSendSnapshot();
 			});
 	}
@@ -444,12 +445,13 @@ namespace ReaShader
 	// -------- web UI --------
 	//
 	// Messages to the UI:
-	// - snapshot    { track, params, devices, shader, shaders }: everything, the UI rebuilds itself from it
+	// - snapshot    { track, params, devices, shader, shaders, shadersDir }: everything, the UI rebuilds itself from it
 	// - paramValue  { id, value }: a host automation change
 	// - shaderStatus{ status, error }
 	//
 	// Messages from the UI:
 	// - ready       {}: the page loaded, send a snapshot
+	// - refresh     {}: send a snapshot (rescans the built-in effects)
 	// - paramValue  { id, value }
 	// - renderingDevice { index }
 	// - shaderSelect{ name }: one of the built-in effects
@@ -492,6 +494,8 @@ namespace ReaShader
 		}
 		msg["params"] = params.toJson();
 		msg["shaders"] = builtinShaders();
+		std::u8string shadersDir = effectsDir().u8string();
+		msg["shadersDir"] = std::string(shadersDir.begin(), shadersDir.end());
 
 		_webuiSend(msg);
 	}
@@ -506,7 +510,7 @@ namespace ReaShader
 		json msg = json::parse(text, nullptr, /* allow_exceptions */ false);
 		const std::string type = msg.is_object() ? msg.value("type", "") : "";
 
-		if (type == "ready")
+		if (type == "ready" || type == "refresh")
 		{
 			_webuiSendSnapshot();
 		}
