@@ -29,6 +29,15 @@ window.__reashaderOnMessage = (msg) => {
     }
 };
 
-document.getElementById('showLogo').addEventListener('change', (event) => native.logo(event.target.checked));
+// about box: opened by the logo; closed by its button, a click outside it, or Escape
+const about = document.getElementById('about');
+document.getElementById('logo').addEventListener('click', () => setAboutOpen(true));
+about.querySelector('.close').addEventListener('click', () => setAboutOpen(false));
+about.addEventListener('click', (event) => { if (event.target === about) setAboutOpen(false); });
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !about.hidden) setAboutOpen(false); });
+about.querySelectorAll('a[data-url]').forEach(link => link.addEventListener('click', (event) => {
+    event.preventDefault();
+    native.openUrl(link.dataset.url);
+}));
 
 native.ready();

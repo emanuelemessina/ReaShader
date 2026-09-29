@@ -12,6 +12,7 @@
 #include "render/shader_compiler.h"
 #include "util/logging.h"
 #include "util/paths.h"
+#include "util/shell.h"
 
 #include "reaper_plugin.h"
 #include "wdltypes.h" // video_frame.h needs WDL_FIXALIGN/INT_PTR but doesn't include this itself
@@ -281,7 +282,7 @@ namespace ReaShader
 		json state = json::parse(data, nullptr, /* allow_exceptions */ false);
 		if (!state.is_object() || state.value("version", 0) != 2)
 		{
-			// unknown or pre-JSON state: keep the defaults
+			// unrecognized format or version: keep the defaults
 			LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "State load", "Unrecognized state, using defaults");
 			return true;
 		}
@@ -351,7 +352,7 @@ namespace ReaShader
 		FrameView outputFrame{ w, h, output->get_rowspan(), reinterpret_cast<uint8_t*>(output->get_bits()) };
 		ReaShaderRenderer::FrameInputs inputs{ projectTime, frameRate, paramValues, paramCount };
 
-		// false: renderer inactive, busy or failed -> pass the input through
+		// false: inactive, busy, failed, or no shader and no logo -> pass the input through
 		if (!plugin->reaShaderRenderer->renderFrame(inputFrame, outputFrame, inputs))
 		{
 			output->Release();
@@ -493,7 +494,7 @@ namespace ReaShader
 	// -------- web UI --------
 	//
 	// Messages to the UI:
-	// - snapshot    { track, params, devices, logo, shader, shaders }: everything, the UI rebuilds itself from it
+	// - snapshot    { version, track, params, devices, logo, shader, shaders }: everything, the UI rebuilds itself from it
 	// - paramValue  { id, value }: a host automation change
 	// - shaderStatus{ status, state }: state is "busy", "ok" or "error"
 	//
@@ -501,7 +502,8 @@ namespace ReaShader
 	// - ready       {}: the page loaded, send a snapshot
 	// - paramValue  { id, value }
 	// - renderingDevice { index }
-	// - logo        { enabled }: the spinning logo over the video
+	// - logo        { enabled }: the spinning logo over the video (shown with the about box)
+	// - openUrl     { url }: opens an https:// link in the system browser
 	// - shaderSelect{ name }: a compiled shader, "" = none
 	// - shaderUpload{ name, source }: GLSL to compile and store
 
@@ -536,6 +538,7 @@ namespace ReaShader
 												   : trackName;
 
 			msg = { { "type", "snapshot" },
+					{ "version", REASHADER_VERSION },
 					{ "track", { { "number", trackNumber }, { "name", track } } },
 					{ "devices", { { "names", renderingDeviceNames }, { "selected", renderingDevice } } },
 					{ "logo", showLogo },
@@ -591,6 +594,10 @@ namespace ReaShader
 				showLogo = enabled;
 			}
 			reaShaderRenderer->setLogoEnabled(enabled);
+		}
+		else if (type == "openUrl")
+		{
+			util::shell::openUrl(msg.value("url", ""));
 		}
 		else if (type == "shaderSelect")
 		{

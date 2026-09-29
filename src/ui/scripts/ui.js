@@ -17,9 +17,8 @@ function renderSnapshot(snapshot) {
     document.title = `${snapshot.track.number} | ${snapshot.track.name}`;
     renderParams(snapshot.params);
     renderDevices(snapshot.devices.names, snapshot.devices.selected);
-    document.getElementById('showLogo').checked = snapshot.logo;
     renderShaderPicker(snapshot.shaders, snapshot.shader.name);
-    renderShaderUploader();
+    renderAbout(snapshot.version, snapshot.logo);
 }
 
 // -------- params --------
@@ -115,13 +114,34 @@ function renderDevices(names, selected) {
 
 // -------- shader --------
 
-// the compiled shaders (uploaded before) plus "none", which passes the video through
+// the compiled shaders (uploaded before) plus "none", which passes the video through,
+// next to a button that uploads a new one
 function renderShaderPicker(shaders, currentName) {
     const picker = document.querySelector('#shader .picker');
     picker.replaceChildren();
 
-    const label = document.createElement('label');
-    label.textContent = 'Shader';
+    // upload: starts as soon as a file is picked (a cancelled dialog picks none)
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.glsl,.frag';
+    fileInput.hidden = true;
+    fileInput.addEventListener('change', () => {
+        const file = fileInput.files[0];
+        if (!file)
+            return;
+        setShaderStatus(`Compiling ${file.name}...`, 'busy');
+        native.shaderUpload(file).catch(error => setShaderStatus(String(error), 'error'));
+    });
+
+    const uploadButton = document.createElement('button');
+    uploadButton.type = 'button';
+    uploadButton.classList.add('icon-button');
+    uploadButton.title = 'Upload a .frag shader';
+    uploadButton.innerHTML = FOLDER_ICON;
+    uploadButton.addEventListener('click', () => {
+        fileInput.value = ''; // picking the same file again still uploads it
+        fileInput.click();
+    });
 
     const select = document.createElement('select');
     const none = document.createElement('option');
@@ -138,7 +158,7 @@ function renderShaderPicker(shaders, currentName) {
 
     // shown only while no shader is selected
     const hint = document.createElement('small');
-    hint.textContent = 'Upload a .frag shader to compile it and add it to this list.';
+    hint.textContent = 'Upload a .frag shader with the folder button to compile it and add it to this list.';
     hint.hidden = select.value !== '';
 
     select.addEventListener('change', () => {
@@ -147,41 +167,23 @@ function renderShaderPicker(shaders, currentName) {
         native.shaderSelect(select.value);
     });
 
-    picker.append(label, select, hint);
+    picker.append(fileInput, uploadButton, select, hint);
 }
 
-// uploads a shader file from anywhere
-function renderShaderUploader() {
-    const uploader = document.querySelector('#shader .uploader');
-    uploader.replaceChildren();
+const FOLDER_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">' +
+    '<path fill="currentColor" d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/></svg>';
 
-    const container = document.createElement('div');
-    container.classList.add('input-file-container');
+// -------- about box --------
 
-    const selector = document.createElement('div');
-    selector.classList.add('selector-container');
+// open while the 3D logo is on: opening it turns the logo on, closing turns it off
+function renderAbout(version, open) {
+    document.querySelector('#about .version').textContent = version;
+    document.getElementById('about').hidden = !open;
+}
 
-    const fileInput = document.createElement('input');
-    fileInput.type = 'file';
-    fileInput.accept = '.glsl,.frag';
-
-    const submitButton = document.createElement('button');
-    submitButton.type = 'button';
-    submitButton.textContent = 'Upload';
-    submitButton.disabled = true;
-
-    fileInput.addEventListener('change', () => {
-        submitButton.disabled = fileInput.files.length === 0;
-    });
-    submitButton.addEventListener('click', () => {
-        submitButton.disabled = true;
-        setShaderStatus(`Compiling ${fileInput.files[0].name}...`, 'busy');
-        native.shaderUpload(fileInput.files[0]).catch(error => setShaderStatus(String(error), 'error'));
-    });
-
-    selector.append(fileInput, submitButton);
-    container.append(selector);
-    uploader.appendChild(container);
+function setAboutOpen(open) {
+    document.getElementById('about').hidden = !open;
+    native.logo(open);
 }
 
 // the last shader action's outcome, kept across snapshots; state: "busy" (spinner), "ok" or "error"
