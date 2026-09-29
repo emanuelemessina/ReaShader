@@ -17,7 +17,7 @@ function renderSnapshot(snapshot) {
     document.title = `${snapshot.track.number} | ${snapshot.track.name}`;
     renderParams(snapshot.params);
     renderDevices(snapshot.devices.names, snapshot.devices.selected);
-    renderShaderUploader(snapshot.shader.name);
+    renderShaderPicker(snapshot.shaders, snapshot.shader.name);
 }
 
 // -------- params --------
@@ -36,15 +36,15 @@ function createSlider(param) {
     container.classList.add('slider-container');
 
     const title = document.createElement('label');
-    title.textContent = param.name;
+    title.textContent = param.label;
     title.htmlFor = `param_${param.id}`;
 
     const slider = document.createElement('input');
     slider.id = `param_${param.id}`;
     slider.type = 'range';
-    slider.min = 0;
-    slider.max = 1;
-    slider.step = 0.001;
+    slider.min = param.minValue;
+    slider.max = param.maxValue;
+    slider.step = (param.maxValue - param.minValue) / 1000;
     slider.value = param.value;
     slider.dataset.units = param.units;
 
@@ -112,9 +112,25 @@ function renderDevices(names, selected) {
 
 // -------- shader --------
 
-function renderShaderUploader(shaderName) {
+function renderShaderPicker(builtinShaders, currentName) {
     const uploader = document.querySelector('#shader .uploader');
     uploader.replaceChildren();
+
+    // built-in effects (plus the current one, if it was uploaded)
+    const picker = document.createElement('select');
+    const names = builtinShaders.includes(currentName) ? builtinShaders : [...builtinShaders, currentName];
+    for (const name of names) {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = builtinShaders.includes(name) ? name : `${name} (uploaded)`;
+        option.selected = name === currentName;
+        picker.appendChild(option);
+    }
+    picker.addEventListener('change', () => {
+        if (builtinShaders.includes(picker.value))
+            native.shaderSelect(picker.value);
+    });
+    uploader.appendChild(picker);
 
     const container = document.createElement('div');
     container.classList.add('input-file-container');
@@ -133,7 +149,7 @@ function renderShaderUploader(shaderName) {
 
     const status = document.createElement('label');
     status.id = 'shaderStatus';
-    status.textContent = shaderName ? `Current shader: ${shaderName}` : 'No shader loaded';
+    status.textContent = `Current shader: ${currentName}`;
 
     fileInput.addEventListener('change', () => {
         submitButton.disabled = fileInput.files.length === 0;

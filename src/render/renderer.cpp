@@ -47,6 +47,9 @@ namespace ReaShader
 	void ReaShaderRenderer::init()
 	{
 		std::lock_guard lock(frameMutex);
+		if (context && !failed)
+			return; // already up
+		_teardown(); // after a failure: start over
 		try
 		{
 			context = std::make_unique<gpu::Context>();
@@ -74,6 +77,7 @@ namespace ReaShader
 		{
 			LOG(e, toFile | toConsole | toBox, "ReaShaderRenderer", "Initialization failed",
 				"Video passes through unchanged");
+			_teardown();
 			failed = true;
 		}
 	}
@@ -81,6 +85,11 @@ namespace ReaShader
 	void ReaShaderRenderer::shutdown()
 	{
 		std::lock_guard lock(frameMutex);
+		_teardown();
+	}
+
+	void ReaShaderRenderer::_teardown()
+	{
 		if (!context)
 			return;
 		_destroyDevice();
@@ -176,6 +185,11 @@ namespace ReaShader
 		{
 			Parameters::Param param;
 			param.name = field.name;
+			param.label = field.label;
+			param.defaultValue = field.defaultValue;
+			param.minValue = field.minValue;
+			param.maxValue = field.maxValue;
+			param.automatable = true;
 			params.push_back(std::move(param));
 		}
 

@@ -11,7 +11,9 @@ ReaShader is a **CLAP** video-effect plugin for REAPER. It taps REAPER's video f
 A multi-phase cleanup is underway. The plan lives at `~/.claude/plans/picking-up-on-this-snug-aurora.md`.
 - **Phases:** 1 deletions/hygiene → 2 build → 3 utilities → 4 params/state/protocol → 5 layering → 6 renderer rewrite (vkt → vk-bootstrap + plain structs) → 7 docs.
 - **How it runs:** before each batch of changes, give the user a brief rationale and wait for approval. The user commits between phases.
-- **Status:** phase 6 in progress. The new renderer (context, frame targets, shader pass with reflected params) is built and passes a standalone GPU test. Still to do: shader params as host params through a rescan, `scene3d` (the logo easter egg, an off-by-default switch), then delete `render/vkt/` (no longer built; kept as the reference for `scene3d`).
+- **Status:** phase 6 in progress.
+  - **Done** (built, standalone GPU test passes, awaiting the REAPER test): the new renderer; built-in effects; `//@param`; shader params as host params through restart + rescan.
+  - **Still to do:** `scene3d` (the logo easter egg, an off-by-default switch), then delete `render/vkt/` (no longer built; kept as the reference for `scene3d`).
 
 ## Proposals for after the cleanup (user's, not started)
 
@@ -28,7 +30,7 @@ A multi-phase cleanup is underway. The plan lives at `~/.claude/plans/picking-up
 
 - **Nothing may throw out of a REAPER or CLAP callback.** REAPER treats an escaped exception as fatal (`abort()`, exception `0x40000015` "inside reaper.exe"). `ReaShaderRenderer` never throws: a Vulkan error during a frame sets `failed`, and video passes through until the next activation.
 - **Never block REAPER's video thread.** `renderFrame` `try_lock`s `frameMutex`. `init`, `shutdown` and `changeRenderingDevice` hold that mutex.
-- `deactivate()` deletes the video processor *before* the renderer's `shutdown()`.
+- `deactivate()` deletes the video processor, so REAPER stops calling into the plugin. The renderer (GPU) stays up until the plugin is destroyed: it is created by the first `activate()`, which keeps re-activation (and the restart for a param rescan) fast.
 - REAPER's `'RGBA'` frames are laid out in memory as **B,G,R,A** (byte 0 = B).
 - **Encoding:** frontend files must be UTF-8 (`file rsui.html` must not say "UTF-16"). A UTF-16 `rsui.html` loaded via `file://` renders as garbage text.
 - **Comments:** they describe what the code does and why, for a reader with no session context. Investigation narratives go in `doc/history.md`, not in code.
@@ -51,11 +53,11 @@ There is no test suite or lint step. Verification is manual, in REAPER.
   2. builds;
   3. deploys the `.clap` plus `assets/` and `rsui/` to the per-user CLAP folder (`%LOCALAPPDATA%\Programs\Common\CLAP`, `~/Library/Audio/Plug-Ins/CLAP`, `~/.clap`).
 
-  If REAPER has the `.clap` open, the deploy waits for you to close REAPER and press Enter, then retries.
+  If REAPER has the `.clap` open, the deploy is skipped with a warning (close REAPER and build again).
 - The **`clean`** task wipes the preset build directory.
 - **CLI alternative** (builds without deploying): `cmake --preset windows-debug`, then `cmake --build --preset windows-debug`.
 - **The build itself (`CMakeLists.txt`):**
-  - stages `res/images`, `res/meshes`, `src/shaders` and the `rsui` frontend (minus `styles/`) next to the `.clap`. Shaders are compiled at runtime, so no `.spv` files exist anywhere.
+  - stages `res/images`, `res/meshes`, `src/shaders` and the `rsui` frontend (minus `styles/`) next to the `.clap`. The staged `assets/` and `rsui/` are wiped first, so no stale files are left. Shaders are compiled at runtime, so no `.spv` files exist anywhere.
 
   The runtime resolves `assets/` and `rsui/` relative to the plugin binary, so they must travel with it.
 - **IntelliSense:** it reads `build/windows-debug/compile_commands.json`, which is written at configure time. On a fresh clone, run the build task once.
@@ -114,7 +116,19 @@ src/shaders/                 built-in GLSL shaders, staged as assets/shaders/
   3. `GetFunc("video_CreateVideoProcessor")(fxctx, VERSION)`;
   4. `reaShaderRenderer->init()`.
 
-  `deactivate()` undoes it. The same renderer instance survives repeated activate/deactivate cycles.
+  `deactivate()` deletes the video processor. The renderer stays initialized across activate/deactivate cycles; a failed renderer starts over on the next `activate()`.
+- **Shaders:**
+  - The current shader is `shaderName` + `shaderSource`, saved in state. It starts as `effects/default.frag`.
+  - Built-in effects are the `*.frag` files in `assets/shaders/effects/` (`src/shaders/effects/`). The UI picks one by name (`shaderSelect`) or uploads a file (`shaderUpload`).
+  - `_loadShader()` compiles through the renderer, and only a shader that compiles becomes current.
+  - `tests/shaders/` holds shaders for manual testing, such as `broken.frag`; they are not shipped.
+- **Shader params are host params (restart + rescan):**
+  - CLAP allows the param list to change only while deactivated.
+  - `setShaderParams()`, called from any thread, stores them as pending and requests a main-thread callback.
+  - `onMainThread()`: if the plugin is inactive, it applies them now; else it calls `host->request_restart()`.
+  - The host's `deactivate()` then applies them.
+  - Applying means `ParamList::replaceShaderParams()` + `host_params->rescan(CLAP_PARAM_RESCAN_ALL)` + a snapshot.
+  - While pending, frames give the shader's sliders their defaults.
 - **Renderer access:** `ReaShaderRenderer` reaches plugin data only through `getRenderingDeviceIndex`, `setRenderingDeviceIndex`, `setRenderingDevicesList` and `setShaderParams`.
 
 ### Per-frame video path
@@ -165,7 +179,7 @@ Plain JSON objects with a `"type"` field. They're documented in `plugin/plugin.c
 
 ### Parameters (`plugin/params.*`)
 
-- **`Param`:** one plain struct: id, name, group (`Main` or `Shader`), units, default value, automatable flag. Values are normalized to [0, 1].
+- **`Param`:** one plain struct: id, name (the state key), label (display), group (`Main` or `Shader`), units, default, min, max, automatable. Values are plain, within min..max: the defaults are 0..1, and shader params use their `//@param` range. CLAP param info uses the same range.
 - **Ids:** a param's id is its index in the list, and also its CLAP param id. The defaults (`AudioGain`, `VideoParam`) come first.
 - **`ParamList`:**
   - Metadata is behind a mutex.
@@ -183,7 +197,7 @@ Plain JSON objects with a `"type"` field. They're documented in `plugin/plugin.c
 
   No deletion queues. A device switch destroys the targets, the pass and the device, then recreates the device and the pass. The targets come back with the next frame.
 - **Errors:** `VK_CHECK` throws `std::runtime_error`, and `ReaShaderRenderer`'s public functions catch everything.
-- **Shader changes:** `changeShader()` compiles outside the lock, then swaps the pass under `frameMutex`. Frames render one at a time and wait on the fence, so the old pass is idle. With no device (inactive), the compiled shader is kept and installed by the next `init()`. An empty source means `assets/shaders/default.frag`.
+- **Shader changes:** `changeShader()` compiles outside the lock, then swaps the pass under `frameMutex`. Frames render one at a time and wait on the fence, so the old pass is idle. With no device (inactive), the compiled shader is kept and installed by the next `init()`. An empty source means `assets/shaders/effects/default.frag`, also the fallback when `init()` has no shader.
 
 ### Shader contract (`shader_pass.cpp`, `kShaderPreamble`)
 
@@ -196,7 +210,8 @@ Plain JSON objects with a `"type"` field. They're documented in `plugin/plugin.c
   - push constants `iResolution`, `iTime`, `iFrameRate`, `iFrame`, `videoParam`.
 
   A user `#version` is dropped, and `#extension` lines are hoisted above the preamble. `#line 1` keeps error line numbers matching the user's file.
-- **`Params`:** members must be `float`/`vec2`/`vec3`/`vec4`. Each component becomes one slider in [0, 1], named `member` or `member.x`, in reflection order. It is auto-bound to binding 1; any other resource is rejected with an error.
+- **`Params`:** members must be `float`/`vec2`/`vec3`/`vec4`. Each component becomes one slider, named `member` or `member.x`, in reflection order. It is auto-bound to binding 1; any other resource is rejected with an error.
+- **Annotations:** `//@param member 'Label' default min max` (anywhere in the source; label and numbers optional, in that order) sets a slider's label, default and range. Without one: label = member name, 0.5, 0..1. Inspired by REAPER's video processor `//@param`, but keyed by member name, not index.
 - **Keep in sync:** `gpu::ShaderInputs` must match `ReaShaderInputs` in the preamble (std430 push-constant layout, 24 bytes).
 
 ### Logging

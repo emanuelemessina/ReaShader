@@ -10,6 +10,7 @@
 
 #include "render/renderer.h"
 #include "util/logging.h"
+#include "util/paths.h"
 
 #include "reaper_plugin.h"
 #include "wdltypes.h" // video_frame.h needs WDL_FIXALIGN/INT_PTR but doesn't include this itself
@@ -18,13 +19,50 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <format>
+#include <fstream>
+#include <sstream>
 
 namespace ReaShader
 {
 	using Parameters::json;
+
+	namespace
+	{
+		// the effects shipped with the plugin
+		const std::filesystem::path& effectsDir()
+		{
+			static const std::filesystem::path dir = util::paths::assetsDir() / "shaders" / "effects";
+			return dir;
+		}
+
+		constexpr const char* kDefaultShader = "default.frag";
+
+		std::vector<std::string> builtinShaders()
+		{
+			std::vector<std::string> names;
+			std::error_code error;
+			for (const auto& entry : std::filesystem::directory_iterator(effectsDir(), error))
+			{
+				if (entry.path().extension() == ".frag")
+					names.push_back(entry.path().filename().string());
+			}
+			std::sort(names.begin(), names.end());
+			return names;
+		}
+
+		std::string readFile(const std::filesystem::path& path)
+		{
+			std::ifstream file(path);
+			std::stringstream content;
+			content << file.rdbuf();
+			return content.str();
+		}
+	} // namespace
 
 	ReaShaderPlugin::ReaShaderPlugin() = default;
 	ReaShaderPlugin::~ReaShaderPlugin() = default;
@@ -32,6 +70,12 @@ namespace ReaShader
 	void ReaShaderPlugin::initialize(const clap_host_t* clapHost)
 	{
 		host = clapHost;
+
+		// the default effect is current until the user picks another one; it's compiled by the
+		// renderer's first init()
+		shaderName = kDefaultShader;
+		shaderSource = readFile(effectsDir() / kDefaultShader);
+
 		// Vulkan isn't touched until activate()
 		reaShaderRenderer = std::make_unique<ReaShaderRenderer>(this);
 	}
@@ -83,28 +127,43 @@ namespace ReaShader
 				trackNumber = (int)getTrackValue(track, "IP_TRACKNUMBER");
 		}
 
-		reaShaderRenderer->init(); // uses the current shader (see _applyShader)
+		reaShaderRenderer->init(); // no-op after the first time
+		active = true;
 		_webuiSendSnapshot();
 	}
 
 	void ReaShaderPlugin::deactivate()
 	{
-		// stop REAPER's video callbacks before tearing the renderer down
+		active = false;
+
+		// stop REAPER's video callbacks (the renderer lives on until the plugin is destroyed)
 		delete videoProcessor;
 		videoProcessor = nullptr;
 
-		reaShaderRenderer->shutdown();
+		if (shaderParamsPending)
+			_applyPendingShaderParams();
 	}
 
 	void ReaShaderPlugin::onMainThread()
 	{
-		if (!hostChangedParams.exchange(false))
-			return;
-
-		for (const Parameters::Param& p : params.list())
+		if (shaderParamsPending)
 		{
-			if (p.automatable)
-				_webuiSend({ { "type", "paramValue" }, { "id", p.id }, { "value", params.value(p.id) } });
+			if (!active)
+				_applyPendingShaderParams();
+			else if (!restartRequested)
+			{
+				restartRequested = true;
+				host->request_restart(host); // -> deactivate() -> activate()
+			}
+		}
+
+		if (hostChangedParams.exchange(false))
+		{
+			for (const Parameters::Param& p : params.list())
+			{
+				if (p.automatable)
+					_webuiSend({ { "type", "paramValue" }, { "id", p.id }, { "value", params.value(p.id) } });
+			}
 		}
 	}
 
@@ -124,9 +183,9 @@ namespace ReaShader
 		*info = {};
 		info->id = param->id;
 		info->flags = CLAP_PARAM_IS_AUTOMATABLE;
-		std::snprintf(info->name, sizeof(info->name), "%s", param->name.c_str());
-		info->min_value = 0.0;
-		info->max_value = 1.0;
+		std::snprintf(info->name, sizeof(info->name), "%s", param->label.c_str());
+		info->min_value = param->minValue;
+		info->max_value = param->maxValue;
 		info->default_value = param->defaultValue;
 		return true;
 	}
@@ -271,7 +330,8 @@ namespace ReaShader
 		// param values at video time: parmlist[0] is wet/dry, then param i is at parmlist[i + 1]
 		// (params REAPER doesn't know yet fall back to the current value)
 		double paramValues[Parameters::ParamList::maxCount];
-		size_t paramCount = plugin->params.count();
+		// while the shader's params wait for a restart, its sliders use their defaults
+		size_t paramCount = plugin->shaderParamsPending ? Parameters::DefaultCount : plugin->params.count();
 		for (size_t id = 0; id < paramCount; id++)
 			paramValues[id] = (int)id + 1 < nparms ? parmlist[id + 1] : plugin->params.value((Parameters::Id)id);
 
@@ -321,15 +381,36 @@ namespace ReaShader
 
 	void ReaShaderPlugin::setShaderParams(std::vector<Parameters::Param> shaderParams)
 	{
+		{
+			std::lock_guard lock(stateMutex);
+			pendingShaderParams = std::move(shaderParams);
+		}
+		shaderParamsPending = true;
+		host->request_callback(host); // -> onMainThread()
+	}
+
+	// main thread, plugin deactivated
+	void ReaShaderPlugin::_applyPendingShaderParams()
+	{
+		std::vector<Parameters::Param> shaderParams;
 		Parameters::ValueMap savedValues;
 		{
 			std::lock_guard lock(stateMutex);
+			shaderParams = std::move(pendingShaderParams);
 			savedValues = savedShaderValues;
 		}
 		params.replaceShaderParams(std::move(shaderParams), savedValues);
+		shaderParamsPending = false;
+		restartRequested = false;
+
+		auto* hostParams = static_cast<const clap_host_params_t*>(host->get_extension(host, CLAP_EXT_PARAMS));
+		if (hostParams)
+			hostParams->rescan(host, CLAP_PARAM_RESCAN_ALL);
+
+		_webuiSendSnapshot();
 	}
 
-	// compiles the saved shader (or the default one): installed now if active, else on the next activate()
+	// compiles the saved shader: installed now if active, else on the next activate()
 	void ReaShaderPlugin::_applyShader()
 	{
 		std::string name, source;
@@ -338,20 +419,32 @@ namespace ReaShader
 			name = shaderName;
 			source = shaderSource;
 		}
+		_loadShader(name, source);
+	}
 
+	// compiles a shader and, if it compiles, makes it the current one (else the current one stays)
+	void ReaShaderPlugin::_loadShader(const std::string& name, const std::string& source)
+	{
 		reaShaderRenderer->changeShader(
 			source, name, [this](const std::string& status) { _webuiSendShaderStatus(status, false); },
 			[this](const std::string& error) {
-				LOG(WARNING, toConsole | toFile | toBox, "ReaShaderPlugin", "Shader compilation failed", error);
+				LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "Shader compilation failed", error);
 				_webuiSendShaderStatus(error, true);
 			},
-			[this]() { _webuiSendSnapshot(); });
+			[this, name, source]() {
+				{
+					std::lock_guard lock(stateMutex);
+					shaderName = name;
+					shaderSource = source;
+				}
+				_webuiSendSnapshot();
+			});
 	}
 
 	// -------- web UI --------
 	//
 	// Messages to the UI:
-	// - snapshot    { track, params, devices, shader }: everything, the UI rebuilds itself from it
+	// - snapshot    { track, params, devices, shader, shaders }: everything, the UI rebuilds itself from it
 	// - paramValue  { id, value }: a host automation change
 	// - shaderStatus{ status, error }
 	//
@@ -359,6 +452,7 @@ namespace ReaShader
 	// - ready       {}: the page loaded, send a snapshot
 	// - paramValue  { id, value }
 	// - renderingDevice { index }
+	// - shaderSelect{ name }: one of the built-in effects
 	// - shaderUpload{ name, source }
 
 	void ReaShaderPlugin::setWebUISender(WebUISender sender)
@@ -397,6 +491,7 @@ namespace ReaShader
 					{ "shader", { { "name", shaderName } } } };
 		}
 		msg["params"] = params.toJson();
+		msg["shaders"] = builtinShaders();
 
 		_webuiSend(msg);
 	}
@@ -437,25 +532,18 @@ namespace ReaShader
 			reaShaderRenderer->changeRenderingDevice(index);
 			_webuiSendSnapshot();
 		}
+		else if (type == "shaderSelect")
+		{
+			std::string name = std::filesystem::path(msg.value("name", "")).filename().string(); // no paths from the UI
+			std::string source = readFile(effectsDir() / name);
+			if (source.empty())
+				_webuiSendShaderStatus("Can't read " + name, true);
+			else
+				_loadShader(name, source);
+		}
 		else if (type == "shaderUpload")
 		{
-			std::string name = msg.value("name", "");
-			std::string source = msg.value("source", "");
-
-			reaShaderRenderer->changeShader(
-				source, name, [this](const std::string& status) { _webuiSendShaderStatus(status, false); },
-				[this](const std::string& error) {
-					LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "Shader compilation failed", error);
-					_webuiSendShaderStatus(error, true);
-				},
-				[this, name, source]() {
-					{
-						std::lock_guard lock(stateMutex);
-						shaderName = name;
-						shaderSource = source;
-					}
-					_webuiSendSnapshot();
-				});
+			_loadShader(msg.value("name", ""), msg.value("source", ""));
 		}
 		else
 		{

@@ -38,7 +38,8 @@ namespace ReaShader
 		explicit ReaShaderRenderer(ReaShaderPlugin* plugin);
 		~ReaShaderRenderer();
 
-		// Vulkan instance + the plugin's rendering device + the current shader (the default one if none)
+		// Vulkan instance + the plugin's rendering device + the current shader (the default one if none).
+		// No-op when already up; after a failure it starts over.
 		void init();
 		void shutdown();
 
@@ -64,6 +65,7 @@ namespace ReaShader
 	  private:
 		void _createDevice(int index);
 		void _destroyDevice();
+		void _teardown(); // device + instance
 		void _installShader(); // builds the pass for `shader`
 
 		ReaShaderPlugin* plugin;

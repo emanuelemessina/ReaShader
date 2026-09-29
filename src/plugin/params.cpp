@@ -27,8 +27,8 @@ namespace ReaShader::Parameters
 	ParamList::ParamList()
 	{
 		params = {
-			{ AudioGain, "Audio Gain", Group::Main, "%", 1.0, true }, // 1.0 = unchanged audio
-			{ VideoParam, "Video Param", Group::Main, "%", 0.5, true },
+			{ AudioGain, "Audio Gain", "Audio Gain", Group::Main, "%", 1.0, 0.0, 1.0, true }, // 1.0 = unchanged audio
+			{ VideoParam, "Video Param", "Video Param", Group::Main, "%", 0.5, 0.0, 1.0, true },
 		};
 		for (const Param& p : params)
 			values[p.id] = p.defaultValue;
@@ -148,10 +148,13 @@ namespace ReaShader::Parameters
 		{
 			list.push_back({ { "id", p.id },
 							 { "name", p.name },
+							 { "label", p.label },
 							 { "group", groupName(p.group) },
 							 { "units", p.units },
 							 { "value", values[p.id].load() },
-							 { "defaultValue", p.defaultValue } });
+							 { "defaultValue", p.defaultValue },
+							 { "minValue", p.minValue },
+							 { "maxValue", p.maxValue } });
 		}
 		return list;
 	}
