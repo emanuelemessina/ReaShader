@@ -6,19 +6,12 @@
  * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
  *****************************************************************************/
 
-// Minimal native clap.gui implementation (embedded, Win32 only) -- a plain child window that
-// hosts a WebUIHost (an embedded webview::webview, WebView2-backed) filling its client area,
-// loading rsui.html directly. Replaces the old RSUIServer/restinio + external-browser-tab design
-// (a "Open Web UI" button that ShellExecuteW'd the default browser at RSUIServer's URL) -- see
-// CLAUDE.md's Phase D notes. macOS/Linux are not implemented yet (matches the project's
-// Windows-first precedent).
+// clap.gui for Win32 (embedded only): a resizable child window filled by the WebUIHost webview.
+// TODO: macOS/Linux.
 //
-// The window is created in set_parent() rather than create() -- a WS_CHILD window must be
-// created WITH its real parent HWND already known (CreateWindowExW rejects WS_CHILD combined with
-// a null hWndParent, failing with ERROR_TLW_WITH_WSCHILD/1406). create() only registers the window
-// class; set_parent() creates the container synchronously (so the host's show() that follows has
-// a window to show) and constructs the WebUIHost, which returns immediately -- the webview itself
-// is built on WebUIHost's own thread.
+// create() only registers the window class. The window is created in set_parent(), because a
+// WS_CHILD window needs its real parent at creation (null parent -> ERROR_TLW_WITH_WSCHILD).
+// It is created synchronously there, since the host calls show() right after.
 
 #ifdef _WIN32
 
@@ -37,8 +30,7 @@ namespace ReaShader
 	{
 		constexpr wchar_t kWindowClassName[] = L"ReaShaderGuiWindow";
 
-		// initial size reflecting rsui.scss's actual layout (100vw/100vh with a 500px-max-width
-		// inner panel) -- resizable afterwards, this is just a reasonable starting point.
+		// initial size fitting rsui's layout (500px max-width panel); resizable afterwards
 		constexpr uint32_t kDefaultWidth = 560;
 		constexpr uint32_t kDefaultHeight = 720;
 		constexpr uint32_t kMinWidth = 320;
@@ -160,8 +152,7 @@ namespace ReaShader
 			if (!state->guiHwnd)
 				return false;
 
-			// resizes our own container HWND, which sends it (synchronously, same thread) a WM_SIZE
-			// that WndProc forwards into WebUIHost::resize() to cascade down to the embedded webview
+			// the container's WM_SIZE forwards the new size to the webview (see WndProc)
 			SetWindowPos((HWND)state->guiHwnd, nullptr, 0, 0, (int)width, (int)height,
 						 SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE);
 			return true;
@@ -174,9 +165,7 @@ namespace ReaShader
 
 			auto* state = static_cast<ClapPluginState*>(plugin->plugin_data);
 
-			// (re-)parenting an existing window isn't needed in practice (create() -> set_parent()
-			// happens once per GUI lifetime per the CLAP spec's documented call order), but guard
-			// against being called twice without an intervening destroy() anyway
+			// set_parent() is called once per GUI lifetime; guard against a second call anyway
 			if (state->guiHwnd)
 			{
 				delete state->webUIHost;
