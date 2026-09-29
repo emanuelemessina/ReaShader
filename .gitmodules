@@ -37,3 +37,6 @@
 [submodule "external/clap"]
 	path = external/clap
 	url = https://github.com/free-audio/clap
+[submodule "external/doctest"]
+	path = external/doctest
+	url = https://github.com/doctest/doctest
