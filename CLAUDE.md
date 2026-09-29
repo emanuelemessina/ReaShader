@@ -10,6 +10,13 @@ ReaShader is a **CLAP** video-effect plugin for REAPER. It taps REAPER's video f
 
 A **test application** (a fake REAPER host plus standardized tests, separate from the main build; the seed is `tests/seed/`) and a **render doc for humans** (`doc/rendering.md`, kept up to date with every render change). The full handoff, with requirements, what REAPER does to the plugin, the suggested designs and open questions, is in [doc/proposals.md](doc/proposals.md).
 
+**Before those: an installer** (agreed, not started; waits for the user to confirm the release build works in REAPER). The plan is one native installer per OS from a single CMake description: `install()` rules for the layout (`.clap`, `resources/`, `ui/`), plus CPack generators. Windows comes first, using CPack's Inno Setup generator (CMake ≥ 3.27; needs Inno Setup, `choco install innosetup`):
+- it installs per user into `%LOCALAPPDATA%\Programs\Common\CLAP\ReaShader`, with no admin, and the folder must stay writable for uploaded shaders;
+- upgrades keep `resources/shaders/compiled`, and it has an uninstaller;
+- it checks for the VC++ 2015–2022 x64 runtime and installs a bundled copy if it's missing. The release binary links `MSVCP140`/`VCRUNTIME140` dynamically, and a static CRT isn't an option because the SDK's `shaderc_combined` is `/MD`.
+
+The target machine also needs Vulkan (from the GPU driver) and WebView2 (built into Windows 11). macOS (a `.clap` bundle with its resources inside, a signed `.pkg`) and Linux (`TGZ`) get added when those ports exist.
+
 ## Hard rules
 
 - **Nothing may throw out of a REAPER or CLAP callback.** REAPER treats an escaped exception as fatal (`abort()`, exception `0x40000015` "inside reaper.exe"). `ReaShaderRenderer` never throws: a Vulkan error during a frame sets `failed`, and video passes through until the next activation.
@@ -37,7 +44,17 @@ There is no test suite or lint step. Verification is manual, in REAPER.
 - The VS Code **`build+deploy`** task is the default build task (Ctrl+Shift+B). It runs `cmake -DPROFILE=<debug|release> -P build.cmake`, which:
   1. configures (first time only);
   2. builds;
-  3. deploys the `.clap` plus `resources/` and `ui/` to a `ReaShader/` folder in the per-user CLAP folder (`%LOCALAPPDATA%\Programs\Common\CLAP`, `~/Library/Audio/Plug-Ins/CLAP`, `~/.clap`). Hosts search CLAP folders recursively (`clap/entry.h`).
+  3. deploys the `.clap` plus `resources/` and `ui/` to its own folder in the per-user CLAP folder (`%LOCALAPPDATA%\Programs\Common\CLAP`, `~/Library/Audio/Plug-Ins/CLAP`, `~/.clap`). Hosts search CLAP folders recursively (`clap/entry.h`).
+
+  **Debug and release are separate plugins**, so both can be installed side by side. `CMakeLists.txt` sets the identity from `CMAKE_BUILD_TYPE` (`REASHADER_NAME`/`REASHADER_ID` defines, `OUTPUT_NAME`), and `build.cmake` reads the file name from the build tree's cache (`PLUGIN_FILE_NAME`):
+
+  | | Release | Debug |
+  |---|---|---|
+  | Name in REAPER | `ReaShader` | `ReaShader (Debug)` |
+  | CLAP id | `com.emanuelemessina.reashader` | `com.emanuelemessina.reashader.debug` |
+  | Binary / deploy folder | `ReaShader.clap` in `ReaShader/` | `ReaShader-Debug.clap` in `ReaShader-Debug/` |
+
+  Projects saved with one don't load the other.
 
   If REAPER has the `.clap` open, the deploy is skipped with a warning (close REAPER and build again).
   Deploy replaces `resources/images`, `resources/meshes`, `resources/shaders/examples` and `ui` one by one, so `resources/shaders/compiled` (the user's uploaded shaders) survives.
@@ -264,8 +281,8 @@ Plain JSON objects with a `"type"` field. They're documented in `plugin/plugin.c
   - WER writes full dumps to `%LOCALAPPDATA%\CrashDumps\reaper.exe.<pid>.dmp`.
   - List crash records with `Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='Application Error'}`.
   - Open a dump with `lldb -c <dmp>`, then run `thread list` / `bt all`.
-  - If a stack won't unwind, run `memory read --format A --count 3000 $rsp` and look for `_CxxThrowException` and return addresses inside `ReaShader.clap`.
-- **Symbolizing:** run `llvm-symbolizer --obj=build/windows-debug/ReaShader.clap` on `(addr - module base + 0x180000000)`. This is only valid if the binary hasn't been rebuilt since the crash.
+  - If a stack won't unwind, run `memory read --format A --count 3000 $rsp` and look for `_CxxThrowException` and return addresses inside `ReaShader-Debug.clap` (or `ReaShader.clap` for release).
+- **Symbolizing:** run `llvm-symbolizer --obj=build/windows-debug/ReaShader-Debug.clap` on `(addr - module base + 0x180000000)`. This is only valid if the binary hasn't been rebuilt since the crash.
 - **Hangs:** run `"" | lldb -p <pid> -o "bt all" -o "process detach" -o quit` (not `--batch`). Get the module base from `(Get-Process -Id <pid>).Modules`.
 - **GPU faults:** recurring `nvlddmkm` events in the System log mean the Vulkan code is doing something invalid.
 - **Vulkan validation output:**

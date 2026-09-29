@@ -21,6 +21,7 @@ namespace ReaShader::gpu
 			return result.value();
 		}
 
+#ifndef NDEBUG
 		// validation layer messages (debug builds) go to the log
 		VKAPI_ATTR VkBool32 VKAPI_CALL onDebugMessage(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
 													  VkDebugUtilsMessageTypeFlagsEXT,
@@ -30,6 +31,7 @@ namespace ReaShader::gpu
 				LOG(WARNING, toFile | toConsole, "Vulkan", "Validation", data->pMessage);
 			return VK_FALSE;
 		}
+#endif
 
 		constexpr uint64_t kFrameTimeoutNs = 2'000'000'000; // a frame that takes longer counts as a GPU hang
 	} // namespace
