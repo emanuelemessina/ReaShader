@@ -3,26 +3,6 @@
         {
             "name": "Win32",
             "compileCommands": "${workspaceFolder}/build/windows-debug/compile_commands.json",
-            "includePath": [
-                "${workspaceFolder}/src/reashader",
-                "${workspaceFolder}/external/clap/include",
-                "${workspaceFolder}/external/reaper-sdk/sdk",
-                "${workspaceFolder}/external/WDL/WDL",
-                "${workspaceFolder}/external/cwalk",
-                "${workspaceFolder}/external/json/include",
-                "${workspaceFolder}/external/boxer/include",
-                "${workspaceFolder}/external/glm",
-                "${workspaceFolder}/external/VulkanMemoryAllocator/include",
-                "${workspaceFolder}/external/tinyobjloader",
-                "${workspaceFolder}/external/stb",
-                "${env:VK_SDK_PATH}/include"
-            ],
-            "defines": [
-                "ReaShader_EXPORTS",
-                "_DEBUG",
-                "_DLL",
-                "_MT"
-            ],
             "compilerPath": "C:/Program Files/LLVM/bin/clang++.exe",
             "cStandard": "c17",
             "cppStandard": "c++20",

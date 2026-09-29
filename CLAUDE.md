@@ -1,148 +1,177 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code (claude.ai/code) when working in this repository. It describes the code **as it is now**. How it got here (the VST3 → CLAP migration, rejected alternatives, past crash investigations) is in [doc/history.md](doc/history.md).
 
 ## What this is
 
-ReaShader is a video-effect plugin for REAPER that runs a custom Vulkan rendering pipeline (GLSL shaders) over REAPER's video track frames. Its JS/HTML/SCSS UI for controlling shaders, parameters, and GPU selection at runtime is embedded directly inside REAPER's FX window via a native webview (see **Phase D**), not served over HTTP to an external browser tab.
+ReaShader is a **CLAP** video-effect plugin for REAPER. It taps REAPER's video frames, runs them through a Vulkan pipeline (GLSL shaders) and hands them back. Its HTML/JS/SCSS UI is embedded in REAPER's FX window through a native webview ([webview/webview](https://github.com/webview/webview)).
 
-## Migration status: VST3 → CLAP (read this before touching the build or `source/vst3`)
+## Cleanup in progress
 
-The project is mid-migration from VST3 to **CLAP** (a lighter, C-ABI, header-only plugin format). This was a deliberate move, not a whim: CLAP was confirmed (empirically, not just from docs) to reach REAPER's video-processing tap just as well as VST3 does, and dropping the VST3 SDK removes the entire source of build-system pain (bundle folder structure, `moduleinfotool`/validator, processor/controller split, the old Visual-Studio-only `sln-make.inix` hacks). It also set up two things planned early on: a possible rewrite in Rust (still future work), and embedding the web UI inside REAPER's FX window via CLAP's `gui` extension instead of a separate browser window — done, see **Phase D** below.
+A multi-phase cleanup is underway. The plan lives at `~/.claude/plans/picking-up-on-this-snug-aurora.md`.
+- **Phases:** 1 deletions/hygiene → 2 build → 3 utilities → 4 params/state/protocol → 5 layering → 6 renderer rewrite (vkt → vk-bootstrap + plain structs) → 7 docs.
+- **How it runs:** before each batch of changes, give the user a brief rationale and wait for approval. The user commits between phases.
+- **Status:** phase 2 done (built, awaiting REAPER check + user commit). Next: phase 3 (utilities).
 
-- **Phase A (done)**: build system migrated to CLAP — CMake + Ninja + VS Code, no Visual Studio, no `sln-make`.
-- **Phase B (done)**: `rsparams`/`rsui`/the plugin-logic object were ported off Steinberg VST3 types and wired into the CLAP shell — `clap.params`, `clap.state`, and a minimal native `clap.gui` (Win32) all work against real parameter data. `ReaShaderProcessor` + `ReaShaderController` (VST3's forced processor/controller split, and the two parallel parameter vectors it required) are **gone**, replaced by one unified [ReaShaderPlugin](src/reashader/reashaderplugin.h) instance — see Architecture below.
-- **Phase C (done)**: `ReaShaderRenderer`/`vkt/` (the Vulkan pipeline) are wired into the build and owned by `ReaShaderPlugin` — `process_frame` (in [src/clap/reashader_clap.cpp](src/clap/reashader_clap.cpp)) drives real Vulkan rendering instead of the old diagnostic test pattern, confirmed empirically in REAPER against real video content. `vkt/` needed no changes at all (it never referenced VST3/`ReaShaderProcessor` types); `rsrenderer.cpp` needed only a mechanical rename of its 6 `ReaShaderProcessor*` touchpoints to `ReaShaderPlugin*`, now going through narrow accessor methods (`getRenderingDeviceIndex`/`setRenderingDeviceIndex`/`setRenderingDevicesList`/`rsParamsCount`/`addRendererParam`) instead of VST3-era `friend`-based raw vector access.
-- `src/vst3/` and the VST3 SDK dependency are **no longer part of the build** but are kept in the tree, untouched, as a reference for anyone comparing against the old VST3 behavior.
-- The REAPER video-tap access path confirmed for CLAP (different from VST3's `IReaperHostApplication::getReaperParent`): `clap_host_t::get_extension(host, "cockos.reaper_extension")` → cast to `reaper_plugin_info_t*` → `GetFunc("clap_get_reaper_context")` → call with `sel=4` ("FxDsp") → that pointer is the `fxctx` for `GetFunc("video_CreateVideoProcessor")(fxctx, IREAPERVideoProcessor::REAPER_VIDEO_PROCESSOR_VERSION)`. REAPER's `'RGBA'` video pixel format is packed in memory as **B,G,R,A** (byte0 = B) — this only matters for code building pixel values by hand (confirmed by an initial off-by-color-channel bug during the Phase A spike); `processFrame` no longer does this since it uploads/downloads whole frames via `loadBitsToImage`/`transferFrame` rather than writing pixels directly.
-- **`AllocatedBuffer::map()` bug found during the Phase C port** ([vktbuffers.h](src/reashader/vkt/vktbuffers.h)): the function was declared to return `AllocatedBuffer*` but had no `return` statement — undefined behavior that clang turned into a hardware trap (`STATUS_ILLEGAL_INSTRUCTION`, `0xC000001D`) the first time any mesh/buffer got uploaded to the GPU (inside `_initVulkan()` → `_createDefaultMeshes()` → `Mesh::setVertices()` → `AllocatedBuffer::putData()` → `map()`). The compiler had been warning about it the whole build (`-Wreturn-type`, `vktbuffers.h:41`) — it was just buried among ~1300 unrelated warnings (mostly third-party header deprecation noise from nlohmann-json/restinio's bundled fmt). If a similarly bizarre native crash shows up again, grep the build log for `-Wreturn-type`/`-Wuninitialized` before assuming it's an ABI/toolchain issue — it usually isn't. Two smaller pre-existing bugs surfaced the same way while getting `vkt/` to actually compile for the first time since the migration: `vktcommon.h` defined `GLM_ENABLE_EXPERIMENTAL` *after* the GLM headers that needed it (fixed by moving the `#define` first), and `vktsync.h`'s `destroySyncObjects` indexed the template *type* parameter (`s[i]`) instead of the function's array parameter (`first[i]`).
-- **GLM/VMA-from-Vulkan-SDK, investigated and deliberately rejected**: both are also available inside the installed Vulkan SDK's `Include/`, which would shrink the submodule list further. Tried it empirically: VMA's SDK copy is byte-for-byte identical to the vendored submodule (safe), but GLM's SDK copy is a real version behind (1.0.3 vs this project's submodule at 1.1.0) and fails to compile against `GLM_FORCE_DEFAULT_ALIGNED_GENTYPES` usage in `vkt/` (`no member named 'call' in 'glm::detail::compute_vec_mul<...>'` etc. — GLM's own `GLM_VERSION` macro is misleadingly identical between the two, frozen at `1000 // Deprecated` since 1.0.0, so it's not a reliable version signal; check `GLM_VERSION_MINOR`/`PATCH` in `detail/setup.hpp` instead, or just try a real build). Decision: keep **both** GLM and VMA as submodules, deliberately not switching just VMA — sourcing one dependency two different ways (submodule vs SDK) for no functional gain isn't worth the inconsistency. Don't re-attempt this without a stronger reason; if a future Vulkan SDK release ever ships a matching-or-newer GLM, it'd be worth re-checking.
-- **Phase D (done)**: `RSUIServer`/restinio (and the external-browser-tab "Open Web UI" button that launched it) are **gone**, replaced by [WebUIHost](src/clap/webui_host_win32.h) — an embedded [webview/webview](https://github.com/webview/webview) instance (`external/webview`, a git submodule pinned to `0.12.0`) filling the FX-window child `HWND`, loading `rsui.html` directly via a `file://` URL.
-  - **Chose `webview/webview` over raw WebView2 COM code deliberately, for cross-platform reach**: it wraps WebView2 (Windows), WKWebView (macOS), and WebKitGTK (Linux) behind one API, confirmed (by reading its actual header, not just docs) to support **embedding into an existing native window handle** — `webview_create(debug, window)` with a non-null `window` embeds into it and hands lifecycle control to the caller, instead of the library creating its own top-level window/app loop. On Windows it also ships a **built-in WebView2 loader**, so the separate Microsoft WebView2 NuGet SDK never needs fetching manually — only `webview/webview` itself is vendored (its own nested CMake still auto-fetches the WebView2 *headers* from NuGet at configure time if no system copy is found, which is where the one-time network fetch during configure comes from).
-  - **Threading model (verified working in REAPER, multiple instances included)**: `WebUIHost`'s webview and its whole message loop run on a background thread that `WebUIHost` owns, never on REAPER's UI thread. `webview::webview`'s constructor blocks for seconds: it pumps its own nested loop in `win32_edge_engine::embed()` until WebView2's async setup finishes. So the `WebUIHost` constructor just spawns the thread and returns. `set_parent()` creates the container `HWND` and constructs `WebUIHost` synchronously. Don't defer the container creation (e.g. with a timer). The host calls `show()` right after `set_parent()`, and a window that doesn't exist yet never becomes visible, which leaves the FX window blank.
-    - Every call into the webview from another thread goes through `webview::webview::dispatch(fn)`. That covers `resize()` and the `ReaShaderPlugin` → UI sender (`_webuiSend` can fire from any thread, and WebView2's COM objects are single-thread-affine). `WebUIHost::Impl::mutex` guards the `webview` pointer itself.
-    - **`webview::webview::terminate()` is NOT cross-thread-safe on Win32**, despite the library's docs. `win32_edge_engine::terminate_impl()` is a bare `PostQuitMessage(0)`, which quits the *calling* thread's loop. `~WebUIHost()` therefore `dispatch()`es `terminate()` onto the webview thread. It also sets `stopRequested`, so a webview that's still being constructed skips `run()`. It then waits with `MsgWaitForMultipleObjects(QS_SENDMESSAGE)` + `PeekMessageW(PM_QS_SENDMESSAGE)` rather than a plain `join()`. The webview's windows are children of the UI-thread container, and their teardown can `SendMessage` to it. (Calling `terminate()` directly from the UI thread hung REAPER forever in `join()`.)
-    - The embedded widget starts at `(0,0,0,0)` and is never auto-sized to the container. The background thread sizes it with a same-thread `MoveWindow` right after `navigate()`.
-  - **The Phase D "REAPER crash" was not a webview problem.** Earlier sessions blamed re-entrancy of REAPER's message loop, then the OBS graphics hook plus two GPU APIs in one process. Both theories were wrong. The real chain, confirmed from crash dumps and the validation log:
-    1. `vkt::Rendering::Material::registerBindDescriptorSets` stored the raw `pDynamicOffsets` pointer, and `rsrenderer.cpp` passed a local `std::vector`'s `data()`. Every frame bound the global uniform buffer at a garbage dynamic offset, and the GPU read out of bounds.
-    2. The NVIDIA driver faulted (System log, `nvlddmkm` event 153).
-    3. The next `vkQueueWaitIdle` returned `VK_ERROR_DEVICE_LOST`, and `VK_CHECK_RESULT` threw.
-    4. The exception escaped `processVideoFrame` into `reaper_video.dll` on REAPER's video thread, unhandled. REAPER's CRT filter called `abort()`: exception `0x40000015` at a fixed offset "inside reaper.exe".
+## Hard rules
 
-    Fixes: `Material` now owns a copy of its offsets. `ReaShaderRenderer::renderFrame()` never throws: a Vulkan error sets `frameFailed`, and video passes through until the next `init()`, i.e. FX re-activation. It also `try_lock`s `frameMutex`, which `init`/`shutdown`/`changeRenderingDevice` hold, so REAPER's video thread never waits and never races a device switch or teardown. `deactivate()` deletes the video processor *before* `shutdown()`. `_cleanupVulkan` tolerates a lost device and nulls `vktDevice`. `vkCreateDevice` no longer passes the deprecated device layers. **Rule: nothing may throw out of a REAPER/CLAP callback**; REAPER treats it as fatal.
-  - **`ClapPluginState::webUIHost` is a raw pointer, not a `unique_ptr`** ([plugin_state.h](src/clap/plugin_state.h)) — `WebUIHost` is only forward-declared there (same reasoning as `ReaShaderRenderer` below), but unlike `ReaShaderPlugin`/`ReaShaderRenderer`, `ClapPluginState` itself is constructed/destroyed from [reashader_clap.cpp](src/clap/reashader_clap.cpp) (a cross-platform TU that never includes `webui_host_win32.h`) — a `unique_ptr<WebUIHost>` member would force that TU to instantiate `unique_ptr`'s destructor against an incomplete type (`invalid application of 'sizeof' to an incomplete type`, caught at build time). Manually `new`/`delete`d from `reashader_clap_gui_win32.cpp` only, mirroring the already-existing `guiHwnd` raw-pointer pattern in the same struct.
-  - **`std::max`/`std::min` don't compile in this file** — `<windows.h>`'s unguarded `max`/`min` macros (no `NOMINMAX` defined anywhere in this project) swallow the `std::` calls; plain `if`-comparisons are used in `adjust_size()` instead, rather than adding `NOMINMAX` project-wide for two call sites.
-  - The JSON message protocol ([api.h](src/reashader/rsui/api.h) / [api.js](src/reashader/rsui/frontend/scripts/api.js)) stayed transport-agnostic as expected — only the transport changed, to `webview::webview::bind("postToNative", ...)` (JS → C++, `WebUIHost` forwards the message straight to `ReaShaderPlugin::handleWebUIMessage`) and `webview::webview::eval(...)` (C++ → JS, calls a `window.__reashaderOnMessage` receiver the frontend defines). `ReaShaderPlugin` no longer owns the transport at all — it holds a `WebUISender` (`std::function<void(const std::string&)>`) registered by `WebUIHost::setWebUISender`/cleared by `clearWebUISender`, and no-ops when nothing is registered (same effective behavior as the old "broadcast to zero WS clients" no-op).
-  - Custom-shader file upload switched from chunked binary WebSocket frames (`"RS"`-magic-prefixed, `FileUploadProcess`'s watchdog thread) to a **single base64-encoded JSON message** (`FileUpload` in `api.h`/`api.js`) — `bind()`/`eval()` are string/JSON-only, and shader files are small GLSL text, so the chunking/timeout machinery just isn't needed; `MurmurHash3`/`imurmurhash.js` (used only for chunk-correlation ids) were removed along with it. Base64 decoding on the C++ side is a small hand-written helper ([tools/base64.h](src/reashader/tools/base64.h)) — no vendored dependency provided one.
-  - The frontend dropped ES modules (`<script type="module">`, `import`/`export`) for plain sequential `<script>` tags loaded in dependency order (`strings.js`, `api.js`, `rsui.js`, `client.js`) — navigating a webview to a `file://` URL blocks ES module imports via CORS in Chromium/WebKit/WebKitGTK alike, and `webview/webview` doesn't expose a cross-platform virtual-host/custom-scheme mapping to work around it (that's a WebView2-only escape hatch not worth depending on given the cross-platform goal).
-  - **`rsui.html` re-saving as UTF-16LE (no BOM) actually broke the embedded UI, confirmed empirically** — it had been UTF-16 on disk pre-Phase-D too (harmless back then: the old `RSUIServer` served it over HTTP, and browsers auto-detect BOM/encoding for HTTP responses regardless), but a `file://` navigation gets no such help: without a BOM, WebView2/Chromium assumes UTF-8, and UTF-16LE ASCII text decoded as UTF-8 puts a stray/replacement character after every single character (each ASCII byte is followed by a `0x00` byte) — this breaks every tag (`<!DOCTYPE`, `<script>`, etc.) badly enough that nothing parses as real markup, and the page shows as literal flowed text instead of rendering (only visible once something first paints/shows the webview, e.g. on first resize, since it starts hidden/zero-sized). Re-saved as real UTF-8 (`iconv -f UTF-16LE -t UTF-8`) to fix. Cause: a full-file rewrite of `rsui.html` in one editing pass defaulted to UTF-16LE in this checkout's tooling — if `rsui.html` (or any other frontend file) needs a full rewrite again, verify the encoding afterward (`file rsui.html` should say "ASCII text"/"UTF-8 Unicode text", never "Little-endian UTF-16 Unicode text") rather than assuming a plain-text save stayed UTF-8.
-  - `can_resize`/`get_resize_hints`/`set_size` are real now (previously always fixed/`false`) — the FX window is resizable and the embedded UI tracks it.
-  - macOS/Linux `clap.gui` still isn't implemented (`is_api_supported` returns `false` there) — `webview/webview` itself already supports both via WKWebView/WebKitGTK, so porting `clap.gui` there later wouldn't need a webview-layer rewrite, just the native window-embedding shell those platforms don't have yet.
-
-## Debugging native crashes/hangs (no WinDbg needed)
-
-- **Crash dumps**: WER writes full dumps to `%LOCALAPPDATA%\CrashDumpseaper.exe.<pid>.dmp`. List crash records with `Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='Application Error'}`. Open a dump with `lldb -c <dmp>` (LLVM ships `lldb.exe`), then run `thread list`/`bt all`. If a stack won't unwind, run `memory read --format A --count 3000 $rsp` on the faulting thread: look for `_CxxThrowException` (a C++ exception) and return addresses inside `ReaShader.clap`.
-- **Symbolizing plugin addresses**: pass `(addr - module base + 0x180000000)` to `llvm-symbolizer --obj=build/windows-debug/ReaShader.clap`. Only trust it if the binary wasn't rebuilt from changed sources since the crash.
-- **Hangs**: attach with `"" | lldb -p <pid> -o "bt all" -o "process detach" -o quit`. Don't use `--batch`: it stops at the attach breakpoint. Get the module base from `(Get-Process -Id <pid>).Modules`.
-- **GPU faults**: check the System log for `nvlddmkm` events. Anything recurring there while the plugin runs means the Vulkan code is doing something invalid.
-- **Vulkan validation output**: `vkt/` has no debug messenger, so the Khronos layer (on in debug builds) prints nowhere visible by default. Launch REAPER with `VK_KHRONOS_VALIDATION_DEBUG_ACTION=VK_DBG_LAYER_ACTION_LOG_MSG`, `VK_KHRONOS_VALIDATION_LOG_FILENAME=<path>` and `VK_KHRONOS_VALIDATION_REPORT_FLAGS=error,warn` to get a log file. With the fixes above, the log is empty in normal use. Anything new in it is a real bug.
-- REAPER keeps the deployed `.clap` file open while it runs, so the build's final deploy copy fails with "Permission denied". Close REAPER before rebuilding.
+- **Nothing may throw out of a REAPER or CLAP callback.** REAPER treats an escaped exception as fatal (`abort()`, exception `0x40000015` "inside reaper.exe"). `ReaShaderRenderer::renderFrame()` never throws. A Vulkan error sets `frameFailed`, and video passes through until the next FX activation.
+- **Never block REAPER's video thread.** `renderFrame` `try_lock`s `frameMutex`. `init`, `shutdown` and `changeRenderingDevice` hold that mutex.
+- `deactivate()` deletes the video processor *before* the renderer's `shutdown()`.
+- REAPER's `'RGBA'` frames are laid out in memory as **B,G,R,A** (byte 0 = B).
+- **Encoding:** frontend files must be UTF-8 (`file rsui.html` must not say "UTF-16"). A UTF-16 `rsui.html` loaded via `file://` renders as garbage text.
+- **Comments:** they describe what the code does and why, for a reader with no session context. Investigation narratives go in `doc/history.md`, not in code.
+- **Commits:** the user commits. Don't run `git commit` unless asked.
 
 ## Build
 
-There is no test suite or lint step. Verification is manual, in REAPER, using the project in `test/`.
+There is no test suite or lint step. Verification is manual, in REAPER.
 
-### Prerequisites
+**Prerequisites**
+- **CMake ≥ 3.25**: `CMakePresets.json` uses schema v6.
+- **Ninja**, and **clang** (`clang++`, GNU driver; not `clang-cl` or MSVC `cl`). The Windows presets pin `clang`/`clang++`, which must be on `PATH`.
+- **The Vulkan SDK:** found with `find_package(Vulkan)` through `VULKAN_SDK`, which its installer sets. `glslc`, glslang and SPIRV-Cross all come from the SDK. `CMakeLists.txt` picks the `d`-suffixed debug variants of the libraries for Debug builds.
+- **Submodules:** run `git submodule update --init --recursive`. `clap`, `cwalk` and `boxer` are plain vendored copies. Everything else in `external/` is a submodule, including `cmake-git-versioning`, and configure fails without it.
+- **First configure needs network once:** `webview` fetches the WebView2 headers from NuGet if no system copy is found.
 
-- **CMake ≥ 3.21** and **Ninja**. That's it — everything else bootstraps itself (see below).
-- **CLAP headers** are vendored under `external/clap` (plain copied headers, MIT-licensed, no build step, not a submodule) — nothing to install.
-- `reaper-sdk`, `webview`, `boxer`, `cwalk`, `json`, `WDL`, `glm`, `VulkanMemoryAllocator`, `tinyobjloader`, and `stb` under `external/` are all compiled into the build (see CMakeLists.txt); run `git submodule update --init --recursive` after cloning to pull in the ones that are git submodules (everything except `clap`, `cwalk`, and `boxer`, which are plain vendored copies). `webview` (Windows-only for now, see Phase D) pulls in its own build-time dependency via a nested `FetchContent` -- the WebView2 headers from NuGet, if no system copy is found -- so the first configure on a clean machine needs network access once.
-- **The Vulkan SDK is required to build** (`vkt`/`rsrenderer.cpp` are in the target now) — install it and make sure `VULKAN_SDK` (set by the SDK's own installer) or `VK_SDK_PATH` (this project's own env var, checked first if set) points at it. GLM/VMA/tinyobjloader/STB are header-only and always available via their submodules; glslang/SPIRV-Cross are resolved from the installed SDK via `find_library` and fail configure with a clear `FATAL_ERROR` if missing.
+**Building**
+- The VS Code **`build+deploy`** task is the default build task (Ctrl+Shift+B). It runs `cmake -DPROFILE=<debug|release> -P build.cmake`, which:
+  1. configures (first time only);
+  2. builds;
+  3. deploys the `.clap` plus `assets/` and `rsui/` to the per-user CLAP folder (`%LOCALAPPDATA%\Programs\Common\CLAP`, `~/Library/Audio/Plug-Ins/CLAP`, `~/.clap`).
 
-**`cmake-git-versioning` is a git submodule**, not an auto-clone: `CMakeLists.txt` hard-fails configure with `FATAL_ERROR` if `external/cmake-git-versioning/cmake-git-versioning.cmake` isn't present, so it needs `git submodule update --init --recursive` like the other submodules above (a previous version of this doc claimed it auto-clones into `build/deps/` — that logic doesn't actually exist in `CMakeLists.txt`).
+  If REAPER has the `.clap` open, the deploy waits for you to close REAPER and press Enter, then retries.
+- The **`clean`** task wipes the preset build directory.
+- **CLI alternative** (builds without deploying): `cmake --preset windows-debug`, then `cmake --build --preset windows-debug`.
+- **The build itself (`CMakeLists.txt`):**
+  - compiles `src/shaders/*.glsl` to SPIR-V with `glslc`, into `build/<preset>/assets/shaders` (no `.spv` in git);
+  - stages `res/images`, `res/meshes`, the shader sources and the `rsui` frontend (minus `styles/`) next to the `.clap`.
 
-### Configure & build
+  The runtime resolves `assets/` and `rsui/` relative to the plugin binary, so they must travel with it.
+- **IntelliSense:** it reads `build/windows-debug/compile_commands.json`, which is written at configure time. On a fresh clone, run the build task once.
+- **Warnings:** `-Wall -Wextra -Wpedantic -Wshadow -Wconversion` apply to our code, and a missing `return` is an error. Third-party headers are `SYSTEM` includes and third-party sources build with `-w`. The goal is zero warnings from our code.
+- Only Windows has been exercised. The macOS/Linux branches print `TODO` warnings for what's missing (the GUI, boxer's linking).
 
-**Quickest path**: run the **`build`** task (`.vscode/tasks.json` — Ctrl/Cmd+Shift+B, it's the default build task; prompts for debug/release via a `pickString` input). There's also a **`clean`** task that wipes the whole preset build directory (CMake cache, object files, staged assets, the built `.clap`) for a fresh reconfigure.
-
-The `build` task is `cmake -DPROFILE=<profile> -P build.cmake`, identical on every OS — [build.cmake](build.cmake) picks the right preset for the host OS and runs configure + build. `CMakePresets.json`'s base preset sets `architecture: {value: "x64", strategy: "external"}`, i.e. it expects a compiler-capable environment to already be active rather than discovering one itself (fast, but means the compiler/Ninja must already be reachable on `PATH`). The project builds with **clang** (`clang++`, GNU-driver mode, not `clang-cl`) on Windows, not MSVC's `cl` — `CMakePresets.json` does not pin `CMAKE_CXX_COMPILER`, so whatever compiler CMake finds first on `PATH` is what gets used; keep that in mind if multiple compilers are installed.
-
-The user doesn't use VS Code's CMake Tools extension for this project — just the `build`/`clean` tasks above. Otherwise, from the CLI (from an environment with the compiler/Ninja already reachable):
-
-```
-cmake --preset windows-debug
-cmake --build --preset windows-debug
-```
-
-(`macos-debug`/`linux-debug` presets exist too, untested — Windows is the only platform actually exercised so far.)
-
-This single `cmake --build` step does everything `sln-make.inix` + `scripts/win/*.ps1` used to do by hand, generator-agnostically via plain `add_custom_command()`s in `CMakeLists.txt`:
-- compiles `src/shaders/*.glsl` to SPIR-V via `glslc` if it's found (skipped with a warning otherwise — the precompiled `.spv` files already committed under `src/shaders` are used as a fallback; `rsrenderer.cpp` loads `vert.spv`/`frag.spv`/`pp_vert.spv` at runtime)
-- stages `res/images`, `res/meshes`, `src/shaders`, and the `rsui` frontend (minus `styles/`) next to the built plugin
-- deploys the built `.clap` to the **per-user** CLAP plugin folder (`%LOCALAPPDATA%\Programs\Common\CLAP` on Windows, `~/Library/Audio/Plug-Ins/CLAP` on macOS, `~/.clap` on Linux) — no admin rights needed, unlike the old VST3 flow's system-folder deploy.
-
-### Manual testing
-
-Load "ReaShader" as a CLAP plugin on a REAPER track's FX chain (with a video item/clip on that track, so there's actual input for the renderer to tap — `processFrame` returns nothing if `renderInputVideoFrame` has no upstream frame to give it). A native window (Win32, no VSTGUI) should appear in the FX chain UI with the web UI itself embedded directly inside it (no external browser tab, no launcher button) — resizing the FX window should resize the embedded UI. REAPER's own generic parameter list should show "Audio Gain", "Video Param", and "Rendering Device", editable from either side. Opening REAPER's Video window should show the real render: the `reashader.obj` mesh (logo-textured, lit) composited over the track's video via the post-process pass — confirmed working in REAPER against real video content.
+**Manual testing:**
+1. Load "ReaShader" (CLAP) on a track that has a video item.
+2. Check the FX window shows the embedded web UI and resizes with the window.
+3. Check REAPER's generic parameter list shows "Audio Gain", "Video Param" and "Rendering Device".
+4. Check REAPER's Video window shows the logo mesh composited over the video.
 
 ## Architecture
 
-### One unified plugin object — `ReaShaderPlugin`
+```
+src/clap/reashader_clap.cpp          CLAP entry, descriptor, extension trampolines, REAPER video callbacks
+src/clap/plugin_state.h              ClapPluginState: owns ReaShaderPlugin + the GUI's HWND/WebUIHost
+src/clap/reashader_clap_gui_win32.cpp  clap.gui (Win32, embedded child window)
+src/clap/webui_host_win32.*          WebUIHost: webview on its own thread, JSON bridge to the plugin
+src/reashader/reashaderplugin.*      ReaShaderPlugin: params, state, web-UI messages, video-tap wiring
+src/reashader/rsrenderer.*           ReaShaderRenderer: the Vulkan pipeline (uses vkt/)
+src/reashader/vkt/                   hand-rolled Vulkan wrapper toolkit
+src/reashader/rsparams/              polymorphic parameter types + binary (de)serialization
+src/reashader/rsui/api.h             JSON message protocol (C++ side); frontend/ is the JS side
+src/reashader/tools/                 logging, paths, exceptions, base64
+```
 
-[ReaShaderPlugin](src/reashader/reashaderplugin.h) is the single object holding all real logic: the parameter list (`rsParams`), the web UI message dispatch, and the REAPER video-tap wiring. It's owned by the CLAP shell ([src/clap/reashader_clap.cpp](src/clap/reashader_clap.cpp)'s `ClapPluginState`, declared in [plugin_state.h](src/clap/plugin_state.h)), which forwards CLAP's `get_extension()` calls for `clap.audio-ports`/`clap.params`/`clap.state`/`clap.gui` to it. There is **no** processor/controller split and **no** relay layer between two copies of anything — that split, and the hand-rolled JSON+`IMessage` relay it required, only ever existed because VST3 forced two separate objects (still visible, for reference, in the untouched `src/vst3/` + the git history of `rscontroller.*`/`rsprocessor.*`, now deleted).
+### ReaShaderPlugin (one object, no processor/controller split)
 
-- **`clap.params`**: `ReaShaderPlugin::automatableParamCount()`/`getAutomatableParamInfo()` enumerate the `NumericParameter`/`Int8u`-typed entries of `rsParams` (see rsparams below) as CLAP parameters. Host automation arrives as `CLAP_EVENT_PARAM_VALUE` events, scanned in `process()`/`flush()` (both funnel through the shared `handleParamEvents()` helper in `reashader_clap.cpp`) and applied via `applyHostParamValue()`. Web-UI-originated edits go the other way: `ReaShaderPlugin` queues them (`_queueHostNotification`), and the same `handleParamEvents()` drains the queue into `out_events` so the host/its automation lane sees them too.
-- **`clap.state`**: `ReaShaderPlugin::saveState()`/`loadState()` serialize/deserialize all of `rsParams` directly against the `clap_ostream_t`/`clap_istream_t` CLAP hands over — see rsparams below for the format.
-- **`clap.gui`**: [reashader_clap_gui_win32.cpp](src/clap/reashader_clap_gui_win32.cpp) — Win32-only, embedded model (`set_parent` → `SetParent`). Plain Win32 API, no VSTGUI: a resizable child window hosting a [WebUIHost](src/clap/webui_host_win32.h) (an embedded `webview::webview`) that fills it and loads `rsui.html` directly — see Phase D above for the full design (transport, resizing, why `webview/webview` over raw WebView2). macOS/Linux aren't implemented (`is_api_supported` just returns false there).
-- **REAPER video tap**: `ReaShaderPlugin::activate(host)` does `host->get_extension(host, "cockos.reaper_extension")` → `GetFunc("clap_get_reaper_context")` → `clap_get_reaper_context(host, 4)` ("FxDsp") → `GetFunc("video_CreateVideoProcessor")(fxctx, VERSION)`, mirroring the confirmed-working path from the Phase A spike. Track info uses `clap_get_reaper_context(host, 1)` (parent track) the same way. `activate()` also calls `reaShaderRenderer->init()` (actual Vulkan instance/device setup) after this, and `deactivate()` calls `reaShaderRenderer->shutdown()` — a GPU context is only grabbed once the plugin is on an active track, matching CLAP's activate/deactivate lifecycle, and the same `ReaShaderRenderer` instance survives repeated activate/deactivate cycles without being destroyed.
-- **`reaShaderRenderer`**: a `std::unique_ptr<ReaShaderRenderer>`, constructed in `initialize()`, public because the free-function REAPER video callbacks in `reashader_clap.cpp` need to reach it directly. `ReaShaderRenderer` never touches `ReaShaderPlugin`'s `rsParams` vector directly — it goes through 5 narrow, mutex-guarded methods instead (`getRenderingDeviceIndex`/`setRenderingDeviceIndex`/`setRenderingDevicesList`/`rsParamsCount`/`addRendererParam`), deliberately not the VST3-era `friend`-based raw access `ReaShaderProcessor` used to grant it.
+- **`clap.params`:**
+  - The `NumericParameter`/`Int8u` entries of `rsParams` are exposed as CLAP params.
+  - Host automation arrives as `CLAP_EVENT_PARAM_VALUE` events in `process()`/`flush()`, through `handleParamEvents()`, and is applied by `applyHostParamValue()`.
+  - Web-UI edits are queued (`_queueHostNotification`) and drained into `out_events` by the same helper.
+- **`clap.state`:** `saveState()`/`loadState()` serialize `rsParams` through `ParamWriter`/`ParamReader` (`rsparams/paramstream.h`).
+- **REAPER video tap:** `activate(host)` does:
+  1. `host->get_extension(host, "cockos.reaper_extension")`, cast to `reaper_plugin_info_t*`;
+  2. `GetFunc("clap_get_reaper_context")`: with `sel=4` it gives the FxDsp context, with `1` the parent track;
+  3. `GetFunc("video_CreateVideoProcessor")(fxctx, VERSION)`;
+  4. `reaShaderRenderer->init()`.
+
+  `deactivate()` undoes it. The same renderer instance survives repeated activate/deactivate cycles.
+- **Renderer access:** `ReaShaderRenderer` reaches plugin data only through narrow, mutex-guarded accessors (`getRenderingDeviceIndex`, `setRenderingDeviceIndex`, `setRenderingDevicesList`, `rsParamsCount`, `addRendererParam`).
 
 ### Per-frame video path
 
-REAPER calls `processVideoFrame` → `processFrame` (`src/clap/reashader_clap.cpp`), which:
-1. Calls `vproc->renderInputVideoFrame(0, 'RGBA')` to get REAPER's actual upstream video content — this frame **must be treated as immutable** (return it or `Release()` it, per `video_processor.h`'s own documented contract) and gets `Release()`d before returning.
-2. Calls `ReaShaderRenderer::renderFrame(...)` — the single, never-throwing entry point that runs, under `frameMutex` (`try_lock`):
-   - `checkFrameSize` (recreates render targets on a size change)
-   - `loadBitsToImage` (uploads the input frame's raw pixels into a Vulkan image)
-   - `drawFrame` (the Vulkan render pass: custom fragment shader, 3D scene, post-process pass)
-   - `transferFrame` (copies the result into a **separate** output frame, `vproc->newVideoFrame(w, h, 'RGBA')`)
-3. `renderFrame` returns `false` if the renderer is uninitialized, busy (device switch, init or shutdown in progress) or failed after a Vulkan error. `processFrame` then releases the output frame and returns the input frame unchanged (passthrough). Otherwise it returns the output frame.
+REAPER calls `processVideoFrame` → `processFrame` (`reashader_clap.cpp`):
+1. `vproc->renderInputVideoFrame(0, 'RGBA')` gets the upstream frame. It is immutable, and is `Release()`d before returning.
+2. `ReaShaderRenderer::renderFrame()`, under `try_lock(frameMutex)`, runs:
+   - `checkFrameSize`
+   - `loadBitsToImage` (upload)
+   - `drawFrame` (3D scene + post-process pass)
+   - `transferFrame` (download into a new `vproc->newVideoFrame`)
+3. If `renderFrame` returns `false` (uninitialized, busy or failed), the input frame is passed through unchanged.
 
-### Vulkan layer (`vkt/` namespace)
+### Embedded web UI (WebUIHost)
 
-A hand-rolled Vulkan wrapper toolkit used exclusively by `ReaShaderRenderer` ([rsrenderer.h](src/reashader/rsrenderer.h)). Key convention (see [doc/Development.md](doc/Development.md)):
+- **Where it runs:** the webview and its message loop run on a background thread owned by `WebUIHost`. `webview::webview`'s constructor blocks for seconds while WebView2 initializes, so the `WebUIHost` constructor just spawns that thread.
+- **Creation:** `set_parent()` creates the container `HWND` and `WebUIHost` synchronously. Don't defer it: the host calls `show()` right after.
+- **Cross-thread calls:** every call into the webview from another thread goes through `webview::dispatch(fn)`, because WebView2 COM objects are single-thread-affine. `Impl::mutex` guards the `webview` pointer.
+- **Teardown:**
+  - `webview::terminate()` is **not** cross-thread-safe on Win32: it is a bare `PostQuitMessage`.
+  - So `~WebUIHost()` dispatches `terminate()` onto the webview thread.
+  - It then waits with `MsgWaitForMultipleObjects(QS_SENDMESSAGE)` + `PeekMessageW`, not a plain `join()`. Child-window teardown can `SendMessage` to the UI-thread container, and a plain `join()` from the UI thread deadlocks REAPER.
+- **Sizing:** the embedded widget starts at size 0, so the webview thread sizes it with `MoveWindow` after `navigate()`.
+- **Transport:**
+  - JS → C++: `bind("postToNative")` → `ReaShaderPlugin::handleWebUIMessage`.
+  - C++ → JS: `eval()` → `window.__reashaderOnMessage`.
+  - The plugin holds a `WebUISender` (`std::function`) and no-ops when none is registered.
+- **Shader upload:** a custom shader arrives as one base64 JSON message (`FileUpload`).
+- **Frontend:**
+  - Plain sequential `<script>` tags, no ES modules: `file://` blocks module imports.
+  - SCSS is compiled ahead of time (Live Sass Compile, see `.vscode/settings.json`), and the compiled `rsui.css` is committed.
+- **Ownership:** `ClapPluginState::webUIHost` is a raw pointer, `new`/`delete`d only in `reashader_clap_gui_win32.cpp`. `WebUIHost` is incomplete in `reashader_clap.cpp`.
 
-- Every `vkt` object pushes its own cleanup into a `vkt::deletion_queue` supplied at construction — **never delete `vkt` objects manually**. `ReaShaderRenderer` keeps four separate queues (`vktMain`, `vktFrameResized`, `vktPhysicalDeviceChanged`, `vktCustomShaderChanged`) flushed at the appropriate granularity so a GPU switch or shader hot-swap doesn't tear down the whole context.
-- All raw `Vk*` handles are initialized to `VK_NULL_HANDLE`.
-- `changeCustomShader` recompiles GLSL to SPIR-V on the fly (glslang) and rebuilds only the pipeline, not the whole renderer, using `vktCustomShaderChanged`.
-- `changeRenderingDevice` lets the user switch physical GPU at runtime (device list is enumerated and sent to the web UI).
+### Web UI protocol
 
-### Web UI protocol (`rsui/`)
+- `rsui/api.h` defines the message types, `MessageHandler` for parsing, and `MessageBuilder` for building.
+- The C++ and JS sides match purely on the `"type"` string.
+- To add a message: extend the enum and `typeStrings`, then add a `reactTo*` and a `build*` method.
 
-- [api.h](src/reashader/rsui/api.h) defines the JSON message contract shared conceptually between C++ and JS: a `MessageType`/`RequestType` enum pair, a fluent `MessageHandler` (`.reactToX(...).reactToY(...).fallbackWarning(...)`) for parsing incoming messages, and `MessageBuilder` for constructing outgoing ones. Types are plain `Parameters::Id` (`uint32_t`)/`double` now, not Steinberg types. When adding a new message type, update the enum, `typeStrings`, and add both a `reactTo*` and a `build*` method — the two sides are matched purely by the `"type"` string field.
-- [webui_host_win32.h](src/clap/webui_host_win32.h)/`.cpp` (`WebUIHost`) owns the embedded `webview::webview` instance and is the transport now — see Phase D above for the full design. `ReaShaderPlugin::handleWebUIMessage(...)` is the single entry point for incoming JSON (called from `WebUIHost`'s `bind()` callback); outgoing messages go through `ReaShaderPlugin::setWebUISender`'s registered `WebUISender` (a plain `std::function`, no server/broadcast concept anymore — one embedded UI, one recipient).
-- Frontend lives in `src/reashader/rsui/frontend/` (plain HTML/CSS/JS + SCSS partials, no build tooling/bundler, no ES modules — plain sequential `<script>` tags loaded in dependency order; SCSS is compiled ahead of time, e.g. via the Live Sass Compile VS Code extension configured in [.vscode/settings.json](.vscode/settings.json)).
-- Resources (`RSUI_DIR`/`ASSETS_DIR`, in [tools/paths.h](src/reashader/tools/paths.h)) resolve relative to the plugin binary's own directory now — CLAP is a flat file with no VST3-style bundle folder, so there's no "go up a level to Resources/" step anymore. `RSUI_DIR` is also what `WebUIHost` navigates the embedded webview to (`rsui.html` inside it, via a `file://` URL).
+### Parameters (`rsparams/`)
 
-### Custom parameter system (`rsparams/`)
+- **Types:** `Parameters::IParameter` is polymorphic and serializable to both JSON and binary.
+  - `NumericParameter`: host-automatable.
+  - `Int8u`: stepped/enum.
+  - `String`: UI and state only.
+- **Adding a type:** register it in `_registerParameterInstantiator` and implement the `...Derived` virtuals.
 
-`Parameters::IParameter` ([rsparams.h](src/reashader/rsparams/rsparams.h)) is a polymorphic, JSON- and binary-serializable parameter type, so the web UI can define/add parameters dynamically (not just ones registered as CLAP params at startup). `TypeInstantiator` is a factory keyed by `Parameters::Type`; new parameter subclasses must be registered in `_registerParameterInstantiator` and must implement the `...Derived` virtuals (`toJsonDerived`, `fromJsonDerived`, `serializeDerived`, `deserializeDerived_v1`, `setValueFromJson`). `NumericParameter` (was `VSTParameter` under VST3) is the host-automatable numeric type exposed via `clap.params`; `Int8u` maps to a stepped/enum CLAP param; `String` (e.g. the custom shader name) is UI/state-only, never host-automatable — same as before.
+### Vulkan layer (`vkt/`)
 
-Binary (de)serialization goes through [paramstream.h](src/reashader/rsparams/paramstream.h)'s `ParamWriter`/`ParamReader`, a small wrapper over CLAP's `clap_ostream_t`/`clap_istream_t` (replacing VST3's `IBStreamer`) — byte layout is unchanged from the VST3-era format. `Parameters::Preset::write()`/`read()` (free functions, not a stateful class — CLAP hands `save`/`load` distinct stream types, unlike VST3's single bidirectional `IBStream`) serialize the whole `rsParams` vector.
+- Every `vkt` object pushes its cleanup into a `vkt::deletion_queue`. Never delete `vkt` objects manually.
+- `ReaShaderRenderer` keeps 4 queues: `vktMain`, `vktFrameResized`, `vktPhysicalDeviceChanged` and `vktCustomShaderChanged`.
+- Raw `Vk*` handles are initialized to `VK_NULL_HANDLE`.
+- `VK_CHECK_RESULT` throws `std::runtime_error`. Catch it before any callback boundary.
 
-There's only **one** `rsParams` vector now, owned by `ReaShaderPlugin` — not two kept in sync via messaging.
+### Logging
 
-### Logging / errors
+- Use `LOG(...)` from `tools/logging.h`. Destinations are OR'd flags (`toConsole | toFile | toBox`).
+- The log file is `<plugin dir>/rs.log`, truncated on the first load per process.
 
-Use `LOG(...)` from [tools/logging.h](src/reashader/tools/logging.h) (destinations are OR'd flags like `toConsole | toFile`) rather than ad-hoc `std::cout`/`OutputDebugString`; writes to `<plugin dir>/rs.log`, truncated on first load per process (`static bool log_files_erase` resets when the DLL is (re)loaded). Vulkan calls that return a `VkResult` should be wrapped in `VK_CHECK_RESULT(...)` ([vktcommon.h](src/reashader/vkt/vktcommon.h)), which throws `std::runtime_error` on failure — low-level Vulkan init failures are caught and guarded in `ReaShaderRenderer::_initVulkanGuarded`/`_cleanupVulkanGuarded` via `WRAP_LOW_LEVEL_FAULTS` ([tools/exceptions.h](src/reashader/tools/exceptions.h), MSVC SEH `__try`/`__except` on Windows — confirmed working correctly under clang's `windows-msvc` target, it isn't the cause if you hit a mysterious native crash during init; check for a plain missing `return` first, see the Phase C entry above).
+## Gotchas
 
-### Vendored dependency notes (learned the hard way during the Phase B/C ports)
+- **REAPER SDK:** `video_frame.h` needs `wdltypes.h` included first. `IVideoFrame::get_bits()` returns `char*`.
+- **C sources:** `.c` files (`cwalk.c`) need `LANGUAGES CXX C` in `project()`. Otherwise CMake silently skips them, and you get a link error later.
+- **Windows headers:**
+  - `<shellapi.h>` goes after `<windows.h>`.
+  - No `NOMINMAX` is defined, so `std::max`/`std::min` break in files that include `<windows.h>`.
+  - clang's GNU driver doesn't define `UNICODE`, so call the explicit `...W` functions.
+- **`CreateWindowExW`** with `WS_CHILD` and a null parent fails with error 1406 (`ERROR_TLW_WITH_WSCHILD`). Create the window in `set_parent()`, not in `gui::create()`.
+- **Vulkan SDK libs:** `OGLCompiler.lib` no longer exists. `GetDefaultResources()` lives in `glslang-default-resource-limits.lib`. `SpvTools.h` needs `SPIRV-Tools(-opt).lib` linked.
+- **GLM and VMA** stay as submodules. The SDK's GLM is older and doesn't compile with this code.
+- **Build warnings:** a bizarre native crash is usually a compiler warning that got ignored. Grep the build log for `-Wreturn-type`/`-Wuninitialized` before suspecting the toolchain.
 
-- `external/reaper-sdk`'s `video_frame.h` needs `wdltypes.h` (`WDL_FIXALIGN`, `INT_PTR`) included first — it doesn't include it itself, so any file pulling in `video_processor.h`/`video_frame.h` must `#include "wdltypes.h"` immediately before. `IVideoFrame::get_bits()` returns `char*` in the currently-vendored SDK version, not `int*` — cast at call sites.
-- `.c` sources (`external/cwalk/cwalk.c`) need `LANGUAGES CXX C` in `project()` — CMake silently drops `.c` files from the build otherwise (no error, they just don't get compiled, which only shows up as a *link* error later).
-- Windows headers care about include order: `<shellapi.h>` must come after `<windows.h>`, not before.
-- Clang's GNU-driver mode (`clang++`, as opposed to `clang-cl`) doesn't imply `UNICODE`/`_UNICODE` the way a typical MSVC project default does — code calling the bare `GetModuleHandleEx`/`GetModuleFileName` macros can silently resolve to the ANSI (`...A`) overloads and fail to compile against wide-string arguments; call the explicit `...W` functions instead.
-- **`CreateWindowExW` with `WS_CHILD` and a null `hWndParent` fails with `GetLastError() == 1406`** (`ERROR_TLW_WITH_WSCHILD`, "top-level window with WS_CHILD style") — easy to misdiagnose as a class-registration or environment problem (the error name doesn't obviously map to "wrong hWndParent", and confusingly `RegisterClassW`/`GetClassInfoExW` can still report the class as present while `CreateWindowExW` itself fails). The fix used in [reashader_clap_gui_win32.cpp](src/clap/reashader_clap_gui_win32.cpp): don't create the window in `clap_plugin_gui::create()` (no real parent HWND exists yet at that point) — only register the window class there, and defer the actual `CreateWindowExW` call to `set_parent()`, where the host hands you the real parent HWND to pass in directly.
-- The deploy step must copy `assets/`/`rsui/` alongside the `.clap`, not just the binary — `WebUIHost`/`ReaShaderRenderer` resolve `ASSETS_DIR`/`RSUI_DIR` relative to wherever the plugin binary *actually ends up running from* (`tools::paths::getDynamicLibraryDir()`), not the build tree. Deploying only the `.clap` file leaves the web UI unable to find `rsui.html` at runtime even though the build tree looks correct.
-- **glslang/SPIRV-Cross resolve from the installed Vulkan SDK, not a manual build**: the SDK's `Lib/` folder ships both debug (`d`-suffixed, e.g. `glslangd.lib`) and release variants of `glslang.lib` + `OSDependent`/`MachineIndependent`/`GenericCodeGen`/`glslang-default-resource-limits` and `spirv-cross-core`/`spirv-cross-glsl` — `CMakeLists.txt`'s `find_library` block picks the matching variant for `CMAKE_BUILD_TYPE` automatically, confirmed working end-to-end in a Debug build (this contradicted an earlier assumption here, written before checking the actual `Lib/` contents, that the SDK only ships release libs — corrected after actually looking). Two SDK-version-specific naming gotchas worth knowing if this breaks on a different SDK version: `OGLCompiler.lib` doesn't exist in current glslang releases (it's been folded away upstream — don't add it back to `RS_GLSLANG_LIB_NAMES`), and `GetDefaultResources()` (used by `vktpipeline.h`'s `compile_glsl_to_spirv`) now lives in its own `glslang-default-resource-limits.lib`, not the core `glslang.lib`. `RS_SPVC_PATH` defaults to `Include/spirv_cross` (not `Include` — the SDK nests SPIRV-Cross headers one level deeper than a from-source checkout would) and can be overridden to a manually built checkout if a future SDK version's bundled copy proves incompatible.
-- **`vkt/SpvTools.h` needs SPIRV-Tools linked too**: `vktpipeline.h` includes `glslang/SPIRV/SpvTools.h` for validation/optimization, which pulls in `spvtools::Optimizer`/`spv*` C-API symbols from `SPIRV-Tools.lib`/`SPIRV-Tools-opt.lib` — easy to miss since nothing in `rsrenderer.cpp` calls these directly; they're only needed because that header is included at all. Both are in `RS_GLSLANG_LIB_NAMES` in `CMakeLists.txt`.
+## Debugging native crashes/hangs (no WinDbg needed)
+
+- **Crash dumps:**
+  - WER writes full dumps to `%LOCALAPPDATA%\CrashDumps\reaper.exe.<pid>.dmp`.
+  - List crash records with `Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='Application Error'}`.
+  - Open a dump with `lldb -c <dmp>`, then run `thread list` / `bt all`.
+  - If a stack won't unwind, run `memory read --format A --count 3000 $rsp` and look for `_CxxThrowException` and return addresses inside `ReaShader.clap`.
+- **Symbolizing:** run `llvm-symbolizer --obj=build/windows-debug/ReaShader.clap` on `(addr - module base + 0x180000000)`. This is only valid if the binary hasn't been rebuilt since the crash.
+- **Hangs:** run `"" | lldb -p <pid> -o "bt all" -o "process detach" -o quit` (not `--batch`). Get the module base from `(Get-Process -Id <pid>).Modules`.
+- **GPU faults:** recurring `nvlddmkm` events in the System log mean the Vulkan code is doing something invalid.
+- **Vulkan validation output:**
+  - `vkt/` has no debug messenger, so launch REAPER with these to get the Khronos layer's output (on in debug builds) as a log file:
+    - `VK_KHRONOS_VALIDATION_DEBUG_ACTION=VK_DBG_LAYER_ACTION_LOG_MSG`
+    - `VK_KHRONOS_VALIDATION_LOG_FILENAME=<path>`
+    - `VK_KHRONOS_VALIDATION_REPORT_FLAGS=error,warn`
+  - The log is empty in normal use, so anything in it is a bug.

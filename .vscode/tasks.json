@@ -23,7 +23,7 @@
                 "isDefault": true
             },
             "problemMatcher": [
-                "$msCompile"
+                "$gcc"
             ],
             "presentation": {
                 "reveal": "always",

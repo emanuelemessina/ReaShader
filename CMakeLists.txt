@@ -1,161 +1,157 @@
-##################
-# CMake Preamble
-##################
+#################################
+# Tooling
+#################################
 
-cmake_minimum_required(VERSION 3.21)
+# - enforce cmake version
+# - require git
+# - include cmake_git_versioning
 
-# Git
+cmake_minimum_required(VERSION 3.25)
 
-find_package(Git)
-if(GIT_FOUND)
-    message("Git found: ${GIT_EXECUTABLE}")
-else()
-    message(FATAL_ERROR "Git not found!")
-endif()
-
-# Dirs
-
-# Build Deps
-
-# cmake-git-versioning
+find_package(Git REQUIRED)
 
 set(CGV_PATH "${CMAKE_CURRENT_LIST_DIR}/external/cmake-git-versioning")
-
 if(NOT EXISTS "${CGV_PATH}/cmake-git-versioning.cmake")
-    message(FATAL_ERROR "cmake-git-versioning not found at ${CGV_PATH}")
+    message(FATAL_ERROR "cmake-git-versioning not found at ${CGV_PATH} (missing submodule)")
 endif()
-
 include("${CGV_PATH}/cmake-git-versioning.cmake")
 
-##################
-# Project
-##################
+#################################
+# Project configuration
+#################################
 
 set(PROJECT_NAME ReaShader)
 
 project(${PROJECT_NAME}
     VERSION ${PROJECT_VERSION_CMAKE}
-    DESCRIPTION "${PROJECT_NAME} CLAP Plug-in"
+    DESCRIPTION "${PROJECT_NAME} CLAP Plugin"
     LANGUAGES CXX C
 )
 
-##################
-# C++
-##################
-
-# C++ STANDARD
-
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-# ADDITIONAL INCLUDE DIRECTORIES (absolute or relative to this root)
-#
-# GLM/VMA/tinyobjloader/STB are all header-only and vendored as git submodules
-# (external/glm, external/VulkanMemoryAllocator, external/tinyobjloader, external/stb)
-# -- no manual download/placement needed. Keep both GLM and VMA as submodules rather
-# than sourcing either from the installed Vulkan SDK (see CLAUDE.md for why). glslang
-# and SPIRV-Cross are NOT vendored: the installed Vulkan SDK already ships usable static
-# libs for both (see the find_library block below), so building/placing them by hand is
-# no longer required either. The Vulkan SDK itself remains the one dependency that has
-# to be installed manually -- it's a full installer, not something to vendor.
-#
-# The SDK's own installer sets VULKAN_SDK, not VK_SDK_PATH (a pre-existing project
-# convention) -- check both, preferring VK_SDK_PATH for anyone who set it explicitly.
-if(DEFINED ENV{VK_SDK_PATH} AND NOT "$ENV{VK_SDK_PATH}" STREQUAL "")
-    set(RS_VK_SDK_PATH "$ENV{VK_SDK_PATH}")
-else()
-    set(RS_VK_SDK_PATH "$ENV{VULKAN_SDK}")
-endif()
+# Stage directories
+set(PLUGIN_STAGE_DIR "${CMAKE_BINARY_DIR}")
+set(SHADERS_STAGE_DIR "${PLUGIN_STAGE_DIR}/assets/shaders")
 
-set(RS_GLM_PATH "${CMAKE_CURRENT_LIST_DIR}/external/glm" CACHE PATH "GLM path")
-set(RS_VMA_PATH "${CMAKE_CURRENT_LIST_DIR}/external/VulkanMemoryAllocator" CACHE PATH "Vulkan Memory Allocator path")
-set(RS_TOL_PATH "${CMAKE_CURRENT_LIST_DIR}/external/tinyobjloader" CACHE PATH "Tiny Obj Loader path")
-set(RS_STB_PATH "${CMAKE_CURRENT_LIST_DIR}/external/stb" CACHE PATH "STB path")
-
-# SPIRV-Cross headers: defaults to the Vulkan SDK's copy, which nests them under
-# Include/spirv_cross/ (so #include <spirv_cross.hpp> resolves) -- unlike a from-source
-# SPIRV-Cross checkout, whose headers sit flat at the repo root. If a given SDK version
-# turns out to be incompatible (this has happened before -- see README), override this
-# cache variable to point at a manually built SPIRV-Cross checkout instead.
-set(RS_SPVC_PATH "${RS_VK_SDK_PATH}/Include/spirv_cross" CACHE PATH "SPIRV-Cross headers path")
-
-include_directories (
-    "external/clap/include"
-
-    "external/reaper-sdk/sdk"
-    "external/WDL/WDL"
-
-    "external/cwalk"
-    "external/json/include"
-    "external/boxer/include"
-
-    "src/reashader"
-
-    ${RS_SPVC_PATH}
-
-    ${RS_GLM_PATH}
-    "${RS_VMA_PATH}/include"
-    ${RS_TOL_PATH}
-    ${RS_STB_PATH}
-
-    # glslang headers also come from here (glslang/... is a subdir of the SDK's Include) --
-    # at the end because of the override with any manually placed libraries above.
-    "${RS_VK_SDK_PATH}/include"
-)
-
-# glslang / SPIRV-Cross static libraries: both ship prebuilt inside the installed Vulkan
-# SDK's Lib/ folder (this SDK version ships debug ("d"-suffixed) and release variants of
-# each), so nothing needs to be built by hand. These are looked up optionally (like
-# RS_GLSLC_EXECUTABLE below) -- a missing Vulkan SDK must not break a build that doesn't
-# need the renderer. RS_VULKAN_RENDERER_LIBS is linked into the target below.
-# Note: OGLCompiler.lib doesn't exist in current glslang releases (folded away upstream) --
-# don't add it back. glslang-default-resource-limits is needed for GetDefaultResources(),
-# used by vktpipeline.h's compile_glsl_to_spirv(). SPIRV-Tools/-opt are needed because
-# vktpipeline.h pulls in glslang/SPIRV/SpvTools.h, which links against SPIRV-Tools' validator
-# and optimizer.
-
-set(RS_GLSLANG_LIB_NAMES glslang OSDependent MachineIndependent GenericCodeGen
-                         glslang-default-resource-limits SPIRV-Tools-opt SPIRV-Tools)
-set(RS_SPVC_LIB_NAMES spirv-cross-core spirv-cross-glsl)
-set(RS_VULKAN_RENDERER_LIBS "")
-set(RS_VULKAN_RENDERER_LIBS_MISSING "")
+#################################
+# Libraries
+#################################
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(RS_VK_LIB_SUFFIX "d")
+    set(LIB_SUFFIX "d")
 else()
-    set(RS_VK_LIB_SUFFIX "")
+    set(LIB_SUFFIX "")
 endif()
 
-foreach(_rs_lib_name ${RS_GLSLANG_LIB_NAMES} ${RS_SPVC_LIB_NAMES})
-    find_library(RS_LIB_${_rs_lib_name} NAMES "${_rs_lib_name}${RS_VK_LIB_SUFFIX}" ${_rs_lib_name}
-                 HINTS "${RS_VK_SDK_PATH}/Lib")
-    if(RS_LIB_${_rs_lib_name})
-        list(APPEND RS_VULKAN_RENDERER_LIBS ${RS_LIB_${_rs_lib_name}})
+# Vulkan:
+# - require Vulkan SDK
+# - find libraries (glslang, spirv-cross)
+
+find_package(Vulkan REQUIRED COMPONENTS glslc)
+cmake_path(GET Vulkan_LIBRARY PARENT_PATH VK_LIB_DIR)
+
+set(GLSLANG_LIB_NAMES 
+    glslang 
+    OSDependent 
+    MachineIndependent 
+    GenericCodeGen
+    glslang-default-resource-limits 
+    SPIRV-Tools-opt 
+    SPIRV-Tools
+)
+set(SPVC_LIB_NAMES 
+    spirv-cross-core 
+    spirv-cross-glsl
+)
+
+set(VULKAN_SDK_LIBS "")
+set(VULKAN_SDK_LIBS_MISSING "")
+
+foreach(_lib_name ${GLSLANG_LIB_NAMES} ${SPVC_LIB_NAMES})
+    find_library(LIB_${_lib_name} 
+        NAMES "${_lib_name}${LIB_SUFFIX}" ${_lib_name}
+        HINTS "${VK_LIB_DIR}" 
+        NO_DEFAULT_PATH
+    )
+    if(LIB_${_lib_name})
+        list(APPEND VULKAN_SDK_LIBS ${LIB_${_lib_name}})
     else()
-        list(APPEND RS_VULKAN_RENDERER_LIBS_MISSING ${_rs_lib_name})
+        list(APPEND VULKAN_SDK_LIBS_MISSING ${_lib_name})
     endif()
 endforeach()
 
-if(RS_VULKAN_RENDERER_LIBS_MISSING)
-    message(FATAL_ERROR "glslang/SPIRV-Cross libraries not found in Vulkan SDK (missing: "
-                         "${RS_VULKAN_RENDERER_LIBS_MISSING}) -- rsrenderer.cpp/vkt need them. "
-                         "Install/update the Vulkan SDK (see README).")
-else()
-    message(STATUS "glslang/SPIRV-Cross libraries found in Vulkan SDK")
+if(VULKAN_SDK_LIBS_MISSING)
+    message(FATAL_ERROR "glslang/SPIRV-Cross libraries not found in ${VK_LIB_DIR} "
+                        "(missing: ${VULKAN_SDK_LIBS_MISSING}). Install/update the Vulkan SDK.")
 endif()
 
-find_package(Vulkan REQUIRED)
+# WebView
 
-##############################################################################
-#                                                                            #
-#                              CLAP PLUGIN                                  #
-#                                                                            #
-##############################################################################
+if(WIN32)
+    set(WEBVIEW_BUILD_SHARED_LIBRARY OFF CACHE BOOL "" FORCE)
+    add_subdirectory(external/webview SYSTEM)
+endif()
 
-# rsparams/rsui/reashaderplugin (ported off VST3) and ReaShaderRenderer/vkt (the Vulkan pipeline)
-# are both wired into this target -- process_frame drives real rendering.
+#################################
+# Target
+#################################
 
-add_library(${PROJECT_NAME} MODULE
+add_library(${PROJECT_NAME} MODULE)
+
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    PREFIX ""
+    SUFFIX ".clap"
+    LIBRARY_OUTPUT_DIRECTORY "${RS_STAGE_DIR}"
+)
+
+#################################
+# Shaders
+#################################
+
+set(RS_SHADERS 
+    vert.glsl:vertex 
+    frag.glsl:fragment 
+    pp_vert.glsl:vertex 
+    pp_frag.glsl:fragment
+)
+
+set(RS_SHADER_SOURCES "")
+set(RS_COMPILED_SHADERS "")
+
+foreach(_shader ${RS_SHADERS})
+    string(REPLACE ":" ";" _shader "${_shader}")
+    list(GET _shader 0 _file)
+    list(GET _shader 1 _stage)
+    cmake_path(GET _file STEM _name)
+
+    set(_src "${CMAKE_SOURCE_DIR}/src/shaders/${_file}")
+    set(_out "${RS_SHADERS_STAGE_DIR}/${_name}.spv")
+
+    add_custom_command(
+        OUTPUT ${_out}
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${RS_SHADERS_STAGE_DIR}"
+        COMMAND Vulkan::glslc -fshader-stage=${_stage} ${_src} -o ${_out}
+        DEPENDS ${_src}
+        COMMENT "Compiling shader ${_file}"
+        VERBATIM
+    )
+    list(APPEND RS_SHADER_SOURCES ${_src})
+    list(APPEND RS_COMPILED_SHADERS ${_out})
+endforeach()
+
+add_custom_target(rs_shaders DEPENDS ${RS_COMPILED_SHADERS})
+
+add_dependencies(${PROJECT_NAME} rs_shaders)
+
+#################################
+# Sources
+#################################
+
+# Core sources
+target_sources(${PROJECT_NAME} PRIVATE
     src/clap/reashader_clap.cpp
 
     src/reashader/reashaderplugin.cpp
@@ -177,129 +173,108 @@ add_library(${PROJECT_NAME} MODULE
     src/reashader/vkt/vktmesh.cpp
     src/reashader/vkt/vktqueue.cpp
     src/reashader/vkt/vktrenderpass.cpp
+)
 
-    # third-party sources these depend on (header-only otherwise)
+# External sources
+target_sources(${PROJECT_NAME} PRIVATE 
     external/cwalk/cwalk.c
 )
 
-target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan ${RS_VULKAN_RENDERER_LIBS})
+# Platform-specific sources
 
-set_target_properties(${PROJECT_NAME} PROPERTIES
-    PREFIX ""
-    SUFFIX ".clap"
-)
+set(PLATFORM_SPECIFIC_SOURCES "")
 
 if(WIN32)
-    # webview/webview embeds the web UI directly in the FX window (WebView2 under the hood on
-    # Windows) instead of RSUIServer/restinio relaying to an external browser tab. Only built here
-    # since clap.gui is Windows-only today -- see CLAUDE.md's Phase D notes. WEBVIEW_BUILD_SHARED_LIBRARY
-    # is off since we only need webview::core_static; docs/tests/examples default off already
-    # (WEBVIEW_IS_TOP_LEVEL_BUILD is false for a nested add_subdirectory).
-    set(WEBVIEW_BUILD_SHARED_LIBRARY OFF CACHE BOOL "" FORCE)
-    add_subdirectory(external/webview)
-
-    target_sources(${PROJECT_NAME} PRIVATE
+    list(APPEND PLATFORM_SPECIFIC_SOURCES
         src/clap/reashader_clap_gui_win32.cpp
         src/clap/webui_host_win32.cpp
+    )
+    list(APPEND PLATFORM_SPECIFIC_SOURCES 
         external/boxer/src/boxer_win.cpp
     )
-    # boxer (MessageBox) + Shlwapi (PathRemoveFileSpecA, used by tools::paths) + user32/shell32
-    # (window/shell APIs). webview::core_static pulls in its own required Windows libs
-    # (advapi32/ole32/version, plus user32/shell32/shlwapi again) transitively.
-    target_link_libraries(${PROJECT_NAME} PRIVATE user32 shell32 shlwapi webview::core_static)
 elseif(APPLE)
-    target_sources(${PROJECT_NAME} PRIVATE external/boxer/src/boxer_mac.mm)
+    message(WARNING "TODO: clap.gui and embedded webview are not implemented on macOS yet")
+    message(WARNING "TODO: boxer on macOS requires Objective-C++ enabled and Cocoa linked")
+    list(APPEND PLATFORM_SPECIFIC_SOURCES 
+        external/boxer/src/boxer_mac.mm
+    )
 else()
-    target_sources(${PROJECT_NAME} PRIVATE external/boxer/src/boxer_linux.cpp)
+    message(WARNING "TODO: clap.gui and embedded webview are not implemented on Linux yet")
+    message(WARNING "TODO: boxer on Linux requires GTK3 linked")
+    list(APPEND PLATFORM_SPECIFIC_SOURCES 
+        external/boxer/src/boxer_linux.cpp
+    )
 endif()
 
-##############################################################################
-#                                                                            #
-#                        SHADER COMPILATION (glslc)                        #
-#                                                                            #
-##############################################################################
-#
-# Generator-agnostic replacement for sln-make.inix's MSBuild pre-link shader step.
-# Each shader is a proper custom command with tracked input/output, so rebuilds are
-# incremental instead of "always recompile everything." rsrenderer.cpp loads vert.spv/
-# frag.spv/pp_vert.spv at runtime (see SHADERS_DIR usage), so ReaShaderShaders is a real
-# build dependency of the plugin target now, not just a freestanding convenience target.
+target_sources(${PROJECT_NAME} PRIVATE ${PLATFORM_SPECIFIC_SOURCES})
 
-find_program(RS_GLSLC_EXECUTABLE glslc HINTS "$ENV{VK_SDK_PATH}/Bin" "$ENV{VULKAN_SDK}/Bin")
+#################################
+# Includes
+#################################
 
-if(RS_GLSLC_EXECUTABLE)
-    function(rs_compile_shader stage filename)
-        get_filename_component(name_we ${filename} NAME_WE)
-        set(src "${CMAKE_SOURCE_DIR}/src/shaders/${filename}")
-        set(out "${CMAKE_SOURCE_DIR}/src/shaders/${name_we}.spv")
-        add_custom_command(
-            OUTPUT ${out}
-            COMMAND ${RS_GLSLC_EXECUTABLE} -fshader-stage=${stage} ${src} -o ${out}
-            DEPENDS ${src}
-            COMMENT "Compiling shader ${filename}"
-            VERBATIM
-        )
-        set(RS_COMPILED_SHADERS ${RS_COMPILED_SHADERS} ${out} PARENT_SCOPE)
-    endfunction()
-
-    rs_compile_shader(vertex vert.glsl)
-    rs_compile_shader(fragment frag.glsl)
-    rs_compile_shader(vertex pp_vert.glsl)
-    rs_compile_shader(fragment pp_frag.glsl)
-
-    add_custom_target(ReaShaderShaders DEPENDS ${RS_COMPILED_SHADERS})
-    add_dependencies(${PROJECT_NAME} ReaShaderShaders)
-else()
-    message(STATUS "glslc not found (no Vulkan SDK detected) -- shader recompilation skipped; "
-                    "the precompiled .spv files already committed under src/shaders are used as-is")
-endif()
-
-##############################################################################
-#                                                                            #
-#                            RESOURCE STAGING                              #
-#                                                                            #
-##############################################################################
-#
-# Generator-agnostic replacement for sln-make.inix's MSBuild pre-link resource-copy step.
-# CLAP plugins are a single flat file on Windows/Linux (no bundle folder like VST3), so
-# assets are staged next to the built .clap -- ReaShaderRenderer locates them via
-# tools/paths.h's ASSETS_DIR (resolved relative to the plugin binary at runtime).
-
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/res/images" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/images"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/res/meshes" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/meshes"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src/shaders" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/shaders"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src/reashader/rsui/frontend" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/rsui"
-    COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_FILE_DIR:${PROJECT_NAME}>/rsui/styles"
-    COMMENT "Staging ReaShader resources next to the built plugin"
+# Core includes
+target_include_directories(${PROJECT_NAME} PRIVATE 
+    src/reashader
 )
 
-##############################################################################
-#                                                                            #
-#                    LOCAL DEV DEPLOY (per-user CLAP folder)               #
-#                                                                            #
-##############################################################################
-#
-# Generator-agnostic replacement for sln-make.inix's MSBuild post-build deploy step.
-# Deploys to the *per-user* CLAP plugin folder (confirmed working during the video-tap
-# spike), not an admin-owned system folder -- no more "take ownership of Program Files"
-# step like the old VST3 flow needed.
+# External includes
+target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE
+    external/clap/include
+    external/reaper-sdk/sdk
+    external/WDL/WDL
+    external/cwalk
+    external/json/include
+    external/boxer/include
+    external/glm
+    external/VulkanMemoryAllocator/include
+    external/tinyobjloader
+    external/stb
+    "${Vulkan_INCLUDE_DIR}/spirv_cross"
+)
 
-if(WIN32)
-    set(RS_CLAP_USER_DIR "$ENV{LOCALAPPDATA}/Programs/Common/CLAP")
-elseif(APPLE)
-    set(RS_CLAP_USER_DIR "$ENV{HOME}/Library/Audio/Plug-Ins/CLAP")
-else()
-    set(RS_CLAP_USER_DIR "$ENV{HOME}/.clap")
+#################################
+# Compiler options
+#################################
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(${PROJECT_NAME} PRIVATE
+        -Wall -Wextra -Wpedantic -Wshadow -Wconversion
+        -Werror=return-type
+    )
+    set_source_files_properties(${RS_THIRD_PARTY_SOURCES} PROPERTIES COMPILE_OPTIONS "-w")
 endif()
 
+#################################
+# Link
+#################################
+
+target_link_libraries(${PROJECT_NAME} PRIVATE 
+    Vulkan::Vulkan 
+    ${VULKAN_RENDERER_LIBS}
+)
+
+if(WIN32)
+    target_link_libraries(${PROJECT_NAME} PRIVATE 
+        user32 
+        shell32 
+        shlwapi 
+        webview::core_static
+    )
+    # The Vulkan SDK debug static libraries omit PDB symbols
+    target_link_options(${PROJECT_NAME} PRIVATE "LINKER:/ignore:4099")
+endif()
+
+#################################
+# POST_BUILD
+#################################
+
+# Stage resources next to the plugin
+
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${RS_CLAP_USER_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:${PROJECT_NAME}>" "${RS_CLAP_USER_DIR}/${PROJECT_NAME}.clap"
-    # the .clap binary alone isn't enough -- RSUIServer resolves ASSETS_DIR/RSUI_DIR relative to
-    # its own directory at runtime (see tools/paths.h), so the staged resource folders have to
-    # follow it to wherever it's actually deployed, not just live next to the build-tree copy
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets" "${RS_CLAP_USER_DIR}/assets"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "$<TARGET_FILE_DIR:${PROJECT_NAME}>/rsui" "${RS_CLAP_USER_DIR}/rsui"
-    COMMENT "Deploying ${PROJECT_NAME}.clap + resources to the per-user CLAP plugin folder (${RS_CLAP_USER_DIR}) for local testing"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/res/images" "${PLUGIN_STAGE_DIR}/assets/images"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/res/meshes" "${PLUGIN_STAGE_DIR}/assets/meshes"
+    COMMAND ${CMAKE_COMMAND} -E copy ${RS_SHADER_SOURCES} "${SHADERS_STAGE_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src/reashader/rsui/frontend" "${PLUGIN_STAGE_DIR}/rsui"
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${PLUGIN_STAGE_DIR}/rsui/styles"
+    COMMENT "Staging ReaShader resources next to the built plugin"
 )
