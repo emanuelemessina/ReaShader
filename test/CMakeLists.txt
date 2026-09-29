@@ -81,6 +81,7 @@ if(WIN32)
         host/video.cpp
 
         cases/host_lifecycle.cpp
+        cases/host_scenarios.cpp
     )
 else()
     message(WARNING "TODO: the fake REAPER host is Windows-only; host tests are skipped")

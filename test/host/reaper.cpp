@@ -210,11 +210,12 @@ namespace host
 		audioThread.run([this] { plugin->start_processing(plugin); });
 	}
 
+	// Assumed: the plugin counts as inactive from the start of deactivate (it rescans params in there).
 	void Reaper::deactivate()
 	{
 		audioThread.run([this] { plugin->stop_processing(plugin); });
-		plugin->deactivate(plugin);
 		active = false;
+		plugin->deactivate(plugin);
 	}
 
 	void Reaper::destroyPlugin()
@@ -292,6 +293,11 @@ namespace host
 				clap_audio_buffer_t audioOut{ outputChannels, nullptr, 2, 0, 0 };
 				InputEvents in;
 				OutputEvents out;
+				if (block == 0)
+				{
+					std::lock_guard lock(automationMutex);
+					in.events.swap(automation);
+				}
 
 				clap_process_t process{};
 				process.steady_time = -1;
@@ -311,6 +317,82 @@ namespace host
 			}
 		});
 		return outputs[0];
+	}
+
+	// -------- state --------
+
+	namespace
+	{
+		struct OutputStream
+		{
+			clap_ostream_t stream{ this, write };
+			std::string data;
+
+			static int64_t write(const clap_ostream_t* stream, const void* buffer, uint64_t size)
+			{
+				static_cast<OutputStream*>(stream->ctx)->data.append(static_cast<const char*>(buffer), (size_t)size);
+				return (int64_t)size;
+			}
+		};
+
+		// Assumed: REAPER hands the state over in chunks; small ones exercise the plugin's read loop
+		struct InputStream
+		{
+			clap_istream_t stream{ this, read };
+			const std::string& data;
+			size_t position = 0;
+
+			explicit InputStream(const std::string& state) : data(state) {}
+
+			static int64_t read(const clap_istream_t* stream, void* buffer, uint64_t size)
+			{
+				auto* self = static_cast<InputStream*>(stream->ctx);
+				size_t count = std::min({ (size_t)size, (size_t)1000, self->data.size() - self->position });
+				std::memcpy(buffer, self->data.data() + self->position, count);
+				self->position += count;
+				return (int64_t)count;
+			}
+		};
+	} // namespace
+
+	std::string Reaper::saveState()
+	{
+		auto* state = static_cast<const clap_plugin_state_t*>(plugin->get_extension(plugin, CLAP_EXT_STATE));
+		OutputStream out;
+		if (!state || !state->save(plugin, &out.stream))
+			problem("state.save failed");
+		return out.data;
+	}
+
+	void Reaper::loadState(const std::string& data)
+	{
+		auto* state = static_cast<const clap_plugin_state_t*>(plugin->get_extension(plugin, CLAP_EXT_STATE));
+		InputStream in(data);
+		if (!state || !state->load(plugin, &in.stream))
+			problem("state.load failed");
+	}
+
+	// -------- automation --------
+
+	void Reaper::automate(clap_id id, double value)
+	{
+		for (Param& param : paramList)
+			if (param.id == id)
+				param.value = value;
+
+		clap_event_param_value_t event{};
+		event.header.size = sizeof(event);
+		event.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+		event.header.type = CLAP_EVENT_PARAM_VALUE;
+		event.param_id = id;
+		event.note_id = -1;
+		event.port_index = -1;
+		event.channel = -1;
+		event.key = -1;
+		event.value = value;
+
+		std::lock_guard lock(automationMutex);
+		automation.push_back(event);
 	}
 
 	// -------- video --------
@@ -364,6 +446,22 @@ namespace host
 		return paramList;
 	}
 
+	const Param* Reaper::param(const std::string& name) const
+	{
+		for (const Param& p : paramList)
+			if (p.name == name)
+				return &p;
+		return nullptr;
+	}
+
+	double Reaper::pluginValue(clap_id id) const
+	{
+		double value = 0;
+		if (!pluginParams || !pluginParams->get_value(plugin, id, &value))
+			problem(std::format("params.get_value({}) failed", id));
+		return value;
+	}
+
 	bool Reaper::isActive() const
 	{
 		return active;
@@ -400,7 +498,7 @@ namespace host
 		return all;
 	}
 
-	void Reaper::problem(std::string what)
+	void Reaper::problem(std::string what) const
 	{
 		std::lock_guard lock(problemsMutex);
 		problemList.push_back(std::move(what));
