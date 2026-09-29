@@ -36,6 +36,18 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(PLUGIN_STAGE_DIR "${CMAKE_BINARY_DIR}")
 set(GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
 
+# Plugin identity
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(PLUGIN_DISPLAY_NAME "ReaShader (Debug)")
+    set(PLUGIN_ID "com.emanuelemessina.reashader.debug")
+    set(PLUGIN_FILE_NAME "ReaShader-Debug" CACHE INTERNAL "")
+else()
+    set(PLUGIN_DISPLAY_NAME "ReaShader")
+    set(PLUGIN_ID "com.emanuelemessina.reashader")
+    set(PLUGIN_FILE_NAME "ReaShader" CACHE INTERNAL "")
+endif()
+
 #################################
 # Libraries
 #################################
@@ -71,6 +83,7 @@ add_subdirectory(external/boxer SYSTEM)
 add_library(${PROJECT_NAME} MODULE)
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
+    OUTPUT_NAME "${PLUGIN_FILE_NAME}"
     PREFIX ""
     SUFFIX ".clap"
     LIBRARY_OUTPUT_DIRECTORY "${PLUGIN_STAGE_DIR}"
@@ -200,8 +213,12 @@ target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE
 # Compiler options
 #################################
 
-# Version define
-target_compile_definitions(${PROJECT_NAME} PRIVATE REASHADER_VERSION="${PROJECT_VERSION_STRING}")
+# Version and identity defines
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    REASHADER_VERSION="${PROJECT_VERSION_STRING}"
+    REASHADER_NAME="${PLUGIN_DISPLAY_NAME}"
+    REASHADER_ID="${PLUGIN_ID}"
+)
 
 # Flags
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")

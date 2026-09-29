@@ -71,7 +71,12 @@ else()
     set(CLAP_USER_DIR "$ENV{HOME}/.clap")
 endif()
 
-set(DEPLOY_DIR "${CLAP_USER_DIR}/ReaShader")
+# The plugin's file name (ReaShader or ReaShader-Debug) comes from the build tree's cache (see CMakeLists.txt)
+
+load_cache("${BUILD_PRESET_DIR}" READ_WITH_PREFIX "" PLUGIN_FILE_NAME)
+
+set(DEPLOY_DIR "${CLAP_USER_DIR}/${PLUGIN_FILE_NAME}")
+set(PLUGIN_FILE "${PLUGIN_FILE_NAME}.clap")
 
 message(STATUS "Deploying to ${DEPLOY_DIR}")
 file(MAKE_DIRECTORY "${DEPLOY_DIR}")
@@ -79,11 +84,11 @@ file(MAKE_DIRECTORY "${DEPLOY_DIR}")
 # Binary:
 # if REAPER is locking the plugin file, skip the deploy with a warning
 
-file(COPY_FILE "${BUILD_PRESET_DIR}/ReaShader.clap" "${DEPLOY_DIR}/ReaShader.clap"
+file(COPY_FILE "${BUILD_PRESET_DIR}/${PLUGIN_FILE}" "${DEPLOY_DIR}/${PLUGIN_FILE}"
      RESULT COPY_RESULT ONLY_IF_DIFFERENT)
 if(NOT COPY_RESULT EQUAL 0)
-    message(WARNING "Not deployed: can't overwrite ReaShader.clap (${COPY_RESULT}).\n"
-                    "Close REAPER (or remove ReaShader from all FX chains) and build again to deploy.")
+    message(WARNING "Not deployed: can't overwrite ${PLUGIN_FILE} (${COPY_RESULT}).\n"
+                    "Close REAPER (or remove ${PLUGIN_FILE_NAME} from all FX chains) and build again to deploy.")
     return()
 endif()
 
@@ -96,4 +101,4 @@ foreach(RESOURCE_DIR resources/images resources/meshes resources/shaders/example
     file(COPY "${BUILD_PRESET_DIR}/${RESOURCE_DIR}/" DESTINATION "${DEPLOY_DIR}/${RESOURCE_DIR}")
 endforeach()
 
-message(STATUS "Deployed ReaShader.clap + resources")
+message(STATUS "Deployed ${PLUGIN_FILE} + resources")

@@ -1,5 +1,5 @@
 
-tests/.stuff
+*.stuff
 releases
 
 build
