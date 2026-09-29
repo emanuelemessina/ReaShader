@@ -13,6 +13,17 @@ A multi-phase cleanup is underway. The plan lives at `~/.claude/plans/picking-up
 - **How it runs:** before each batch of changes, give the user a brief rationale and wait for approval. The user commits between phases.
 - **Status:** phase 6 in progress. The new renderer (context, frame targets, shader pass with reflected params) is built and passes a standalone GPU test. Still to do: shader params as host params through a rescan, `scene3d` (the logo easter egg, an off-by-default switch), then delete `render/vkt/` (no longer built; kept as the reference for `scene3d`).
 
+## Proposals for after the cleanup (user's, not started)
+
+- **Test application.** A small host that loads the plugin the way REAPER does, to verify features and stability programmatically before manual REAPER tests.
+  - When a REAPER test disagrees with it, update the test app to match what REAPER actually does.
+  - It must be clearly separate from the main `CMakeLists.txt` and sources.
+  - Tests are standardized, and kept apart from the test app's own code.
+  - The standalone GPU test from phase 6 (see Debugging) and `tests/shaders/` are natural seeds.
+- **Render doc for humans.** A Markdown doc explaining the renderer in plain terms: Vulkan concepts, what each `render/` file does, and why each decision maps to how Vulkan works.
+  - It is kept updated with every render change.
+  - It's separate from CLAUDE.md: that doc is for humans, this file is for Claude.
+
 ## Hard rules
 
 - **Nothing may throw out of a REAPER or CLAP callback.** REAPER treats an escaped exception as fatal (`abort()`, exception `0x40000015` "inside reaper.exe"). `ReaShaderRenderer` never throws: a Vulkan error during a frame sets `failed`, and video passes through until the next activation.

@@ -1,6 +1,6 @@
-// ReaShader's built-in effect: brightens the video by Video Param.
+// ReaShader's default effect: brightens the video by Video Param.
 //
-// Available to every shader (declared automatically):
+// Every shader gets these, declared automatically:
 //   in vec2 uv;               0..1 over the frame, (0, 0) = top left
 //   out vec4 fragColor;
 //   sampler2D iChannel0;      the input video frame
@@ -10,8 +10,10 @@
 //   int iFrame;               frames rendered since the shader was loaded
 //   float videoParam;         the plugin's Video Param, in [0, 1]
 //
-// Declare your own sliders (values in [0, 1]) in a uniform block:
-//   uniform Params { float amount; vec3 tint; };
+// Sliders: members of a `uniform Params { ... };` block (float, vec2, vec3, vec4).
+// Each can be annotated with its label, default value and range (else 'name', 0.5, 0..1):
+//   //@param member 'Label' default min max
+// See the other effects in this folder for examples.
 
 void main()
 {

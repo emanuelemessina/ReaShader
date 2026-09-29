@@ -13,6 +13,7 @@
 
 #include <cstring>
 #include <format>
+#include <map>
 #include <sstream>
 
 namespace ReaShader::gpu
@@ -89,8 +90,48 @@ void main()
 			return "#version 450\n" + extensions + kShaderPreamble + "#line 1\n" + body;
 		}
 
+		// `//@param member 'Label' default min max`: label and numbers are optional, in that order
+		struct Annotation
+		{
+			std::string label;
+			float defaultValue = 0.5f;
+			float minValue = 0.0f;
+			float maxValue = 1.0f;
+		};
+
+		std::map<std::string, Annotation> parseAnnotations(const std::string& source)
+		{
+			std::map<std::string, Annotation> annotations;
+
+			std::istringstream lines(source);
+			std::string line;
+			while (std::getline(lines, line))
+			{
+				size_t start = line.find("//@param");
+				if (start == std::string::npos)
+					continue;
+
+				std::istringstream tokens(line.substr(start + std::strlen("//@param")));
+				std::string member;
+				if (!(tokens >> member))
+					continue;
+
+				Annotation annotation;
+				annotation.label = member;
+				tokens >> std::ws;
+				if (tokens.peek() == ''')
+				{
+					tokens.get();
+					std::getline(tokens, annotation.label, ''');
+				}
+				tokens >> annotation.defaultValue >> annotation.minValue >> annotation.maxValue;
+				annotations[member] = annotation;
+			}
+			return annotations;
+		}
+
 		// Finds the Params block: every float (or vector component) in it becomes a slider
-		void reflect(CompiledShader& shader)
+		void reflect(CompiledShader& shader, const std::map<std::string, Annotation>& annotations)
 		{
 			SpvReflectShaderModule module{};
 			if (spvReflectCreateShaderModule(shader.spirv.size() * sizeof(uint32_t), shader.spirv.data(), &module) !=
@@ -129,11 +170,21 @@ void main()
 						break;
 					}
 
+					auto found = annotations.find(member.name);
+					Annotation annotation = found != annotations.end() ? found->second : Annotation{ member.name };
+
 					uint32_t components = (type & SPV_REFLECT_TYPE_FLAG_VECTOR) ? member.numeric.vector.component_count : 1;
 					for (uint32_t c = 0; c < components; c++)
 					{
-						std::string name = components == 1 ? member.name : std::format("{}.{}", member.name, "xyzw"[c]);
-						shader.params.push_back({ name, member.offset + c * (uint32_t)sizeof(float) });
+						bool vector = components > 1;
+						ShaderParamField field;
+						field.name = vector ? std::format("{}.{}", member.name, "xyzw"[c]) : member.name;
+						field.label = vector ? std::format("{}.{}", annotation.label, "xyzw"[c]) : annotation.label;
+						field.defaultValue = annotation.defaultValue;
+						field.minValue = annotation.minValue;
+						field.maxValue = annotation.maxValue;
+						field.offset = member.offset + c * (uint32_t)sizeof(float);
+						shader.params.push_back(field);
 					}
 				}
 			}
@@ -158,7 +209,7 @@ void main()
 	{
 		CompiledShader shader;
 		shader.spirv = compileGlsl(withPreamble(source), shaderc_fragment_shader, name);
-		reflect(shader);
+		reflect(shader, parseAnnotations(source));
 		return shader;
 	}
 
@@ -309,8 +360,11 @@ void main()
 	void ShaderPass::writeParams(Context& context, const float* values, size_t count)
 	{
 		auto* block = static_cast<uint8_t*>(paramsBuffer.mapped);
-		for (size_t i = 0; i < params.size() && i < count; i++)
-			std::memcpy(block + params[i].offset, &values[i], sizeof(float));
+		for (size_t i = 0; i < params.size(); i++)
+		{
+			float value = i < count ? values[i] : params[i].defaultValue;
+			std::memcpy(block + params[i].offset, &value, sizeof(float));
+		}
 		paramsBuffer.flush(context.allocator);
 	}
 
