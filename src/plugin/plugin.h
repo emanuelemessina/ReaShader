@@ -42,7 +42,8 @@ namespace ReaShader
 
 		void initialize(const clap_host_t* host);
 
-		// acquires the REAPER video tap + track info, starts the renderer; clap_plugin_t::activate
+		// acquires the REAPER video tap + track info, starts the renderer the first time
+		// (the GPU stays up until the plugin is destroyed, so re-activation is quick)
 		void activate();
 		void deactivate();
 
@@ -73,7 +74,9 @@ namespace ReaShader
 		void setRenderingDeviceIndex(int index);
 		void setRenderingDevicesList(const std::vector<std::string>& deviceNames);
 
-		// replaces the params reflected from the current shader
+		// Replaces the params reflected from the current shader (any thread).
+		// The host's param list may only change while deactivated: when active, the plugin asks the
+		// host to restart it and swaps the params in deactivate(), then asks the host to rescan.
 		void setShaderParams(std::vector<Parameters::Param> shaderParams);
 
 		// -------- web UI --------
@@ -96,6 +99,8 @@ namespace ReaShader
 		static bool _getVideoParam(IREAPERVideoProcessor* videoProcessor, int idx, double* valueOut);
 
 		void _applyShader();
+		void _loadShader(const std::string& name, const std::string& source);
+		void _applyPendingShaderParams();
 
 		void _webuiSend(const Parameters::json& msg);
 		void _webuiSendSnapshot();
@@ -107,6 +112,9 @@ namespace ReaShader
 
 		Parameters::ParamList params;
 		std::atomic<bool> hostChangedParams{ false }; // echo to the web UI on the main thread
+		std::atomic<bool> active{ false };
+		std::atomic<bool> shaderParamsPending{ false }; // the shader's params wait for a restart
+		bool restartRequested{ false };					 // main thread only
 
 		// everything below is guarded by stateMutex
 		mutable std::mutex stateMutex;
@@ -115,6 +123,7 @@ namespace ReaShader
 		std::string shaderName;
 		std::string shaderSource;
 		Parameters::ValueMap savedShaderValues; // restored when the shader's params appear
+		std::vector<Parameters::Param> pendingShaderParams;
 		int trackNumber{ 0 };					// 1-based, 0 = not found, -1 = master
 		std::string trackName;
 

@@ -27,6 +27,11 @@ const native = {
         this.send({ type: "renderingDevice", index: index });
     },
 
+    // one of the built-in effects, by file name
+    shaderSelect(name) {
+        this.send({ type: "shaderSelect", name: name });
+    },
+
     // shaders are small GLSL text files: sent whole, as text
     async shaderUpload(file) {
         const source = await file.text();

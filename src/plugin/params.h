@@ -31,14 +31,17 @@ namespace ReaShader::Parameters
 		Shader // params reflected from the current shader (replaced on every shader change)
 	};
 
-	// A numeric parameter, value normalized to [0, 1]
+	// A numeric parameter
 	struct Param
 	{
 		Id id = 0;
-		std::string name;
+		std::string name;  // identifies it in saved state
+		std::string label; // shown in the UI and the host
 		Group group = Group::Main;
 		std::string units;
 		double defaultValue = 0.5;
+		double minValue = 0.0;
+		double maxValue = 1.0;
 		bool automatable = false; // exposed to the host (clap.params)
 	};
 
@@ -82,7 +85,7 @@ namespace ReaShader::Parameters
 		// replaces the Shader group; values are restored by name from `savedValues`, else defaulted
 		void replaceShaderParams(std::vector<Param> shaderParams, const ValueMap& savedValues);
 
-		// [{ id, name, group, units, value, defaultValue }, ...]
+		// [{ id, name, label, group, units, value, defaultValue, minValue, maxValue }, ...]
 		json toJson() const;
 		// { "<name>": value, ... }
 		json valuesToJson() const;

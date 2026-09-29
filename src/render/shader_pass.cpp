@@ -119,12 +119,23 @@ void main()
 				Annotation annotation;
 				annotation.label = member;
 				tokens >> std::ws;
-				if (tokens.peek() == ''')
+				constexpr char quote = '\'';
+				if (tokens.peek() == quote)
 				{
 					tokens.get();
-					std::getline(tokens, annotation.label, ''');
+					std::getline(tokens, annotation.label, quote);
 				}
-				tokens >> annotation.defaultValue >> annotation.minValue >> annotation.maxValue;
+				float number;
+				if (tokens >> number)
+				{
+					annotation.defaultValue = number;
+					if (tokens >> number)
+					{
+						annotation.minValue = number;
+						if (tokens >> number)
+							annotation.maxValue = number;
+					}
+				}
 				annotations[member] = annotation;
 			}
 			return annotations;
