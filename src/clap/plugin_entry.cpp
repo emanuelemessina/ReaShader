@@ -1,13 +1,10 @@
-/******************************************************************************
- * Copyright (c) Emanuele Messina (https://github.com/emanuelemessina)
- * All rights reserved.
- *
- * This code is licensed under the MIT License.
- * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
- *****************************************************************************/
-
-// CLAP entry point: plugin factory, descriptor, and the C-ABI callbacks for the audio-ports,
-// params and state extensions, all forwarding to ReaShaderPlugin.
+/**
+ * @file
+ * @brief CLAP entry point: the plugin factory, the descriptor, and the C callbacks forwarding to ReaShaderPlugin.
+ * @author Emanuele Messina (https://github.com/emanuelemessina)
+ * @copyright Copyright (c) Emanuele Messina. All rights reserved.
+ *            Licensed under the MIT License: see https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE
+ */
 
 #include <cstdint>
 #include <cstdio>

@@ -112,7 +112,7 @@ doc/testing.md   how to run and write tests
 
 ### Author
 
-    Emanuele Messina
+[Emanuele Messina](https://www.linkedin.com/in/emanuelemessina-em)
 
 #### Open source libraries
 

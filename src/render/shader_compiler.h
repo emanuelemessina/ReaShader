@@ -1,15 +1,12 @@
-/******************************************************************************
- * Copyright (c) Emanuele Messina (https://github.com/emanuelemessina)
- * All rights reserved.
- *
- * This code is licensed under the MIT License.
- * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
- *****************************************************************************/
+/**
+ * @file
+ * @brief User shaders: GLSL written against the shader contract (kShaderPreamble), compiled to SPIR-V once, on upload, and stored as JSON.
+ * @author Emanuele Messina (https://github.com/emanuelemessina)
+ * @copyright Copyright (c) Emanuele Messina. All rights reserved.
+ *            Licensed under the MIT License: see https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE
+ */
 
 #pragma once
-
-// User shaders: GLSL written against the ReaShader shader contract (see kShaderPreamble in
-// shader_compiler.cpp), compiled to SPIR-V once, when uploaded, and stored as JSON.
 
 #include <nlohmann/json_fwd.hpp>
 

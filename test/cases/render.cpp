@@ -1,12 +1,10 @@
-/******************************************************************************
- * Copyright (c) Emanuele Messina (https://github.com/emanuelemessina)
- * All rights reserved.
- *
- * This code is licensed under the MIT License.
- * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
- *****************************************************************************/
-
-// The renderer's building blocks (FrameTargets, ShaderPass, Scene) on every GPU, checked pixel by pixel.
+/**
+ * @file
+ * @brief Unit tests: the renderer's building blocks on every GPU, checked pixel by pixel.
+ * @author Emanuele Messina (https://github.com/emanuelemessina)
+ * @copyright Copyright (c) Emanuele Messina. All rights reserved.
+ *            Licensed under the MIT License: see https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE
+ */
 
 #include "support/support.h"
 

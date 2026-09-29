@@ -1,12 +1,11 @@
-/******************************************************************************
- * Copyright (c) Emanuele Messina (https://github.com/emanuelemessina)
- * All rights reserved.
- *
- * This code is licensed under the MIT License.
- * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
- *****************************************************************************/
+/**
+ * @file
+ * @brief Messages to the plugin (see ReaShaderPlugin::handleWebUIMessage).
+ * @author Emanuele Messina (https://github.com/emanuelemessina)
+ * @copyright Copyright (c) Emanuele Messina. All rights reserved.
+ *            Licensed under the MIT License: see https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE
+ */
 
-// Messages to the plugin (see ReaShaderPlugin::handleWebUIMessage).
 // window.postToNative is injected by the webview host before any script runs.
 
 const native = {

@@ -1,13 +1,10 @@
-/******************************************************************************
- * Copyright (c) Emanuele Messina (https://github.com/emanuelemessina)
- * All rights reserved.
- *
- * This code is licensed under the MIT License.
- * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
- *****************************************************************************/
-
-// The shader contract (render/shader_compiler.*): compiling, Params reflection, //@param, errors, stored form.
-// No GPU needed.
+/**
+ * @file
+ * @brief Unit tests: the shader contract (compiling, Params reflection, //@param, errors, stored form). No GPU.
+ * @author Emanuele Messina (https://github.com/emanuelemessina)
+ * @copyright Copyright (c) Emanuele Messina. All rights reserved.
+ *            Licensed under the MIT License: see https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE
+ */
 
 #include "support/support.h"
 

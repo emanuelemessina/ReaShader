@@ -1,12 +1,10 @@
-/******************************************************************************
- * Copyright (c) Emanuele Messina (https://github.com/emanuelemessina)
- * All rights reserved.
- *
- * This code is licensed under the MIT License.
- * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
- *****************************************************************************/
-
-// The parameter list (plugin/params.*): the fixed params, the shader group, values by name, host flags.
+/**
+ * @file
+ * @brief Unit tests: the parameter list (fixed params, shader group, values by name, host flags).
+ * @author Emanuele Messina (https://github.com/emanuelemessina)
+ * @copyright Copyright (c) Emanuele Messina. All rights reserved.
+ *            Licensed under the MIT License: see https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE
+ */
 
 #include "plugin/params.h"
 

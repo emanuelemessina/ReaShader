@@ -1,14 +1,12 @@
-/******************************************************************************
- * Copyright (c) Emanuele Messina (https://github.com/emanuelemessina)
- * All rights reserved.
- *
- * This code is licensed under the MIT License.
- * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
- *****************************************************************************/
+/**
+ * @file
+ * @brief Helpers shared by the test cases: repo files, CPU frames, and running GPU code on every GPU.
+ * @author Emanuele Messina (https://github.com/emanuelemessina)
+ * @copyright Copyright (c) Emanuele Messina. All rights reserved.
+ *            Licensed under the MIT License: see https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE
+ */
 
 #pragma once
-
-// Helpers shared by the test cases: repo files, CPU frames, and running GPU code on every GPU.
 
 #include "render/context.h"
 #include "render/frame_targets.h"

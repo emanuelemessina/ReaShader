@@ -1,13 +1,12 @@
-/******************************************************************************
- * Copyright (c) Emanuele Messina (https://github.com/emanuelemessina)
- * All rights reserved.
- *
- * This code is licensed under the MIT License.
- * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
- *****************************************************************************/
+/**
+ * @file
+ * @brief Unit tests: the web UI protocol, on a plugin that is never activated (no GPU).
+ * @author Emanuele Messina (https://github.com/emanuelemessina)
+ * @copyright Copyright (c) Emanuele Messina. All rights reserved.
+ *            Licensed under the MIT License: see https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE
+ */
 
-// The web UI protocol (ReaShaderPlugin::handleWebUIMessage and the messages it sends), on a plugin that is
-// never activated, so no GPU is involved. openUrl isn't tested: a valid URL would open the browser.
+// openUrl isn't tested: a valid URL would open the browser.
 
 #include "support/support.h"
 
