@@ -26,11 +26,16 @@ namespace ReaShader::gpu
 		float videoParam;
 	};
 
-	// One slider: a float (or a vector component) in the shader's Params block
+	// One slider: a float (or a vector component) in the shader's Params block.
+	// Label, default and range come from a `//@param member 'Label' default min max` annotation.
 	struct ShaderParamField
 	{
-		std::string name;
-		uint32_t offset; // bytes, in the Params block
+		std::string name;  // "member" or "member.x"
+		std::string label; // for display
+		float defaultValue = 0.5f;
+		float minValue = 0.0f;
+		float maxValue = 1.0f;
+		uint32_t offset = 0; // bytes, in the Params block
 	};
 
 	// A user fragment shader compiled to SPIR-V, with its Params block reflected
@@ -55,7 +60,7 @@ namespace ReaShader::gpu
 		// the image sampled as iChannel0 (rebind after the frame targets are recreated)
 		void bindInput(Context& context, VkImageView input);
 
-		// `count` values in [0, 1], in the order of CompiledShader::params
+		// values in the order of CompiledShader::params; params past `count` get their default
 		void writeParams(Context& context, const float* values, size_t count);
 
 		void record(VkCommandBuffer commandBuffer, const Image& target, const ShaderInputs& inputs);
