@@ -1,16 +1,38 @@
 # CLAUDE.md
 
-Guidance for Claude Code (claude.ai/code) when working in this repository. It describes the code **as it is now**. How it got here (the VST3 → CLAP migration, rejected alternatives, past crash investigations) is in [doc/history.md](doc/history.md).
+Guidance for Claude Code (claude.ai/code) when working in this repository. It describes the code **as it is now**. How it got here (the VST3 → CLAP migration, rejected alternatives, past crash investigations) is in [.claude/history.md](.claude/history.md).
 
 ## What this is
 
 ReaShader is a **CLAP** video-effect plugin for REAPER. It taps REAPER's video frames, runs them through a Vulkan pipeline (GLSL shaders) and hands them back. Its HTML/JS/SCSS UI is embedded in REAPER's FX window through a native webview ([webview/webview](https://github.com/webview/webview)).
 
-The renderer is explained for humans in [doc/rendering.md](doc/rendering.md): the Vulkan concepts mapped to `src/render/`, every barrier of a frame, lifetimes and decisions.
+Docs for human developers, in `doc/`. They describe only what exists: no roadmaps, no process rules for Claude, no history.
+- [doc/rendering.md](doc/rendering.md): the renderer, with the Vulkan concepts mapped to `src/render/`, every barrier of a frame, lifetimes and decisions.
+- [doc/testing.md](doc/testing.md): the test application, covering how to run it and how to write a test.
 
-## Proposals (the user's, not started)
+## In progress: the test application's fake REAPER host
 
-A **test application**: a fake REAPER host plus standardized tests, separate from the main build (the seed is `test/seed/`). The full handoff, with requirements, what REAPER does to the plugin, the suggested design and open questions, is in [doc/proposals.md](doc/proposals.md).
+**Roadmap** (each phase a separate batch):
+1. **Done:** `test/` with doctest, the unit suites `shader_compiler` and `render`, the `test` task.
+2. **Done:** the fake REAPER host (`test/host/`, described for humans in `doc/testing.md` §4) and the `host` suite: descriptor, param list, lifecycle twice, passthrough, destroy while active.
+3. **Next, host scenarios:**
+   - a shader via state: restart + rescan, the param list, frames rendered through it (this is the first host test that renders on the GPU, so it's the first where the plugin's validation messages can show up);
+   - the state round trip;
+   - automation values at video time;
+   - the logo.
+4. **More unit tests:** `ParamList` and the web UI protocol (`handleWebUIMessage` with a `WebUISender` that records replies).
+
+**Agreed design for phase 3:**
+- **A shader reaches the plugin through state:** compile it with the linked `gpu::compileShader` (tooling), embed `gpu::toJson` in a state JSON (`{ version: 2, params, device, logo, shader: { name, compiled } }`), then `state.load`. No test hooks in the plugin.
+- **Host tests talk to the plugin only through CLAP and the REAPER extension.**
+
+**Host facts still to verify in REAPER** (all marked *assumed* in `test/host/`):
+- whether `state.load` comes before or after `activate`, and whether it's wrapped in `deactivate`;
+- how and when `request_restart` is answered (the host: `idle()`, `deactivate` + `activate`);
+- `force_format`, the input frame's row padding, and the parmlist order (the host: CLAP param index order);
+- which thread `params.flush` runs on when not processing.
+
+When one is verified, change the host, mark it *observed*, and update `doc/testing.md` §4.
 
 ## Hard rules
 
@@ -20,13 +42,15 @@ A **test application**: a fake REAPER host plus standardized tests, separate fro
 - REAPER's `'RGBA'` frames are laid out in memory as **B,G,R,A** (byte 0 = B).
 - **Encoding:** frontend files must be UTF-8 (`file index.html` must not say "UTF-16"). A UTF-16 `index.html` loaded via `file://` renders as garbage text.
 - **Render doc:** any change in `src/render/` or `src/shaders/internal/` updates [doc/rendering.md](doc/rendering.md) in the same batch (barrier table, lifetimes, decisions). It is written for humans who don't know Vulkan, and references code by file and function, never by line.
-- **Comments:** they describe what the code does and why, for a reader with no session context. Investigation narratives go in `doc/history.md`, not in code.
+- **Testing doc:** any change to the test application (`test/`, the fake host's behavior, how tests run) updates [doc/testing.md](doc/testing.md) in the same batch. A REAPER behavior the fake host emulates is commented *observed* (with how it was verified) or *assumed*.
+- **`doc/` is for human developers:** it describes what exists and how to use and change it. Roadmaps, process rules and in-progress designs go in CLAUDE.md, and history goes in `.claude/history.md`.
+- **Comments:** they describe what the code does and why, for a reader with no session context. Investigation narratives go in `.claude/history.md`, not in code.
 - **Changes:** before a batch of changes, give the user a brief rationale and wait for approval.
 - **Commits:** the user commits. Don't run `git commit` unless asked.
 
 ## Build
 
-There is no test suite or lint step. Verification is manual, in REAPER.
+There is no lint step. The test application (`test/`, see Testing) runs before the manual test in REAPER, which stays the final check.
 
 **Prerequisites**
 - **CMake ≥ 3.25**: `CMakePresets.json` uses schema v6.
@@ -56,7 +80,8 @@ There is no test suite or lint step. Verification is manual, in REAPER.
   If REAPER has the `.clap` open, the deploy is skipped with a warning (close REAPER and build again).
   Deploy replaces `resources/images`, `resources/meshes`, `resources/shaders/examples` and `ui` one by one, so `resources/shaders/compiled` (the user's uploaded shaders) survives.
 - The **`package`** task builds the release preset, then the installer: `cmake -DPROFILE=release -DPACKAGE=ON -P build.cmake` runs CPack instead of deploying (release only, since the debug build needs the non-redistributable debug CRT). The output is `build/windows-release/package/ReaShader-<tag>-win64-setup.exe`. See Packaging.
-- The **`clean`** task wipes the preset build directory.
+- The **`test`** task builds the chosen preset without deploying, then builds and runs the test application: `cmake -DPROFILE=<debug|release> -DTEST=ON [-DTEST_ARGS="<doctest options>"] -P build.cmake`. The tests build in `build/tests-<profile>/`. See Testing.
+- The **`clean`** task wipes the preset build directory and its tests' build directory.
 - **CLI alternative** (builds without deploying): `cmake --preset windows-debug`, then `cmake --build --preset windows-debug`.
 - **The build itself (`CMakeLists.txt`):**
   - **generates, into `build/<preset>/generated/`:**
@@ -81,7 +106,25 @@ There is no test suite or lint step. Verification is manual, in REAPER.
   - **What the target machine needs:** Vulkan (from the GPU driver) and WebView2 (built into Windows 11).
   - **Debugging the installer:** the generated script is `build/windows-release/package/_CPack_Packages/win64/INNOSETUP/ISScript.iss`.
 
-**Manual testing:**
+**Testing** (`test/`, human doc: [doc/testing.md](doc/testing.md)):
+- **Its own CMake project** (`test/CMakeLists.txt`, executable `reashader_tests`), never included by the main build. [doctest](https://github.com/doctest/doctest) is the submodule `external/doctest` (`v2.5.3`).
+- **Layout:**
+  - `main.cpp` (doctest runner + GPU teardown);
+  - `support/` (helpers: `repoPath`, `readFile`, `TestFrame`, `forEachGpu`, `render`);
+  - `host/` (the fake REAPER, Windows only: `reaper.*`, `video.*`, `thread.h`, `reaper_sdk.h`);
+  - `cases/` (one `TEST_SUITE` per file: `shader_compiler`, `render`, `host` in `host_lifecycle.cpp`);
+  - `shaders/` (fixtures).
+- **Unit tests** compile the plugin sources under test (`src/render/*`, `src/util/{logging,paths}`) into the test binary with the plugin's warning flags.
+- **Host tests** load the built `.clap` (`REASHADER_CLAP`: the main build's preset of the same profile) through `clap_entry` with `host::Reaper`:
+  - **Threads:** the test's thread is REAPER's main thread; audio and video run on `host::HostThread`s (synchronous `run()`).
+  - **Problems:** `problems()` collects message boxes (a watcher closes them; verified with a probe box), validation lines in `<clap dir>/rs.log` (deleted before load), and broken contracts.
+  - **One `host::Reaper` at a time**, because `GetFunc` is context-free.
+  - **Per-test ending:** every host test ends with `checkNoProblems(reaper)`.
+  - **Rendering:** no shader and no logo means the renderer returns `false` before any GPU work, so today's host tests exercise only `init()` on the GPU.
+- **`test::forEachGpu`** runs a body per GPU on one shared instance and fails the test on any validation message logged to `build/tests-<profile>/rs.log` meanwhile. In debug that includes sync validation, and it was verified to catch a broken barrier.
+- **Running a subset:** `build/tests-debug/reashader_tests --test-suite=render`, or `--test-case="*logo*"`.
+
+**Manual testing** (in REAPER, after the tests pass):
 1. Load "ReaShader" (CLAP) on a track that has a video item.
 2. Check the FX window shows the embedded web UI and resizes with the window.
 3. With no shader (the initial state) video passes through unchanged.
@@ -111,8 +154,7 @@ installer/windows/           Inno Setup extras for the CPack installer: reashade
 src/ui/                      the web UI: index.html, scripts/{api,ui,client}.js, styles/ui.scss; staged as ui/
 src/shaders/examples/        example shader sources + README for users, staged as resources/shaders/examples/
 src/shaders/internal/        shaders built into the plugin (fullscreen.vert, scene.vert/.frag), compiled by glslc at build time
-test/shaders/               shaders for manual testing (broken.frag), not shipped
-test/seed/                  standalone GPU test (own CMake project, not part of the plugin build)
+test/                       the test application (own CMake project): main.cpp, support/, cases/, shaders/ (broken.frag)
 ```
 
 ### ReaShaderPlugin (one object, no processor/controller split)
@@ -296,7 +338,7 @@ Plain JSON objects with a `"type"` field. They're documented in `plugin/plugin.c
 - **Hangs:** run `"" | lldb -p <pid> -o "bt all" -o "process detach" -o quit` (not `--batch`). Get the module base from `(Get-Process -Id <pid>).Modules`.
 - **GPU faults:** recurring `nvlddmkm` events in the System log mean the Vulkan code is doing something invalid.
 - **Vulkan validation output:**
-  - Debug builds request the Khronos validation layer (if installed), with synchronization validation on (hazards between barriers and accesses). Its warnings and errors go to `rs.log` through vk-bootstrap's debug messenger. For the GPU test, no `rs.log` next to `gpu_test.exe` means no messages.
+  - Debug builds request the Khronos validation layer (if installed), with synchronization validation on (hazards between barriers and accesses). Its warnings and errors go to `rs.log` through vk-bootstrap's debug messenger. The test application fails a GPU test on any of them.
   - The log has none in normal use, so any is a bug.
   - `VK_LOADER_DEBUG=layer` shows whether the layer was loaded.
-- **Testing the GPU code without REAPER:** `test/seed/` (`cmake -S test/seed -B build/tests-seed -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++`, build, run `build/tests-seed/gpu_test`). It runs frames through `FrameTargets` + `ShaderPass` + `Scene` and the shader compiler on every GPU, and checks the output pixels exactly. It prints `ALL PASSED`.
+- **Testing the GPU code without REAPER:** the `test` task, or `--test-suite=render` (see Testing). It runs frames through `FrameTargets` + `ShaderPass` + `Scene` on every GPU and checks the output pixels exactly.

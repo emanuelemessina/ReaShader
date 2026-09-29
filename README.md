@@ -73,7 +73,9 @@ ReaShader/
 ### Tasks (VS Code)
 
 - **build+deploy** (default build task, Ctrl+Shift+B): configures (the first time), builds, and deploys the plugin folder to `<your CLAP folder>/ReaShader`. If REAPER has the plugin loaded, the deploy is skipped with a warning: close REAPER and build again.
-- **clean**: wipes the build directory, for a fresh configure.
+- **test**: builds the plugin without deploying, then builds and runs the tests (see [doc/testing.md](doc/testing.md)).
+- **package** (Windows): builds the release installer, `build/windows-release/package/ReaShader-<version>-win64-setup.exe`. Needs [Inno Setup 6](https://jrsoftware.org/isinfo.php).
+- **clean**: wipes the build directories, for a fresh configure.
 
 From a terminal:
 
@@ -97,11 +99,11 @@ src/render/      the Vulkan renderer and the shader compiler
 src/ui/          the web UI (index.html, scripts/, styles/)
 src/shaders/     example shaders, internal shaders, the logo scene's shaders
 src/util/        logging, paths, fault handling
-test/            shaders for manual testing, the standalone GPU test
+test/            the test application (doctest; see doc/testing.md)
 installer/       installer extras (Windows: Inno Setup, via CPack)
 external/        dependencies (git submodules)
 doc/rendering.md how the renderer works (Vulkan concepts mapped to src/render/)
-doc/history.md   how the project got here (VST3 → CLAP, design decisions)
+doc/testing.md   how to run and write tests
 ```
 
 ## Credits

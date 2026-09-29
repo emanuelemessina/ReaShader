@@ -1,11 +1,12 @@
 # Build script:
-# - single entry point for the build loop: configure, build, deploy (or package)
+# - single entry point for the build loop: configure, build, deploy (or package, or test)
 # - default profile to debug
 # - resolve host preset and build directory
 #
 # Usage:
 #   cmake [-DPROFILE=<debug|release>] -P build.cmake
 #   cmake -DPROFILE=release -DPACKAGE=ON -P build.cmake
+#   cmake [-DPROFILE=<debug|release>] -DTEST=ON [-DTEST_ARGS="<doctest options>"] -P build.cmake
 
 if(NOT DEFINED PROFILE)
     set(PROFILE debug)
@@ -56,6 +57,51 @@ execute_process(
 )
 if(NOT BUILD_RESULT EQUAL 0)
     message(FATAL_ERROR "Build failed (preset ${PRESET})")
+endif()
+
+#################################
+# Test
+#################################
+
+# -DTEST=ON: build and run the test application (test/, doc/testing.md) instead of deploying.
+# -DTEST_ARGS="...": doctest's command line, e.g. "--test-suite=render".
+
+if(TEST)
+    set(TEST_BUILD_DIR "${CMAKE_CURRENT_LIST_DIR}/build/tests-${PROFILE}")
+    string(SUBSTRING "${PROFILE}" 0 1 _first)
+    string(SUBSTRING "${PROFILE}" 1 -1 _rest)
+    string(TOUPPER "${_first}" _first)
+
+    if(NOT EXISTS "${TEST_BUILD_DIR}/CMakeCache.txt")
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -S test -B "${TEST_BUILD_DIR}" -G Ninja
+                    -DCMAKE_BUILD_TYPE=${_first}${_rest} -DCMAKE_CXX_COMPILER=clang++
+            WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
+            RESULT_VARIABLE TEST_CONFIGURE_RESULT
+        )
+        if(NOT TEST_CONFIGURE_RESULT EQUAL 0)
+            message(FATAL_ERROR "Test configure failed")
+        endif()
+    endif()
+
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} --build "${TEST_BUILD_DIR}"
+        RESULT_VARIABLE TEST_BUILD_RESULT
+    )
+    if(NOT TEST_BUILD_RESULT EQUAL 0)
+        message(FATAL_ERROR "Test build failed")
+    endif()
+
+    separate_arguments(_test_args NATIVE_COMMAND "${TEST_ARGS}")
+    execute_process(
+        COMMAND "${TEST_BUILD_DIR}/reashader_tests" ${_test_args}
+        WORKING_DIRECTORY "${TEST_BUILD_DIR}"
+        RESULT_VARIABLE TEST_RESULT
+    )
+    if(NOT TEST_RESULT EQUAL 0)
+        message(FATAL_ERROR "Tests failed")
+    endif()
+    return()
 endif()
 
 #################################

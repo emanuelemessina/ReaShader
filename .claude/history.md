@@ -82,3 +82,15 @@ Findings along the way:
 - **A real bug hidden by `flagoperators.h`:** its global `operator|` made `VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT` a single-bit `VkShaderStageFlagBits`. Removing it surfaced the bug.
 - **A UI-only edit never reached the plugin** when the staging step was a post-link step of the `.clap`, because it only ran when C++ changed.
 - **The web UI's sliders never appeared:** the JS matched `"vstParameter"` while C++ sent `"numericParameter"`.
+
+## After the cleanup (September 2026)
+
+The user's proposals from the cleanup's handoff (`doc/proposals.md`, now deleted), plus release readiness:
+
+- **Release builds:** debug and release became separate plugins (`ReaShader (Debug)`, its own CLAP id, binary and deploy folder), so both can be installed side by side. The release build was confirmed in REAPER.
+- **Windows installer:** CPack with the Inno Setup generator. It installs per user into the CLAP folder, bundles the VC++ runtime (the SDK's `/MD` shaderc rules out a static CRT), and asks whether to keep uploaded shaders on uninstall.
+- **Render doc:** `doc/rendering.md` explains the renderer for humans, and render changes must keep it current.
+- **Synchronization validation** is on in debug builds.
+  - A suspected barrier bug in the passthrough-with-logo path turned out not to exist: sync validation, shown to catch a deliberately broken barrier, reported nothing.
+  - A real gap was fixed: shader reflection now rejects descriptor sets other than 0.
+- **Test application:** `test/` with doctest replaced the standalone `test/seed/` GPU test. The design for the fake REAPER host is in CLAUDE.md. `doc/` became human-only (no roadmaps or process rules), and this history moved to `.claude/`.

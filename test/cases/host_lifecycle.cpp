@@ -1,0 +1,126 @@
+/******************************************************************************
+ * Copyright (c) Emanuele Messina (https://github.com/emanuelemessina)
+ * All rights reserved.
+ *
+ * This code is licensed under the MIT License.
+ * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
+ *****************************************************************************/
+
+// The built plugin in the fake REAPER host: loading, the CLAP lifecycle, audio, and video passthrough.
+
+#include "host/reaper.h"
+#include "host/video.h"
+
+#include <doctest/doctest.h>
+
+#include <string>
+
+namespace
+{
+	// every test ends with this: nothing the host would consider wrong happened
+	void checkNoProblems(const host::Reaper& reaper)
+	{
+		for (const std::string& problem : reaper.problems())
+			FAIL_CHECK(problem);
+	}
+
+	host::Frame gradient(int width, int height)
+	{
+		host::Frame frame(width, height, host::rowspanFor(width));
+		for (int y = 0; y < height; y++)
+			for (int x = 0; x < width; x++)
+			{
+				uint8_t* p = frame.at(x, y);
+				p[0] = (uint8_t)x, p[1] = (uint8_t)y, p[2] = (uint8_t)(x + y), p[3] = 255;
+			}
+		return frame;
+	}
+} // namespace
+
+TEST_SUITE("host")
+{
+	TEST_CASE("the plugin loads and describes itself")
+	{
+		host::Reaper reaper(host::builtPlugin());
+
+		REQUIRE(reaper.pluginCount() == 1);
+		const clap_plugin_descriptor_t* descriptor = reaper.descriptor();
+		REQUIRE(descriptor != nullptr);
+#ifdef NDEBUG
+		CHECK(std::string(descriptor->id) == "com.emanuelemessina.reashader");
+		CHECK(std::string(descriptor->name) == "ReaShader");
+#else
+		CHECK(std::string(descriptor->id) == "com.emanuelemessina.reashader.debug");
+		CHECK(std::string(descriptor->name) == "ReaShader (Debug)");
+#endif
+		checkNoProblems(reaper);
+	}
+
+	TEST_CASE("a new plugin lists only Audio Gain, at 1")
+	{
+		host::Reaper reaper(host::builtPlugin());
+		reaper.createPlugin();
+
+		REQUIRE(reaper.params().size() == 1);
+		CHECK(reaper.params()[0].name == "Audio Gain");
+		CHECK(reaper.params()[0].value == 1.0);
+
+		reaper.destroyPlugin();
+		checkNoProblems(reaper);
+	}
+
+	TEST_CASE("the lifecycle, twice: activate, process, deactivate")
+	{
+		host::Reaper reaper(host::builtPlugin());
+		reaper.createPlugin();
+
+		for (int cycle = 0; cycle < 2; cycle++)
+		{
+			INFO("cycle ", cycle);
+			reaper.activate();
+			CHECK(reaper.hasVideoProcessor());
+
+			std::vector<float> output = reaper.processAudio(4, 0.5f);
+			CHECK(output.front() == doctest::Approx(0.5f)); // Audio Gain 1: audio unchanged
+			CHECK(output.back() == doctest::Approx(0.5f));
+			reaper.idle();
+
+			reaper.deactivate();
+			CHECK_FALSE(reaper.hasVideoProcessor()); // the plugin deleted it
+		}
+
+		reaper.destroyPlugin();
+		checkNoProblems(reaper);
+	}
+
+	TEST_CASE("with no shader, video frames pass through unchanged")
+	{
+		host::Reaper reaper(host::builtPlugin());
+		reaper.createPlugin();
+		reaper.activate();
+
+		host::Frame input = gradient(321, 17);
+		for (int frame = 0; frame < 3; frame++)
+		{
+			INFO("frame ", frame);
+			host::Reaper::VideoResult result = reaper.renderVideo(input, frame / 30.0);
+			CHECK(result.passthrough);
+			CHECK(result.frame.bytes == input.bytes);
+		}
+
+		reaper.idle();
+		reaper.destroyPlugin();
+		checkNoProblems(reaper);
+	}
+
+	TEST_CASE("destroying an active plugin deactivates it first")
+	{
+		host::Reaper reaper(host::builtPlugin());
+		reaper.createPlugin();
+		reaper.activate();
+		reaper.destroyPlugin();
+
+		CHECK_FALSE(reaper.hasVideoProcessor());
+		checkNoProblems(reaper);
+	}
+}

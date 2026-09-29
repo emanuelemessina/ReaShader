@@ -4,8 +4,6 @@ This is a guide to `src/render/`. It explains the Vulkan concepts the renderer u
 
 It assumes you know C++ and what a shader is, but not Vulkan. Each Vulkan term is explained where it first appears (in **bold**), then used freely.
 
-> **Keep this document true.** Any change in `src/render/` or `src/shaders/internal/` updates this file in the same change. Code is referenced by file and function, never by line number.
-
 Contents:
 
 1. [The big picture](#1-the-big-picture)
@@ -380,14 +378,13 @@ Today there's exactly one `ShaderPass`, reading `input` and writing `output`. To
 - **A barrier between the passes** on the intermediate image: `COLOR_ATTACHMENT` → `SHADER_READ_ONLY`, from color attachment writes to fragment shader sampled reads.
 - **Binding:** each pass needs its own descriptor set bound to its input view. Rebind after `FrameTargets` is recreated, as `bindInput` does now.
 - **Keep the invariant:** the last pass must leave `output` in `COLOR_ATTACHMENT_OPTIMAL`.
-- **Update [section 4](#4-a-frame-step-by-step)'s barrier table.**
 
 ### Add a scene object or texture
 
 - In `Scene::create`, load a `Mesh` (`.obj`) and a `Texture` (any format stb_image reads), and add an `Object { mesh, createTextureSet(context, texture), localTransform }`.
 - Free them in `Scene::destroy`: the texture set is freed per object, but meshes and textures are members, so add them there.
 - Each object uses one descriptor set from the shared pool (16 sets in total).
-- Assets live in `res/` and are staged to `resources/` next to the plugin (see CLAUDE.md, Build).
+- Assets live in `res/`. The build copies them to `resources/` next to the plugin on every build.
 
 ### Add a built-in shader input (like `iTime`)
 
@@ -403,10 +400,12 @@ Today there's exactly one `ShaderPass`, reading `input` and writing `output`. To
 ## 9. Debugging
 
 - **Validation layer (debug builds).** `Context::createInstance` requests the Khronos validation layer with **synchronization validation** on. Sync validation checks every barrier against what the commands actually access, and reports hazards (e.g. "WRITE_AFTER_WRITE hazard detected") that core validation doesn't catch.
-  - Warnings and errors go to `rs.log` (next to the plugin, or next to `gpu_test.exe`) as `Vulkan / Validation`.
-  - Normal use produces none, so **any message is a bug**, and no `rs.log` at all after a GPU test run means none.
+  - Warnings and errors go to `rs.log` (next to the plugin, or next to the test binary) as `Vulkan / Validation`.
+  - Normal use produces none, so **any message is a bug**. The test application fails the GPU test that caused one.
   - The layer comes with the Vulkan SDK. `VK_LOADER_DEBUG=layer` shows whether the loader found it.
   - Release builds have no validation.
-- **The GPU test (`test/seed/`).** A standalone program that compiles the render code without the plugin and runs it on every GPU of the machine. It checks exact output pixels for the example shaders, params and channel order, the JSON round trip, compiler errors and line numbers, and the logo scene. Build and run it as described in CLAUDE.md ("Testing the GPU code without REAPER"). It prints `ALL PASSED`.
+- **The test application** ([testing.md](testing.md)): the `render` suite compiles the render code without the plugin and runs it on every GPU of the machine. It checks exact output pixels for an example shader, params and channel order, param defaults, and the logo scene. The `shader_compiler` suite covers the contract (reflection, `//@param`, errors, the stored form). Run it with the VS Code `test` task, or `build/tests-debug/reashader_tests --test-suite=render`.
 - **A GPU hang** shows up as "Rendering failed" (the 2-second fence timeout) and passthrough until re-activation. Recurring `nvlddmkm` events in the Windows System log mean the Vulkan code did something invalid.
-- **Crashes and hangs in REAPER:** dumps, lldb and symbolizing are covered in CLAUDE.md, "Debugging native crashes/hangs".
+- **Crashes in REAPER:**
+  - Windows writes a full dump to `%LOCALAPPDATA%\CrashDumpseaper.exe.<pid>.dmp`. Open it with `lldb -c <dump>`, then run `bt all`.
+  - An address inside the plugin is symbolized with `llvm-symbolizer --obj=build/windows-debug/ReaShader-Debug.clap <address − module base + 0x180000000>`, as long as the binary hasn't been rebuilt since.

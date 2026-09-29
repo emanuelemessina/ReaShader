@@ -45,10 +45,24 @@
             }
         },
         {
+            "label": "test",
+            "type": "shell",
+            "detail": "Builds the chosen preset (no deploy), then builds and runs the test application",
+            "command": "cmake -DPROFILE=${input:buildProfile} -DTEST=ON -P build.cmake",
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": true
+            }
+        },
+        {
             "label": "clean",
             "type": "shell",
-            "detail": "Wipes build products (CMakeCache, .ninja_log, .obj, etc.) for the chosen cmake preset.",
-            "command": "cmake -E rm -rf \"${workspaceFolder}/build/windows-${input:buildProfile}\"",
+            "detail": "Wipes build products (CMakeCache, .ninja_log, .obj, etc.) for the chosen cmake preset and its tests.",
+            "command": "cmake -E rm -rf \"${workspaceFolder}/build/windows-${input:buildProfile}\" \"${workspaceFolder}/build/tests-${input:buildProfile}\"",
             "problemMatcher": [],
             "presentation": {
                 "reveal": "always",
