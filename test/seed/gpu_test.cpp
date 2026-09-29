@@ -181,7 +181,7 @@ namespace
 
 		try
 		{
-			gpu::compileShader(readFile(std::string(REPO_DIR) + "/tests/shaders/broken.frag"), "broken.frag");
+			gpu::compileShader(readFile(std::string(REPO_DIR) + "/test/shaders/broken.frag"), "broken.frag");
 			expect(false, "broken.frag must not compile");
 		}
 		catch (const std::exception& e)
@@ -196,6 +196,20 @@ namespace
 		}
 		catch (const std::exception&)
 		{
+		}
+
+		try
+		{
+			gpu::compileShader("layout(set = 1) uniform Params { float amount; };\n"
+							   "void main() { fragColor = vec4(amount); }\n",
+							   "set1.glsl");
+			expect(false, "a Params block outside set 0 must be rejected");
+		}
+		catch (const std::exception& e)
+		{
+			std::string what = e.what();
+			expect(what.find("'Params'") != std::string::npos && what.find("set 0") != std::string::npos,
+				   "set error names the block and set 0 (" + what + ")");
 		}
 	}
 

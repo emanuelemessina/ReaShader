@@ -7,7 +7,7 @@
 # - runs frames on every GPU of the machine and checks the output pixels
 #
 # Usage (from the repo root, with the same prerequisites as the plugin):
-#   cmake -S tests/seed -B build/tests-seed -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++
+#   cmake -S test/seed -B build/tests-seed -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++
 #   cmake --build build/tests-seed
 #   build/tests-seed/gpu_test
 

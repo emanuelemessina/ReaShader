@@ -43,7 +43,9 @@ namespace ReaShader::gpu
 		vkb::InstanceBuilder builder;
 		builder.set_app_name("ReaShader").require_api_version(1, 3, 0).set_headless(true);
 #ifndef NDEBUG
-		builder.request_validation_layers(true).set_debug_callback(onDebugMessage);
+		builder.request_validation_layers(true)
+			.add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT)
+			.set_debug_callback(onDebugMessage);
 #endif
 		instance = unwrap(builder.build(), "Vulkan instance creation");
 
