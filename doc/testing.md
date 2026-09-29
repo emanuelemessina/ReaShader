@@ -3,7 +3,7 @@
 ReaShader has a **test application**: a program that exercises the plugin so new features and stability can be checked automatically, **before** the manual test in REAPER. It lives in `test/`, fully separate from the plugin's build.
 
 It tests at two levels:
-- **Unit tests** compile pieces of the plugin's source (the renderer, the shader compiler) into the test program and call them directly.
+- **Unit tests** compile pieces of the plugin's source (the renderer, the shader compiler, the parameter list, the plugin class for its web UI protocol) into the test program and call them directly.
 - **Host tests** load the **built plugin** (`build/windows-<profile>/ReaShader[-Debug].clap`) into a fake REAPER and drive it through CLAP and the REAPER API, the way REAPER does.
 
 Contents:
@@ -56,7 +56,7 @@ Or run the binary directly, which is faster when only tests changed: `build/test
 test/
   CMakeLists.txt       the test application's own CMake project (never included by the main build)
   main.cpp             doctest's runner, plus teardown of the shared GPU instance
-  support/             helpers shared by the cases (no tests here): support.* for GPU unit tests, host_helpers.h for host tests
+  support/             helpers shared by the cases (no tests here): support.* for unit tests, host_helpers.h for host tests
   host/                the fake REAPER host (no tests here; Windows only)
   cases/               the tests: one file per area, each a TEST_SUITE
   shaders/             fixtures: broken.frag
@@ -66,13 +66,15 @@ Test suites:
 
 | Suite | File | Covers |
 |---|---|---|
+| `params` | `cases/params.cpp` | the parameter list: the fixed Audio Gain, the shader group (ids, values saved by name or defaults, replacement, the size limit), values to and from JSON, `toJson` for the UI, params flagged for the host taken once with their latest value. |
+| `protocol` | `cases/protocol.cpp` | the web UI protocol on a plugin that's never activated (no GPU): `ready`'s snapshot, `paramValue` (to the host through a flush, unknown ids ignored), host automation echoed on the main thread, `shaderUpload` (stored, loaded, params rescanned; a broken one keeps the current shader), `shaderSelect` (by name, `""` for none, no paths), `logo` and `renderingDevice` saved with the project, malformed messages ignored. Uploads are stored in `resources/shaders/compiled` next to the test binary, emptied at the start of each test. `openUrl` isn't tested, since a valid URL opens the browser. |
 | `shader_compiler` | `cases/shader_compiler.cpp` | the shader contract: the examples compile, `Params` reflection and offsets, `//@param`, error line numbers, rejected resources, the stored JSON form. No GPU. |
 | `render` | `cases/render.cpp` | the renderer's building blocks on **every GPU**, checked pixel by pixel: an example shader at an odd width with padded rows, `Params` values and B,G,R,A order, defaults for params not given, the logo scene over a plain copy. |
 | `host` | `cases/host_lifecycle.cpp` | the built plugin in the fake host: its descriptor, the initial param list, activate/process/deactivate twice (audio unchanged at gain 1, the video processor created and deleted), video passthrough with no shader, destroying an active plugin. |
 | `host` | `cases/host_scenarios.cpp` | project scenarios: a shader arriving with a project while active (restart, rescan, its params, frames through it) or before activation (no restart); param values at video time vs. the plugin's own; the state round trip (shader, values by name, logo); the logo over video; an unrecognized state. |
 
 **The build (`test/CMakeLists.txt`)** follows the main build's structure:
-- it compiles the plugin sources under unit test (`src/render/*`, `src/util/logging`, `src/util/paths`) straight into `reashader_tests`, with the plugin's warning flags;
+- it compiles the plugin sources under unit test (`src/plugin/*`, `src/render/*`, `src/util/*`, everything except the CLAP shell and the GUI) straight into `reashader_tests`, with the plugin's warning flags;
 - the host tests load the plugin built by the main build's preset of the same profile (`REASHADER_CLAP`), which the `test` task builds first;
 - it compiles the internal shaders with `glslc`, like the main build;
 - it stages `res/meshes` and `res/images` next to the binary, because the render code finds `resources/` next to its own binary.

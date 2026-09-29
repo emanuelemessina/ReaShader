@@ -94,3 +94,8 @@ The user's proposals from the cleanup's handoff (`doc/proposals.md`, now deleted
   - A suspected barrier bug in the passthrough-with-logo path turned out not to exist: sync validation, shown to catch a deliberately broken barrier, reported nothing.
   - A real gap was fixed: shader reflection now rejects descriptor sets other than 0.
 - **Test application:** `test/` with doctest replaced the standalone `test/seed/` GPU test. The design for the fake REAPER host is in CLAUDE.md. `doc/` became human-only (no roadmaps or process rules), and this history moved to `.claude/`.
+  - The fake REAPER host and the `host` suite followed: lifecycle and passthrough, then project scenarios. A deliberately broken barrier in the plugin failed the host tests that render, which confirmed that validation checking works through the loaded `.clap`.
+  - Then the `params` and `protocol` unit suites.
+- **A race in `ParamList::takeFlaggedForHost`, found while writing the `params` tests and fixed.**
+  - **The bug:** the "anything flagged" marker was cleared *after* scanning, so a web UI edit flagged mid-scan could stay unsent until the next edit.
+  - **The fix:** the marker is now cleared before the scan and set again when a flag is found.
