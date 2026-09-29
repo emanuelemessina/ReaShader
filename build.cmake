@@ -1,6 +1,7 @@
-# Single entry point to build the project.
-# Orchestrates configure + build for a given PROFILE (debug/release), 
-# handling any OS-specific setup. 
+# Build script:
+# - single entry point for the build loop: configure, build, deploy
+# - default profile to debug
+# - resolve host preset and build directory
 #
 # Usage:
 #   cmake [-DPROFILE=<debug|release>] -P build.cmake
@@ -9,7 +10,9 @@ if(NOT DEFINED PROFILE)
     set(PROFILE debug)
 endif()
 
+#################################
 # Preset
+#################################
 
 if(CMAKE_HOST_WIN32)
     set(PRESET "windows-${PROFILE}")
@@ -21,33 +24,16 @@ endif()
 
 message(STATUS "Preset: ${PRESET}")
 
-# Dirs
+set(BUILD_PRESET_DIR "${CMAKE_CURRENT_LIST_DIR}/build/${PRESET}")
 
-set(BUILD_DIR "${CMAKE_CURRENT_LIST_DIR}/build")
-file(MAKE_DIRECTORY "${BUILD_DIR}")
-
-set(BUILD_PRESET_DIR "${BUILD_DIR}/${PRESET}")
-file(MAKE_DIRECTORY "${BUILD_PRESET_DIR}")
-
-# Setup
-
-if(CMAKE_HOST_WIN32)
-
-elseif(CMAKE_HOST_APPLE)
-
-else()
-
-endif()
-
+#################################
 # Configure
-#
-# Only force a full configure the first time (fresh/cleaned build dir). 
-# After that, this build script re-runs configure on its own, 
-# whenever a tracked input (CMakeLists.txt, CMakePresets.json, relevant .git files, ...) 
-# actually changed since the last generate
+#################################
+
+# Run configure only on an unconfigured build tree.
+# CMake re-runs configuration automatically when project inputs change.
 
 if(NOT EXISTS "${BUILD_PRESET_DIR}/CMakeCache.txt")
-
     execute_process(
         COMMAND ${CMAKE_COMMAND} --preset ${PRESET}
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
@@ -56,10 +42,11 @@ if(NOT EXISTS "${BUILD_PRESET_DIR}/CMakeCache.txt")
     if(NOT CONFIGURE_RESULT EQUAL 0)
         message(FATAL_ERROR "Configure failed (preset ${PRESET})")
     endif()
-
 endif()
 
+#################################
 # Build
+#################################
 
 execute_process(
     COMMAND ${CMAKE_COMMAND} --build --preset ${PRESET}
@@ -69,3 +56,50 @@ execute_process(
 if(NOT BUILD_RESULT EQUAL 0)
     message(FATAL_ERROR "Build failed (preset ${PRESET})")
 endif()
+
+#################################
+# Deploy
+#################################
+
+# Resolve user CLAP directory
+if(CMAKE_HOST_WIN32)
+    set(CLAP_USER_DIR "$ENV{LOCALAPPDATA}/Programs/Common/CLAP")
+elseif(CMAKE_HOST_APPLE)
+    set(CLAP_USER_DIR "$ENV{HOME}/Library/Audio/Plug-Ins/CLAP")
+else()
+    set(CLAP_USER_DIR "$ENV{HOME}/.clap")
+endif()
+
+message(STATUS "Deploying to ${CLAP_USER_DIR}")
+file(MAKE_DIRECTORY "${CLAP_USER_DIR}")
+
+# Binary:
+# REAPER locks the plugin file while loaded.
+# Wait for the user to unlock the binary before retrying.
+
+while(TRUE)
+    file(COPY_FILE "${BUILD_PRESET_DIR}/ReaShader.clap" "${CLAP_USER_DIR}/ReaShader.clap"
+         RESULT COPY_RESULT ONLY_IF_DIFFERENT)
+    if(COPY_RESULT EQUAL 0)
+        break()
+    endif()
+
+    message(NOTICE "\nCan't overwrite ReaShader.clap (${COPY_RESULT}).\n"
+                   "Close REAPER (or remove ReaShader from all FX chains), then press Enter to retry. Ctrl+C cancels.")
+    if(CMAKE_HOST_WIN32)
+        execute_process(COMMAND cmd /c "set /p _="
+                        RESULT_VARIABLE WAIT_RESULT)
+    else()
+        execute_process(COMMAND sh -c "read _"
+                        RESULT_VARIABLE WAIT_RESULT)
+    endif()
+endwhile()
+
+# Resources
+
+foreach(RESOURCE_DIR assets rsui)
+    file(REMOVE_RECURSE "${CLAP_USER_DIR}/${RESOURCE_DIR}")
+    file(COPY "${BUILD_PRESET_DIR}/${RESOURCE_DIR}" DESTINATION "${CLAP_USER_DIR}")
+endforeach()
+
+message(STATUS "Deployed ReaShader.clap + resources")
