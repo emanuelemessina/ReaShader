@@ -134,14 +134,17 @@ function renderShaderPicker(shaders, currentName) {
         select.appendChild(option);
     }
     select.value = currentName;
+
+    // shown only while no shader is selected
+    const hint = document.createElement('small');
+    hint.textContent = 'Upload a .frag shader to compile it and add it to this list.';
+    hint.hidden = select.value !== '';
+
     select.addEventListener('change', () => {
+        hint.hidden = select.value !== '';
         setShaderStatus(select.value ? `Loading ${select.value}...` : 'Unloading...', 'busy');
         native.shaderSelect(select.value);
     });
-
-
-    const hint = document.createElement('small');
-    hint.textContent = 'Upload a .frag shader to compile it and add it to this list.';
 
     picker.append(label, select, hint);
 }

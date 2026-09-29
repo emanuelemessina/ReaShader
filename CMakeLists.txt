@@ -226,15 +226,15 @@ if(WIN32)
 endif()
 
 #################################
-# POST_BUILD
+# Staging
 #################################
 
-# Stage resources next to the plugin:
+# Stage resources next to the plugin, on every build:
 # - resources/images, resources/meshes
 # - resources/shaders/examples: example shader sources for the user
 # - ui
 
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+add_custom_target(stage ALL
     COMMAND ${CMAKE_COMMAND} -E rm -rf "${PLUGIN_STAGE_DIR}/resources" "${PLUGIN_STAGE_DIR}/ui"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/res/images" "${PLUGIN_STAGE_DIR}/resources/images"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/res/meshes" "${PLUGIN_STAGE_DIR}/resources/meshes"
@@ -242,5 +242,7 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src/ui" "${PLUGIN_STAGE_DIR}/ui"
     COMMAND ${CMAKE_COMMAND} -E rm -rf "${PLUGIN_STAGE_DIR}/ui/styles"
     COMMAND ${CMAKE_COMMAND} -E copy "${GENERATED_DIR}/index.css" "${PLUGIN_STAGE_DIR}/ui/index.css"
+    DEPENDS ${PROJECT_NAME}
     COMMENT "Staging ReaShader resources next to the built plugin"
+    VERBATIM
 )
