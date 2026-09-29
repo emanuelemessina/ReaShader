@@ -62,19 +62,20 @@ namespace ReaShader::Parameters
 
 	bool ParamList::takeFlaggedForHost(Id& id, double& value)
 	{
-		if (!anyFlaggedForHost)
+		// cleared before the scan: a flag set meanwhile sets it again, so it's never left unseen
+		if (!anyFlaggedForHost.exchange(false))
 			return false;
 
 		for (Id i = 0; i < paramCount; i++)
 		{
 			if (flaggedForHost[i].exchange(false))
 			{
+				anyFlaggedForHost = true; // there may be more
 				id = i;
 				value = values[i];
 				return true;
 			}
 		}
-		anyFlaggedForHost = false;
 		return false;
 	}
 

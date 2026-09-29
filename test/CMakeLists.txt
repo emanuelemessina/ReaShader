@@ -69,6 +69,8 @@ target_sources(reashader_tests PRIVATE
     main.cpp
     support/support.cpp
 
+    cases/params.cpp
+    cases/protocol.cpp
     cases/render.cpp
     cases/shader_compiler.cpp
 )
@@ -90,6 +92,10 @@ endif()
 # Plugin sources under unit test
 
 target_sources(reashader_tests PRIVATE
+    "${REPO_DIR}/src/plugin/plugin.cpp"
+    "${REPO_DIR}/src/plugin/params.cpp"
+
+    "${REPO_DIR}/src/render/renderer.cpp"
     "${REPO_DIR}/src/render/gpu.cpp"
     "${REPO_DIR}/src/render/context.cpp"
     "${REPO_DIR}/src/render/frame_targets.cpp"
@@ -98,6 +104,7 @@ target_sources(reashader_tests PRIVATE
     "${REPO_DIR}/src/render/scene.cpp"
     "${REPO_DIR}/src/util/logging.cpp"
     "${REPO_DIR}/src/util/paths.cpp"
+    "${REPO_DIR}/src/util/shell.cpp"
 )
 
 # External sources (warnings disabled)
@@ -150,6 +157,7 @@ endif()
 target_compile_definitions(reashader_tests PRIVATE
     REPO_DIR="${REPO_DIR}"
     REASHADER_CLAP="${REASHADER_CLAP}"
+    REASHADER_VERSION="test"
 )
 
 # Flags: the plugin's
@@ -172,6 +180,7 @@ target_link_libraries(reashader_tests PRIVATE
 )
 
 if(WIN32)
+    target_link_libraries(reashader_tests PRIVATE shell32) # util::shell
     # The Vulkan SDK debug static libraries omit PDB symbols
     target_link_options(reashader_tests PRIVATE "LINKER:/ignore:4099")
 endif()
