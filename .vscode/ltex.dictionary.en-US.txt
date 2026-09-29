@@ -1,0 +1,15 @@
+CLever
+ReaShader
+Vulkan
+CLever
+vk-bootstrap
+Khronos
+Cockos
+webview
+shaderc
+cmake-git-versioning
+nlohmann-json
+glslc
+SPIRV-Reflect
+Obj
+Sascha

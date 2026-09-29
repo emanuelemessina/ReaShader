@@ -271,3 +271,93 @@ add_custom_target(stage ALL
     COMMENT "Staging ReaShader resources next to the built plugin"
     VERBATIM
 )
+
+#################################
+# Install
+#################################
+
+install(TARGETS ${PROJECT_NAME} LIBRARY DESTINATION .)
+install(DIRECTORY "${PLUGIN_STAGE_DIR}/resources" "${PLUGIN_STAGE_DIR}/ui" DESTINATION .)
+
+#################################
+# Package
+#################################
+
+# One native installer per OS 
+
+set(CPACK_VERBATIM_VARIABLES ON)
+set(CPACK_PACKAGE_NAME "${PLUGIN_FILE_NAME}")
+set(CPACK_PACKAGE_VENDOR "Emanuele Messina")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "${PLUGIN_FILE_NAME}")
+set(CPACK_PACKAGE_DIRECTORY "${CMAKE_BINARY_DIR}/package")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
+
+if(WIN32)
+    # Inno Setup:
+    # - per user, into the user CLAP folder (writable, for uploaded shaders), no admin
+    # - installer/windows/: upgrade cleanup, VC++ runtime check and install
+
+    set(CPACK_GENERATOR INNOSETUP)
+    set(CPACK_PACKAGE_FILE_NAME "${PLUGIN_FILE_NAME}-${PROJECT_VERSION_STRING}-win64-setup")
+
+    set(_pf86_var "ProgramFiles(x86)")
+    file(TO_CMAKE_PATH "$ENV{ProgramFiles}" _pf)
+    file(TO_CMAKE_PATH "$ENV{${_pf86_var}}" _pf86)
+    file(TO_CMAKE_PATH "$ENV{LOCALAPPDATA}" _localappdata)
+
+    find_program(ISCC_EXECUTABLE ISCC PATHS
+        "${_pf86}/Inno Setup 6"
+        "${_pf}/Inno Setup 6"
+        "${_localappdata}/Programs/Inno Setup 6"
+    )
+    if(ISCC_EXECUTABLE)
+        set(CPACK_INNOSETUP_EXECUTABLE "${ISCC_EXECUTABLE}")
+    endif()
+
+    set(CPACK_INNOSETUP_ARCHITECTURE x64)
+    set(CPACK_INNOSETUP_USE_MODERN_WIZARD ON)
+    set(CPACK_INNOSETUP_ICON_FILE "${CMAKE_SOURCE_DIR}/src/ui/images/favicon.ico")
+    set(CPACK_INNOSETUP_INSTALL_ROOT "{localappdata}\\Programs\\Common\\CLAP")
+    set(CPACK_INNOSETUP_SETUP_AppId "${PLUGIN_ID}")
+    set(CPACK_INNOSETUP_SETUP_AppName "${PLUGIN_DISPLAY_NAME}")
+    set(CPACK_INNOSETUP_SETUP_UninstallDisplayName "${PLUGIN_DISPLAY_NAME}")
+    set(CPACK_INNOSETUP_SETUP_PrivilegesRequired lowest)
+    set(CPACK_INNOSETUP_SETUP_DisableProgramGroupPage ON)
+    set(CPACK_INNOSETUP_SETUP_DirExistsWarning OFF)
+    set(CPACK_INNOSETUP_EXTRA_SCRIPTS "${CMAKE_SOURCE_DIR}/installer/windows/reashader.iss")
+    set(CPACK_INNOSETUP_CODE_FILES "${CMAKE_SOURCE_DIR}/installer/windows/installer.pas")
+
+    # VC++ runtime: the newest vc_redist.x64.exe of the installed MSVC toolsets (VS or Build Tools),
+    # its version is the toolset folder name (the minimum runtime the plugin needs)
+
+    file(GLOB _vcredists
+        "${_pf}/Microsoft Visual Studio/*/*/VC/Redist/MSVC/14.*/vc_redist.x64.exe"
+        "${_pf86}/Microsoft Visual Studio/*/*/VC/Redist/MSVC/14.*/vc_redist.x64.exe"
+    )
+    set(_vcredist_version 0)
+    foreach(_candidate ${_vcredists})
+        string(REGEX MATCH "/MSVC/([0-9.]+)/" _ "${_candidate}")
+        if(CMAKE_MATCH_1 VERSION_GREATER _vcredist_version)
+            set(_vcredist_version "${CMAKE_MATCH_1}")
+            set(_vcredist "${_candidate}")
+        endif()
+    endforeach()
+
+    if(NOT _vcredist)
+        message(WARNING "vc_redist.x64.exe not found (VC/Redist/MSVC of a Visual Studio or Build Tools install): packaging will fail")
+    else()
+        string(REPLACE "." ";" _vcredist_version "${_vcredist_version}")
+        list(GET _vcredist_version 0 CPACK_INNOSETUP_DEFINE_VcRedistMajor)
+        list(GET _vcredist_version 1 CPACK_INNOSETUP_DEFINE_VcRedistMinor)
+        list(GET _vcredist_version 2 CPACK_INNOSETUP_DEFINE_VcRedistBuild)
+        file(TO_NATIVE_PATH "${_vcredist}" CPACK_INNOSETUP_DEFINE_VcRedist)
+    endif()
+elseif(APPLE)
+    message(WARNING "TODO: packaging on macOS (the .clap is a bundle: resources and ui go inside it; signed .pkg)")
+else()
+    set(CPACK_GENERATOR TGZ)
+    message(WARNING "TODO: packaging on Linux is untested (TGZ of the plugin folder, to extract into ~/.clap)")
+endif()
+
+include(CPack)
