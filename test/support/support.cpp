@@ -129,11 +129,20 @@ namespace test
 			targets.destroy(context);
 			targets.create(context, in, out);
 		}
-		if (inputs.pass)
+
+		gpu::Lut identity;
+		const gpu::Lut* shaderLut = inputs.shaderLut;
+		if (!shaderLut)
 		{
-			inputs.pass->bindInput(context, targets.input.view);
-			inputs.pass->writeParams(context, inputs.params.data(), inputs.params.size());
+			identity.create(context, gpu::identityLut(gpu::kIdentityLutSize));
+			shaderLut = &identity;
 		}
+		for (gpu::Pass* pass : inputs.passes)
+			if (auto* shaderPass = dynamic_cast<gpu::ShaderPass*>(pass))
+			{
+				shaderPass->writeParams(context, inputs.params.data(), inputs.params.size());
+				shaderPass->bindLut(context, shaderLut->image.view);
+			}
 		if (inputs.scene)
 			inputs.scene->prepare(context, targets.extent);
 
@@ -144,14 +153,13 @@ namespace test
 										(float)inputs.time,
 										(float)inputs.frameRate,
 										0 };
-		if (inputs.pass)
-			inputs.pass->record(commandBuffer, targets.output, shaderInputs);
-		else
-			targets.recordInputToOutput(commandBuffer);
+		targets.recordPasses(context, commandBuffer, inputs.passes, shaderInputs);
 		if (inputs.scene)
 			inputs.scene->record(commandBuffer, targets.output, inputs.time, inputs.frameRate);
 		targets.recordDownload(commandBuffer);
 		context.submitAndWait();
 		targets.readOutput(context, out);
+
+		identity.destroy(context);
 	}
 } // namespace test

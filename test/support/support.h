@@ -11,6 +11,7 @@
 #include "render/context.h"
 #include "render/frame_targets.h"
 #include "render/frame_view.h"
+#include "render/lut.h"
 #include "render/scene.h"
 #include "render/shader_pass.h"
 
@@ -52,11 +53,13 @@ namespace test
 	void shutdownGpu();
 
 	// One frame the way ReaShaderRenderer::renderFrame records it:
-	// upload -> shader pass (or a plain copy) -> scene (optional) -> download
+	// upload -> passes (FrameTargets::recordPasses; none: a plain copy) -> scene (optional) -> download.
+	// LUT passes come with their LUT bound and their amount set by the test.
 	struct RenderInputs
 	{
-		ReaShader::gpu::ShaderPass* pass = nullptr;
-		std::vector<float> params;
+		std::vector<ReaShader::gpu::Pass*> passes;
+		std::vector<float> params;						// written to the shader passes
+		const ReaShader::gpu::Lut* shaderLut = nullptr; // the shader passes' iChannel1 (none: an identity)
 		ReaShader::gpu::Scene* scene = nullptr;
 		double time = 0;
 		double frameRate = 30;

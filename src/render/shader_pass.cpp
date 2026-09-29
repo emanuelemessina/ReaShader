@@ -12,28 +12,19 @@
 
 namespace ReaShader::gpu
 {
-	namespace
-	{
-		// built by glslc from src/shaders/internal/fullscreen.vert
-		constexpr uint32_t kFullscreenVertexSpirv[] = {
-#include "fullscreen.vert.inc"
-		};
-	} // namespace
-
-	// -------- ShaderPass --------
-
 	void ShaderPass::create(Context& context, const CompiledShader& shader)
 	{
 		VkDevice device = context.device;
 		params = shader.params;
 
-		// descriptors: binding 0 = iChannel0, binding 1 = Params (always present, even if the shader has none)
+		// descriptors: iChannel0, Params, iChannel1 (always present, even if the shader doesn't use them)
 		VkDescriptorSetLayoutBinding bindings[] = {
 			{ kInputBinding, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr },
 			{ kParamsBinding, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr },
+			{ kLutBinding, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr },
 		};
 		VkDescriptorSetLayoutCreateInfo setLayoutInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
-		setLayoutInfo.bindingCount = 2;
+		setLayoutInfo.bindingCount = (uint32_t)std::size(bindings);
 		setLayoutInfo.pBindings = bindings;
 		VK_CHECK(vkCreateDescriptorSetLayout(device, &setLayoutInfo, nullptr, &setLayout));
 
@@ -67,8 +58,8 @@ namespace ReaShader::gpu
 
 		// pipeline: fullscreen triangle, renders straight to the frame format
 		PipelineDesc pipelineDesc;
-		pipelineDesc.vertexSpirv = kFullscreenVertexSpirv;
-		pipelineDesc.vertexWords = std::size(kFullscreenVertexSpirv);
+		pipelineDesc.vertexSpirv = fullscreenVertexSpirv().data();
+		pipelineDesc.vertexWords = fullscreenVertexSpirv().size();
 		pipelineDesc.fragmentSpirv = shader.spirv.data();
 		pipelineDesc.fragmentWords = shader.spirv.size();
 		pipelineDesc.layout = pipelineLayout;
@@ -92,14 +83,12 @@ namespace ReaShader::gpu
 
 	void ShaderPass::bindInput(Context& context, VkImageView input)
 	{
-		VkDescriptorImageInfo imageInfo{ context.sampler, input, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
-		VkWriteDescriptorSet write{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
-		write.dstSet = descriptorSet;
-		write.dstBinding = kInputBinding;
-		write.descriptorCount = 1;
-		write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		write.pImageInfo = &imageInfo;
-		vkUpdateDescriptorSets(context.device, 1, &write, 0, nullptr);
+		writeImageDescriptor(context, descriptorSet, kInputBinding, input);
+	}
+
+	void ShaderPass::bindLut(Context& context, VkImageView lut)
+	{
+		writeImageDescriptor(context, descriptorSet, kLutBinding, lut);
 	}
 
 	void ShaderPass::writeParams(Context& context, const float* values, size_t count)
@@ -115,28 +104,7 @@ namespace ReaShader::gpu
 
 	void ShaderPass::record(VkCommandBuffer commandBuffer, const Image& target, const ShaderInputs& inputs)
 	{
-		transition(commandBuffer, target.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-				   VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-				   VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-
-		VkRenderingAttachmentInfo colorAttachment{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
-		colorAttachment.imageView = target.view;
-		colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; // every pixel gets written
-		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-
-		VkRenderingInfo renderingInfo{ VK_STRUCTURE_TYPE_RENDERING_INFO };
-		renderingInfo.renderArea = { { 0, 0 }, target.extent };
-		renderingInfo.layerCount = 1;
-		renderingInfo.colorAttachmentCount = 1;
-		renderingInfo.pColorAttachments = &colorAttachment;
-
-		vkCmdBeginRendering(commandBuffer, &renderingInfo);
-
-		VkViewport viewport{ 0, 0, (float)target.extent.width, (float)target.extent.height, 0, 1 };
-		VkRect2D scissor{ { 0, 0 }, target.extent };
-		vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-		vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+		beginFullscreenRendering(commandBuffer, target);
 
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet,

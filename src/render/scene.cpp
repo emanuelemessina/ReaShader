@@ -128,7 +128,7 @@ namespace ReaShader::gpu
 		transition(commandBuffer, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 				   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT,
 				   VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-				   VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+				   VK_ACCESS_2_SHADER_READ_BIT);
 		context.submitAndWait();
 
 		staging.destroy(context.allocator);

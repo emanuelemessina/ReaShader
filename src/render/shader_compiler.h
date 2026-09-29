@@ -19,6 +19,7 @@ namespace ReaShader::gpu
 	// Descriptor bindings of every shader
 	constexpr uint32_t kInputBinding = 0;  // iChannel0
 	constexpr uint32_t kParamsBinding = 1; // the Params block
+	constexpr uint32_t kLutBinding = 2;	   // iChannel1
 
 	// Push constants every shader gets. Keep in sync with ReaShaderInputs in the preamble.
 	struct ShaderInputs

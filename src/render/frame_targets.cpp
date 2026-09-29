@@ -54,6 +54,8 @@ namespace ReaShader::gpu
 
 	void FrameTargets::destroy(Context& context)
 	{
+		for (Image& image : work)
+			image.destroy(context.device, context.allocator);
 		output.destroy(context.device, context.allocator);
 		input.destroy(context.device, context.allocator);
 		readback.destroy(context.allocator);
@@ -92,10 +94,47 @@ namespace ReaShader::gpu
 		transition(commandBuffer, input.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 				   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT,
 				   VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-				   VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+				   VK_ACCESS_2_SHADER_READ_BIT);
 	}
 
-	void FrameTargets::recordInputToOutput(VkCommandBuffer commandBuffer)
+	Image& FrameTargets::_workImage(Context& context, size_t index)
+	{
+		Image& image = work[index];
+		if (!image.image)
+			image.create(context.device, context.allocator, extent, kFrameFormat,
+						 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+		return image;
+	}
+
+	void FrameTargets::recordPasses(Context& context, VkCommandBuffer commandBuffer, std::span<Pass* const> passes,
+									const ShaderInputs& inputs)
+	{
+		if (passes.empty())
+		{
+			_recordInputToOutput(commandBuffer);
+			return;
+		}
+
+		const Image* source = &input;
+		for (size_t i = 0; i < passes.size(); i++)
+		{
+			bool last = i + 1 == passes.size();
+			Image& target = last ? output : _workImage(context, i % 2);
+
+			passes[i]->bindInput(context, source->view);
+			passes[i]->record(commandBuffer, target, inputs);
+
+			// the next pass samples what this one rendered
+			if (!last)
+				transition(commandBuffer, target.image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+						   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+						   VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+						   VK_ACCESS_2_SHADER_READ_BIT);
+			source = &target;
+		}
+	}
+
+	void FrameTargets::_recordInputToOutput(VkCommandBuffer commandBuffer)
 	{
 		transition(commandBuffer, input.image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 				   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
