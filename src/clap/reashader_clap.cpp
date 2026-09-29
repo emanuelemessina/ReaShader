@@ -6,20 +6,9 @@
  * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
  *****************************************************************************/
 
-// CLAP plugin shell -- the thin, mandatory-plugin-API glue, playing the same role
-// src/vst3/ played for VST3 (mypluginentry.cpp + mypluginprocessor.cpp + myplugincontroller.cpp).
-//
-// Phase B+1 status: owns a single ReaShaderPlugin instance (see reashaderplugin.h) and implements
-// the CLAP-facing surface (audio-ports, params, state, gui) against it. process_frame below drives
-// the real ReaShaderPlugin::reaShaderRenderer pipeline (loadBitsToImage/drawFrame/transferFrame).
-//
-// REAPER video tap access path (confirmed working -- see spikes/clap-video-tap, now retired):
-//   host->get_extension(host, "cockos.reaper_extension")   -> reaper_plugin_info_t*
-//   reaperInfo->GetFunc("clap_get_reaper_context")          -> clap_get_reaper_context()
-//   clap_get_reaper_context(host, 4 /* sel=4: "FxDsp" */)   -> the fxctx video_CreateVideoProcessor wants
-//   reaperInfo->GetFunc("video_CreateVideoProcessor")       -> video_CreateVideoProcessor()
-//   video_CreateVideoProcessor(fxctx, VERSION)              -> IREAPERVideoProcessor*
-// (now implemented in ReaShaderPlugin::activate(), src/reashader/reashaderplugin.cpp)
+// CLAP entry point: plugin factory, descriptor, and the C-ABI callbacks for the audio-ports,
+// params and state extensions, all forwarding to ReaShaderPlugin. Also hosts the REAPER video
+// processor callbacks.
 
 #include <cstdint>
 #include <cstdio>
@@ -42,12 +31,8 @@ namespace ReaShader
 
 		// -------- REAPER video processor callbacks --------
 
-		// Drives the real pipeline. Two frames are involved: renderInputVideoFrame() returns
-		// REAPER's actual upstream video content and must be treated as immutable (return it or
-		// Release() it -- never write into it, per video_processor.h's own documented contract);
-		// newVideoFrame() creates the frame this function returns. REAPER's 'RGBA' fourcc is packed
-		// in memory as B,G,R,A (byte0 = B) -- confirmed empirically during the Phase A spike -- but
-		// that only matters for code building pixel values by hand, which this no longer does.
+		// Renders one frame. The input frame from renderInputVideoFrame() is immutable: it must be
+		// returned as-is or Release()d. The result goes into a separate frame from newVideoFrame().
 		IVideoFrame* processFrame(IREAPERVideoProcessor* vproc, const double* parmlist, int nparms,
 								   double project_time, double frate, int /*force_format*/)
 		{
@@ -70,8 +55,7 @@ namespace ReaShader
 				return nullptr;
 			}
 
-			// parmlist[0] is wet/dry; plugin param index i lands at parmlist index i+1 (confirmed
-			// working convention carried over from the pre-port VST3 code).
+			// parmlist[0] is wet/dry; plugin param index i is at parmlist[i + 1]
 			double videoParam = nparms > (int)Parameters::uVideoParam ? parmlist[Parameters::uVideoParam + 1] : 0.0;
 			double pushConstants[] = { project_time, frate, videoParam };
 			int* outputBits = reinterpret_cast<int*>(outputVf->get_bits());
@@ -89,7 +73,6 @@ namespace ReaShader
 
 		bool getVideoParamLocal(IREAPERVideoProcessor* vproc, int idx, double* valueOut)
 		{
-			// ReaShaderPlugin::activate() binds m_videoproc->userdata to `this` directly
 			auto* reaShaderPlugin = static_cast<ReaShaderPlugin*>(vproc->userdata);
 			if (!reaShaderPlugin)
 				return false;
@@ -133,10 +116,8 @@ namespace ReaShader
 		void plugin_stop_processing(const clap_plugin_t*) {}
 		void plugin_reset(const clap_plugin_t*) {}
 
-		// scans incoming param-value events (host automation / generic host UI) and applies them;
-		// drains outgoing param-value notifications (web UI edits) into out_events. Shared by
-		// process() and flush() -- CLAP explicitly allows flush() to be used for the "not
-		// currently processing audio" case with the same event-queue shape.
+		// Applies incoming param changes (host automation, host UI) and pushes out the changes made
+		// in the web UI. Shared by process() and flush(); the host calls flush() when not processing.
 		void handleParamEvents(ClapPluginState* state, const clap_input_events_t* in,
 								const clap_output_events_t* out)
 		{
@@ -184,8 +165,7 @@ namespace ReaShader
 
 			handleParamEvents(state, process->in_events, process->out_events);
 
-			// audio path is a simple gain passthrough -- real DSP is video, not audio; this just
-			// keeps the plugin a well-formed track FX and exercises the Audio Gain param end to end
+			// audio is a plain gain passthrough: the real work is on video, this keeps it a normal track FX
 			if (process->audio_outputs_count > 0)
 			{
 				clap_audio_buffer_t& out = process->audio_outputs[0];
@@ -375,11 +355,7 @@ namespace ReaShader
 		}
 	} // namespace
 
-	// Referenced from reashaderplugin.cpp (via reashaderplugin.h's declaration, in a different
-	// translation unit) as the REAPER video-processor callbacks -- must have external linkage,
-	// hence defined here outside the anonymous namespace with names matching the header exactly.
-	// Kept as free functions since they're CLAP/REAPER-video-tap glue, not ReaShaderPlugin's own
-	// domain logic.
+	// REAPER video processor callbacks, installed by ReaShaderPlugin::activate() (declared in reashaderplugin.h)
 	IVideoFrame* processVideoFrame(IREAPERVideoProcessor* vproc, const double* parmlist, int nparms,
 									double project_time, double frate, int force_format)
 	{
