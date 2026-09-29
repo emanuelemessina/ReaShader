@@ -29,10 +29,10 @@ It's a work in progress. Only Windows is supported for now; macOS/Linux builds a
 
 ## Using it
 
-1. Build it (below) or grab a release, and make sure the plugin folder ends up in your CLAP folder:
-   - Windows: `%LOCALAPPDATA%\Programs\Common\CLAP`
-   - macOS: `~/Library/Audio/Plug-Ins/CLAP`
-   - Linux: `~/.clap`
+1. Build it (below) or grab a release, and put the `ReaShader` plugin folder inside your CLAP folder (hosts search it recursively):
+   - Windows: `%LOCALAPPDATA%\Programs\Common\CLAP\ReaShader`
+   - macOS: `~/Library/Audio/Plug-Ins/CLAP/ReaShader`
+   - Linux: `~/.clap/ReaShader`
 2. In REAPER, add "ReaShader" (CLAP) to a track with a video item. If it's not listed, rescan: Preferences → Plug-ins → CLAP → Re-scan.
 3. Open REAPER's video window (View → Video).
 4. In the plugin window, **Upload** a shader: try the examples in `resources/shaders/examples` inside the plugin folder. An uploaded shader is compiled once and added to the shader list.
@@ -42,13 +42,14 @@ Writing your own shader is simple: see [the examples' README](src/shaders/exampl
 The plugin folder contains:
 
 ```
-ReaShader.clap
-ui/                          the plugin window (HTML/JS/CSS)
-resources/
-  images/, meshes/
-  shaders/examples/          example shader sources, to upload and learn from
-  shaders/compiled/          shaders compiled on upload (the shader list)
-rs.log                       the plugin's log
+ReaShader/
+  ReaShader.clap
+  ui/                        the plugin window (HTML/JS/CSS)
+  resources/
+    images/, meshes/
+    shaders/examples/        example shader sources, to upload and learn from
+    shaders/compiled/        shaders compiled on upload (the shader list)
+  rs.log                     the plugin's log
 ```
 
 ## Building
@@ -71,7 +72,7 @@ rs.log                       the plugin's log
 
 ### Tasks (VS Code)
 
-- **build+deploy** (default build task, Ctrl+Shift+B): configures (the first time), builds, and deploys the plugin folder to your CLAP folder. If REAPER has the plugin loaded, the deploy is skipped with a warning: close REAPER and build again.
+- **build+deploy** (default build task, Ctrl+Shift+B): configures (the first time), builds, and deploys the plugin folder to `<your CLAP folder>/ReaShader`. If REAPER has the plugin loaded, the deploy is skipped with a warning: close REAPER and build again.
 - **clean**: wipes the build directory, for a fresh configure.
 
 From a terminal:

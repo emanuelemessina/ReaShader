@@ -61,7 +61,7 @@ endif()
 # Deploy
 #################################
 
-# Resolve user CLAP directory
+# Resolve the plugin's folder in the user CLAP directory
 
 if(CMAKE_HOST_WIN32)
     set(CLAP_USER_DIR "$ENV{LOCALAPPDATA}/Programs/Common/CLAP")
@@ -71,13 +71,15 @@ else()
     set(CLAP_USER_DIR "$ENV{HOME}/.clap")
 endif()
 
-message(STATUS "Deploying to ${CLAP_USER_DIR}")
-file(MAKE_DIRECTORY "${CLAP_USER_DIR}")
+set(DEPLOY_DIR "${CLAP_USER_DIR}/ReaShader")
+
+message(STATUS "Deploying to ${DEPLOY_DIR}")
+file(MAKE_DIRECTORY "${DEPLOY_DIR}")
 
 # Binary:
 # if REAPER is locking the plugin file, skip the deploy with a warning
 
-file(COPY_FILE "${BUILD_PRESET_DIR}/ReaShader.clap" "${CLAP_USER_DIR}/ReaShader.clap"
+file(COPY_FILE "${BUILD_PRESET_DIR}/ReaShader.clap" "${DEPLOY_DIR}/ReaShader.clap"
      RESULT COPY_RESULT ONLY_IF_DIFFERENT)
 if(NOT COPY_RESULT EQUAL 0)
     message(WARNING "Not deployed: can't overwrite ReaShader.clap (${COPY_RESULT}).\n"
@@ -90,8 +92,8 @@ endif()
 # - resources/shaders/compiled (uploaded shaders) is kept
 
 foreach(RESOURCE_DIR resources/images resources/meshes resources/shaders/examples ui)
-    file(REMOVE_RECURSE "${CLAP_USER_DIR}/${RESOURCE_DIR}")
-    file(COPY "${BUILD_PRESET_DIR}/${RESOURCE_DIR}/" DESTINATION "${CLAP_USER_DIR}/${RESOURCE_DIR}")
+    file(REMOVE_RECURSE "${DEPLOY_DIR}/${RESOURCE_DIR}")
+    file(COPY "${BUILD_PRESET_DIR}/${RESOURCE_DIR}/" DESTINATION "${DEPLOY_DIR}/${RESOURCE_DIR}")
 endforeach()
 
 message(STATUS "Deployed ReaShader.clap + resources")

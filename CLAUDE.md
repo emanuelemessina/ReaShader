@@ -52,7 +52,7 @@ There is no test suite or lint step. Verification is manual, in REAPER.
 - The VS Code **`build+deploy`** task is the default build task (Ctrl+Shift+B). It runs `cmake -DPROFILE=<debug|release> -P build.cmake`, which:
   1. configures (first time only);
   2. builds;
-  3. deploys the `.clap` plus `resources/` and `ui/` to the per-user CLAP folder (`%LOCALAPPDATA%\Programs\Common\CLAP`, `~/Library/Audio/Plug-Ins/CLAP`, `~/.clap`).
+  3. deploys the `.clap` plus `resources/` and `ui/` to a `ReaShader/` folder in the per-user CLAP folder (`%LOCALAPPDATA%\Programs\Common\CLAP`, `~/Library/Audio/Plug-Ins/CLAP`, `~/.clap`). Hosts search CLAP folders recursively (`clap/entry.h`).
 
   If REAPER has the `.clap` open, the deploy is skipped with a warning (close REAPER and build again).
   Deploy replaces `resources/images`, `resources/meshes`, `resources/shaders/examples` and `ui` one by one, so `resources/shaders/compiled` (the user's uploaded shaders) survives.
