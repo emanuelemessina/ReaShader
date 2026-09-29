@@ -9,14 +9,17 @@
         }
     ],
     "git.ignoredRepositories": [
-        "external/json",
+        "external/boxer",
+        "external/clap",
         "external/glm",
+        "external/json",
+        "external/reaper-sdk",
+        "external/SPIRV-Reflect",
         "external/stb",
         "external/tinyobjloader",
+        "external/vk-bootstrap",
         "external/VulkanMemoryAllocator",
         "external/WDL",
-        "external/reaper-sdk",
         "external/webview",
-        "external/boxer",
     ],
 }
