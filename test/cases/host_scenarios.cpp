@@ -1,13 +1,10 @@
-/******************************************************************************
- * Copyright (c) Emanuele Messina (https://github.com/emanuelemessina)
- * All rights reserved.
- *
- * This code is licensed under the MIT License.
- * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
- *****************************************************************************/
-
-// The built plugin in the fake REAPER host, in project scenarios: a shader arriving with a project
-// (restart + rescan), rendering through it, automation at video time, the state round trip, the logo.
+/**
+ * @file
+ * @brief Host tests: project scenarios (shader via state, video-time values, state round trip, logo).
+ * @author Emanuele Messina (https://github.com/emanuelemessina)
+ * @copyright Copyright (c) Emanuele Messina. All rights reserved.
+ *            Licensed under the MIT License: see https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE
+ */
 
 #include "support/host_helpers.h"
 

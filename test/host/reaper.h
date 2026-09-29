@@ -1,16 +1,15 @@
-/******************************************************************************
- * Copyright (c) Emanuele Messina (https://github.com/emanuelemessina)
- * All rights reserved.
- *
- * This code is licensed under the MIT License.
- * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
- *****************************************************************************/
+/**
+ * @file
+ * @brief host::Reaper: a fake REAPER that loads a built .clap and drives it the way REAPER does.
+ * @author Emanuele Messina (https://github.com/emanuelemessina)
+ * @copyright Copyright (c) Emanuele Messina. All rights reserved.
+ *            Licensed under the MIT License: see https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE
+ */
 
 #pragma once
 
-// A fake REAPER: loads a built .clap and drives it the way REAPER does, as far as we know.
-// It is our model of REAPER. Each emulated behavior is commented "observed" (verified in REAPER, with the
-// version) or "assumed" (not verified yet). When REAPER turns out to differ, this file changes first.
+// It is our model of REAPER, as far as we know it. Each emulated behavior is commented "observed" (verified
+// in REAPER) or "assumed" (not verified yet). When REAPER turns out to differ, this file changes first.
 
 #include "host/thread.h"
 

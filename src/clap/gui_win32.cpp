@@ -1,13 +1,12 @@
-/******************************************************************************
- * Copyright (c) Emanuele Messina (https://github.com/emanuelemessina)
- * All rights reserved.
- *
- * This code is licensed under the MIT License.
- * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
- *****************************************************************************/
+/**
+ * @file
+ * @brief clap.gui for Win32: the plugin window, a resizable child window filled by the web UI.
+ * @author Emanuele Messina (https://github.com/emanuelemessina)
+ * @copyright Copyright (c) Emanuele Messina. All rights reserved.
+ *            Licensed under the MIT License: see https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE
+ */
 
-// clap.gui for Win32 (embedded only): a resizable child window filled by the WebUIHost webview.
-// TODO: macOS/Linux.
+// Embedded only. TODO: macOS/Linux.
 //
 // create() only registers the window class. The window is created in set_parent(), because a
 // WS_CHILD window needs its real parent at creation (null parent -> ERROR_TLW_WITH_WSCHILD).

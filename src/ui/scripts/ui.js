@@ -1,13 +1,12 @@
-/******************************************************************************
- * Copyright (c) Emanuele Messina (https://github.com/emanuelemessina)
- * All rights reserved.
- *
- * This code is licensed under the MIT License.
- * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
- *****************************************************************************/
+/**
+ * @file
+ * @brief Builds the UI from the plugin's snapshot.
+ * @author Emanuele Messina (https://github.com/emanuelemessina)
+ * @copyright Copyright (c) Emanuele Messina. All rights reserved.
+ *            Licensed under the MIT License: see https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE
+ */
 
-// Builds the UI from the plugin's snapshot. Rebuilding is idempotent: every snapshot replaces
-// what the previous one created.
+// Rebuilding is idempotent: every snapshot replaces what the previous one created.
 
 function displayValue(units, value) {
     return units === "%" ? (value * 100).toFixed(1) : value.toFixed(3);
