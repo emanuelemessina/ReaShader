@@ -37,14 +37,15 @@ namespace tools {
 			uint32_t buffer = 0;
 			int bits = 0;
 
-			for (unsigned char c : encoded)
+			for (char ch : encoded)
 			{
+				auto c = static_cast<unsigned char>(ch);
 				if (c == '=' || c == '\n' || c == '\r')
 					continue;
 
 				int8_t value = decodeTable[c];
 				if (value < 0)
-					continue; // skip anything not part of the alphabet (e.g. a data: URI prefix)
+					continue; // skip characters outside the alphabet
 
 				buffer = (buffer << 6) | (uint32_t)value;
 				bits += 6;

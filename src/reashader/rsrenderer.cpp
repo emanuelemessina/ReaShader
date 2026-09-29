@@ -18,12 +18,6 @@
 #define MAX_OBJECTS 100
 #define BYTES_PER_PIXEL 4 // REAPER 'RGBA' frames: 4 bytes per pixel
 
-#define GET_ASSET_DIR(asset_dirname) tools::paths::join({ ASSETS_DIR, asset_dirname })
-
-#define MESHES_DIR GET_ASSET_DIR("meshes")
-#define SHADERS_DIR GET_ASSET_DIR("shaders")
-#define IMAGES_DIR GET_ASSET_DIR("images")
-
 #include "vkt/vktcommandpool.h"
 #include "vkt/vktcommands.h"
 #include "vkt/vktpipeline.h"
@@ -36,6 +30,15 @@ namespace ReaShader
 	using ShaderPushConstants = vkt::Pipeline::Shader::PushConstants;
 	using ShaderUniformBuffer = vkt::Pipeline::Shader::UniformBuffer;
 	using ShaderSampledImage = vkt::Pipeline::Shader::SampledImage;
+
+	namespace
+	{
+		// <plugin dir>/assets/<subdir>/<file>, as a narrow path for the file-loading APIs
+		std::string assetPath(const char* subdir, const char* file)
+		{
+			return (tools::paths::assetsDir() / subdir / file).string();
+		}
+	} // namespace
 
 	ReaShaderRenderer::ReaShaderRenderer(ReaShaderPlugin* reaShaderPlugin)
 		: reaShaderPlugin(reaShaderPlugin)
@@ -60,7 +63,7 @@ namespace ReaShader
 		{
 			_initVulkanGuarded();
 		}
-		catch (STDEXC e)
+		catch (const std::exception& e)
 		{
 			exceptionOnInitialize = true;
 			LOG(e, toFile | toConsole | toBox, "ReaShaderRenderer", "Exception: ", "ReaShader crashed...");
@@ -85,7 +88,7 @@ namespace ReaShader
 		{
 			_cleanupVulkan();
 		}
-		catch (STDEXC e)
+		catch (const std::exception& e)
 		{
 			LOG(e, toFile | toConsole | toBox, "ReaShaderRenderer", "Exception: ", "ReaShader crashed...");
 		}
@@ -107,7 +110,7 @@ namespace ReaShader
 			transferFrame(outputBits);
 			return true;
 		}
-		catch (STDEXC e)
+		catch (const std::exception& e)
 		{
 			frameFailed = true;
 			LOG(e, toFile | toConsole, "ReaShaderRenderer", "Frame rendering failed, passing video through",
@@ -640,9 +643,9 @@ namespace ReaShader
 												  std::vector<VkDescriptorSetLayout> descriptorSetLayouts)
 	{
 		VkShaderModule vertShaderModule =
-			vkt::Pipeline::createShaderModule(vktDevice, tools::paths::join({ SHADERS_DIR, "vert.spv" }));
+			vkt::Pipeline::createShaderModule(vktDevice, assetPath("shaders", "vert.spv"));
 		VkShaderModule fragShaderModule =
-			vkt::Pipeline::createShaderModule(vktDevice, tools::paths::join({ SHADERS_DIR, "frag.spv" }));
+			vkt::Pipeline::createShaderModule(vktDevice, assetPath("shaders", "frag.spv"));
 
 		// ---------
 		
@@ -815,10 +818,10 @@ namespace ReaShader
 											  std::vector<VkDescriptorSetLayout> descriptorSetLayouts)
 	{
 		VkShaderModule vertShaderModule = vkt::Pipeline::createShaderModule(
-			vktDevice, tools::paths::join({ SHADERS_DIR, "pp_vert.spv" }));
+			vktDevice, assetPath("shaders", "pp_vert.spv"));
 		std::string compilationMessage;
 		VkShaderModule fragShaderModule = vkt::Pipeline::createShaderModule(
-			vktDevice, EShLangFragment, tools::paths::join({ SHADERS_DIR, "pp_frag.glsl" }), compilationMessage);
+			vktDevice, EShLangFragment, assetPath("shaders", "pp_frag.glsl"), compilationMessage);
 
 		// ---------
 
@@ -1207,7 +1210,7 @@ namespace ReaShader
 			// create texture from file
 
 			// replace with create image from bytes
-			texture->createImage(tools::paths::join({ IMAGES_DIR, "reashader-logo-hr.png" }), VK_ACCESS_SHADER_READ_BIT,
+			texture->createImage(assetPath("images", "reashader-logo-hr.png"), VK_ACCESS_SHADER_READ_BIT,
 								 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 			texture->createImageView(VK_IMAGE_VIEW_TYPE_2D, texture->getFormat(), VK_IMAGE_ASPECT_COLOR_BIT);
 			
@@ -1374,7 +1377,7 @@ namespace ReaShader
 
 		{
 			vkt::Rendering::Mesh* reashader = new vkt::Rendering::Mesh(vktDevice);
-			std::string path = tools::paths::join({ MESHES_DIR, "reashader.obj" });
+			std::string path = assetPath("meshes", "reashader.obj");
 			reashader->load_from_obj(path);
 			meshes.add(defaultIds::meshes::reashader, reashader);
 		}
@@ -1388,7 +1391,7 @@ namespace ReaShader
 
 		{
 			vkt::Images::AllocatedImage* texture = new vkt::Images::AllocatedImage(vktDevice);
-			texture->createImage(tools::paths::join({ IMAGES_DIR, "reashader-logo-hr.png" }), VK_ACCESS_SHADER_READ_BIT,
+			texture->createImage(assetPath("images", "reashader-logo-hr.png"), VK_ACCESS_SHADER_READ_BIT,
 								 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 			texture->createImageView(VK_IMAGE_VIEW_TYPE_2D, texture->getFormat(), VK_IMAGE_ASPECT_COLOR_BIT);
 			textures.add(defaultIds::textures::logo, texture);

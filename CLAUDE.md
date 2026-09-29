@@ -11,7 +11,7 @@ ReaShader is a **CLAP** video-effect plugin for REAPER. It taps REAPER's video f
 A multi-phase cleanup is underway. The plan lives at `~/.claude/plans/picking-up-on-this-snug-aurora.md`.
 - **Phases:** 1 deletions/hygiene → 2 build → 3 utilities → 4 params/state/protocol → 5 layering → 6 renderer rewrite (vkt → vk-bootstrap + plain structs) → 7 docs.
 - **How it runs:** before each batch of changes, give the user a brief rationale and wait for approval. The user commits between phases.
-- **Status:** phase 2 done (built, awaiting REAPER check + user commit). Next: phase 3 (utilities).
+- **Status:** phase 3 done (built, awaiting REAPER check + user commit). Next: phase 4 (params, state, protocol, frontend).
 
 ## Hard rules
 
@@ -31,7 +31,7 @@ There is no test suite or lint step. Verification is manual, in REAPER.
 - **CMake ≥ 3.25**: `CMakePresets.json` uses schema v6.
 - **Ninja**, and **clang** (`clang++`, GNU driver; not `clang-cl` or MSVC `cl`). The Windows presets pin `clang`/`clang++`, which must be on `PATH`.
 - **The Vulkan SDK:** found with `find_package(Vulkan)` through `VULKAN_SDK`, which its installer sets. `glslc`, glslang and SPIRV-Cross all come from the SDK. `CMakeLists.txt` picks the `d`-suffixed debug variants of the libraries for Debug builds.
-- **Submodules:** run `git submodule update --init --recursive`. `clap`, `cwalk` and `boxer` are plain vendored copies. Everything else in `external/` is a submodule, including `cmake-git-versioning`, and configure fails without it.
+- **Submodules:** run `git submodule update --init --recursive`. `clap` is a plain vendored copy. Everything else in `external/` is a submodule, including `cmake-git-versioning`, and configure fails without it.
 - **First configure needs network once:** `webview` fetches the WebView2 headers from NuGet if no system copy is found.
 
 **Building**
@@ -50,7 +50,7 @@ There is no test suite or lint step. Verification is manual, in REAPER.
   The runtime resolves `assets/` and `rsui/` relative to the plugin binary, so they must travel with it.
 - **IntelliSense:** it reads `build/windows-debug/compile_commands.json`, which is written at configure time. On a fresh clone, run the build task once.
 - **Warnings:** `-Wall -Wextra -Wpedantic -Wshadow -Wconversion` apply to our code, and a missing `return` is an error. Third-party headers are `SYSTEM` includes and third-party sources build with `-w`. The goal is zero warnings from our code.
-- Only Windows has been exercised. The macOS/Linux branches print `TODO` warnings for what's missing (the GUI, boxer's linking).
+- Only Windows has been exercised. The macOS/Linux branches print `TODO` warnings for what's missing (the GUI, untested boxer).
 
 **Manual testing:**
 1. Load "ReaShader" (CLAP) on a track that has a video item.
@@ -143,13 +143,19 @@ REAPER calls `processVideoFrame` → `processFrame` (`reashader_clap.cpp`):
 
 ### Logging
 
-- Use `LOG(...)` from `tools/logging.h`. Destinations are OR'd flags (`toConsole | toFile | toBox`).
-- The log file is `<plugin dir>/rs.log`, truncated on the first load per process.
+- Use `LOG(level, toConsole | toFile | toBox, sender, title, message)` from `tools/logging.h`.
+- The log file is `<plugin dir>/rs.log`. It is kept open, and truncated on the first write of each process.
+- **`toBox`:** message boxes are modal, so they are never shown on the calling thread.
+  - `LOG` queues the box and calls the host's `request_callback()`.
+  - `on_main_thread` then shows it (`showQueuedBoxes()`).
+  - Each plugin instance registers the requester in `plugin_init`.
+- **Paths:** use `tools::paths::pluginDir()`, `assetsDir()` and `rsuiDir()` (`std::filesystem::path`). Pass `.string()` to narrow file APIs (`fopen`, `ifstream`).
 
 ## Gotchas
 
 - **REAPER SDK:** `video_frame.h` needs `wdltypes.h` included first. `IVideoFrame::get_bits()` returns `char*`.
-- **C sources:** `.c` files (`cwalk.c`) need `LANGUAGES CXX C` in `project()`. Otherwise CMake silently skips them, and you get a link error later.
+- **C sources:** the project only enables `CXX`. Adding a `.c` file requires `C` in `project(LANGUAGES ...)`, otherwise CMake silently skips it and you get a link error later.
+- **Vulkan flags:** combine stage and usage bits into the `...Flags` type (e.g. `VkShaderStageFlags`), never the `...FlagBits` enum.
 - **Windows headers:**
   - `<shellapi.h>` goes after `<windows.h>`.
   - No `NOMINMAX` is defined, so `std::max`/`std::min` break in files that include `<windows.h>`.

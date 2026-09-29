@@ -20,7 +20,8 @@
 #include "video_frame.h"
 
 #include "plugin_state.h"
-#include "rsrenderer.h" // full ReaShaderRenderer type -- reashaderplugin.h only forward-declares it
+#include "rsrenderer.h"
+#include "tools/logging.h"
 
 namespace ReaShader
 {
@@ -84,6 +85,11 @@ namespace ReaShader
 		bool plugin_init(const clap_plugin_t* plugin)
 		{
 			auto* state = static_cast<ClapPluginState*>(plugin->plugin_data);
+
+			// message boxes are shown from on_main_thread (see logging.h)
+			const clap_host_t* host = state->host;
+			registerBoxRequester(state, [host]() { host->request_callback(host); });
+
 			state->plugin = std::make_unique<ReaShaderPlugin>();
 			state->plugin->initialize();
 			return true;
@@ -91,6 +97,7 @@ namespace ReaShader
 
 		void plugin_destroy(const clap_plugin_t* plugin)
 		{
+			unregisterBoxRequester(plugin->plugin_data);
 			delete static_cast<ClapPluginState*>(plugin->plugin_data);
 			delete plugin;
 		}
@@ -191,7 +198,10 @@ namespace ReaShader
 			return CLAP_PROCESS_CONTINUE;
 		}
 
-		void plugin_on_main_thread(const clap_plugin_t*) {}
+		void plugin_on_main_thread(const clap_plugin_t*)
+		{
+			showQueuedBoxes();
+		}
 
 		// -------- clap.audio-ports (one stereo in/out, so REAPER treats this as a normal FX) --------
 

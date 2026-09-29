@@ -78,13 +78,11 @@ namespace vkt
 
 			int texWidth, texHeight, texChannels;
 
-			const char* file = tools::strings::cp_to_cptr(filePath);
-
-			stbi_uc* pixels = stbi_load(file, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+			stbi_uc* pixels = stbi_load(filePath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 
 			if (!pixels)
 			{
-				std::cout << "Failed to load texture file " << file << std::endl;
+				std::cout << "Failed to load texture file " << filePath << std::endl;
 				return false;
 			}
 

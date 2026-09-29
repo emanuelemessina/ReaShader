@@ -246,7 +246,7 @@ namespace ReaShader
 	{
 		std::lock_guard<std::mutex> lock(rsParamsMutex);
 		Parameters::Preset::write(stream, rsParams, [](std::string&& msg) {
-			LOG(WARNING, toConsole | toFile | toBox, "ReaShaderPlugin", "State save error", std::move(msg));
+			LOG(WARNING, toConsole | toFile | toBox, "ReaShaderPlugin", "State save error", msg);
 		});
 	}
 
@@ -254,7 +254,7 @@ namespace ReaShader
 	{
 		std::lock_guard<std::mutex> lock(rsParamsMutex);
 		Parameters::Preset::read(stream, rsParams, [](std::string&& msg) {
-			LOG(WARNING, toConsole | toFile | toBox, "ReaShaderPlugin", "State load error", std::move(msg));
+			LOG(WARNING, toConsole | toFile | toBox, "ReaShaderPlugin", "State load error", msg);
 		});
 	}
 
@@ -449,10 +449,10 @@ namespace ReaShader
 
 		reaShaderRenderer->changeCustomShader(
 			std::move(data),
-			[](std::string&& msg) { LOG(INFO, toConsole | toFile, "ReaShaderPlugin", "Shader upload", std::move(msg)); },
+			[](std::string&& msg) { LOG(INFO, toConsole | toFile, "ReaShaderPlugin", "Shader upload", msg); },
 			[](std::string&& msg) {
-				LOG(WARNING, toConsole | toFile | toBox, "ReaShaderPlugin", "Shader upload failed", std::move(msg));
+				LOG(WARNING, toConsole | toFile | toBox, "ReaShaderPlugin", "Shader upload failed", msg);
 			},
-			[]() { LOG(INFO, toConsole | toFile, "ReaShaderPlugin", "Shader upload", std::string("Finished.")); });
+			[]() { LOG(INFO, toConsole | toFile, "ReaShaderPlugin", "Shader upload", "Finished."); });
 	}
 } // namespace ReaShader

@@ -16,8 +16,6 @@
 
 #include <stb_image.h>
 
-#include "tools/strings.h"
-
 namespace  vkt {
 
 	namespace Images

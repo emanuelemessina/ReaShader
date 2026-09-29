@@ -17,5 +17,6 @@
         "external/WDL",
         "external/reaper-sdk",
         "external/webview",
+        "external/boxer",
     ],
 }
