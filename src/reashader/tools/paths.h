@@ -8,31 +8,24 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <filesystem>
 
-// CLAP plugins are a single flat file (no VST3-style bundle folder) -- resources are staged
-// directly next to the built .clap by CMakeLists.txt's POST_BUILD step, not under a "Resources"
-// subfolder one level up like the old VST3 layout assumed.
-#define REASHADER_PLUGIN_DIR tools::paths::getDynamicLibraryDir()
+// Resources are deployed next to the plugin binary:
+// <plugin dir>/ReaShader.clap
+// <plugin dir>/assets/...
+// <plugin dir>/rsui/...
 
-#define GET_RESOURCE_DIR(resource_dirname) tools::paths::join({REASHADER_PLUGIN_DIR, resource_dirname})
+namespace tools::paths
+{
+	const std::filesystem::path& pluginDir();
 
-#define ASSETS_DIR GET_RESOURCE_DIR("assets")
-#define RSUI_DIR GET_RESOURCE_DIR("rsui")
-
-namespace tools {
-
-	namespace paths {
-
-		std::string getExecutablePath();
-		std::string getExecutableDir();
-		bool fileExists(const std::string& filePath);
-		std::string getDynamicLibraryPath();
-		std::string getDynamicLibraryDir();
-		std::string join(const std::vector<std::string>& paths);
-		std::string goUp(const std::string& path, const int levels);
-
+	inline std::filesystem::path assetsDir()
+	{
+		return pluginDir() / "assets";
 	}
 
-}
+	inline std::filesystem::path rsuiDir()
+	{
+		return pluginDir() / "rsui";
+	}
+} // namespace tools::paths
