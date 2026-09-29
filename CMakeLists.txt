@@ -34,59 +34,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Stage directories
 set(PLUGIN_STAGE_DIR "${CMAKE_BINARY_DIR}")
-set(SHADERS_STAGE_DIR "${PLUGIN_STAGE_DIR}/assets/shaders")
 
 #################################
 # Libraries
 #################################
 
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(LIB_SUFFIX "d")
-else()
-    set(LIB_SUFFIX "")
-endif()
-
 # Vulkan:
 # - require Vulkan SDK
-# - find libraries (glslang, spirv-cross)
+# - shaderc (runtime GLSL -> SPIR-V) ships with it
 
-find_package(Vulkan REQUIRED COMPONENTS glslc)
-cmake_path(GET Vulkan_LIBRARY PARENT_PATH VK_LIB_DIR)
-
-set(GLSLANG_LIB_NAMES 
-    glslang 
-    OSDependent 
-    MachineIndependent 
-    GenericCodeGen
-    glslang-default-resource-limits 
-    SPIRV-Tools-opt 
-    SPIRV-Tools
-)
-set(SPVC_LIB_NAMES 
-    spirv-cross-core 
-    spirv-cross-glsl
-)
-
-set(VULKAN_SDK_LIBS "")
-set(VULKAN_SDK_LIBS_MISSING "")
-
-foreach(_lib_name ${GLSLANG_LIB_NAMES} ${SPVC_LIB_NAMES})
-    find_library(LIB_${_lib_name} 
-        NAMES "${_lib_name}${LIB_SUFFIX}" ${_lib_name}
-        HINTS "${VK_LIB_DIR}" 
-        NO_DEFAULT_PATH
-    )
-    if(LIB_${_lib_name})
-        list(APPEND VULKAN_SDK_LIBS ${LIB_${_lib_name}})
-    else()
-        list(APPEND VULKAN_SDK_LIBS_MISSING ${_lib_name})
-    endif()
-endforeach()
-
-if(VULKAN_SDK_LIBS_MISSING)
-    message(FATAL_ERROR "glslang/SPIRV-Cross libraries not found in ${VK_LIB_DIR} "
-                        "(missing: ${VULKAN_SDK_LIBS_MISSING}). Install/update the Vulkan SDK.")
-endif()
+find_package(Vulkan REQUIRED COMPONENTS shaderc_combined)
 
 # WebView
 
@@ -118,45 +75,6 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 )
 
 #################################
-# Shaders
-#################################
-
-set(RS_SHADERS 
-    vert.glsl:vertex 
-    frag.glsl:fragment 
-    pp_vert.glsl:vertex 
-    pp_frag.glsl:fragment
-)
-
-set(RS_SHADER_SOURCES "")
-set(RS_COMPILED_SHADERS "")
-
-foreach(_shader ${RS_SHADERS})
-    string(REPLACE ":" ";" _shader "${_shader}")
-    list(GET _shader 0 _file)
-    list(GET _shader 1 _stage)
-    cmake_path(GET _file STEM _name)
-
-    set(_src "${CMAKE_SOURCE_DIR}/src/shaders/${_file}")
-    set(_out "${SHADERS_STAGE_DIR}/${_name}.spv")
-
-    add_custom_command(
-        OUTPUT ${_out}
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADERS_STAGE_DIR}"
-        COMMAND Vulkan::glslc -fshader-stage=${_stage} ${_src} -o ${_out}
-        DEPENDS ${_src}
-        COMMENT "Compiling shader ${_file}"
-        VERBATIM
-    )
-    list(APPEND RS_SHADER_SOURCES ${_src})
-    list(APPEND RS_COMPILED_SHADERS ${_out})
-endforeach()
-
-add_custom_target(rs_shaders DEPENDS ${RS_COMPILED_SHADERS})
-
-add_dependencies(${PROJECT_NAME} rs_shaders)
-
-#################################
 # Sources
 #################################
 
@@ -168,19 +86,24 @@ target_sources(${PROJECT_NAME} PRIVATE
     src/plugin/params.cpp
 
     src/render/renderer.cpp
-    src/render/vkt/vktbuffers.cpp
-    src/render/vkt/vktcommandpool.cpp
-    src/render/vkt/vktcommon.cpp
-    src/render/vkt/vktdescriptors.cpp
-    src/render/vkt/vktdevices.cpp
-    src/render/vkt/vktimages.cpp
-    src/render/vkt/vktmesh.cpp
-    src/render/vkt/vktqueue.cpp
-    src/render/vkt/vktrenderpass.cpp
+    src/render/context.cpp
+    src/render/frame_targets.cpp
+    src/render/shader_pass.cpp
+    src/render/gpu.cpp
 
     src/util/logging.cpp
     src/util/paths.cpp
 )
+
+# External sources (warnings disabled)
+
+set(EXTERNAL_SOURCES
+    external/vk-bootstrap/src/VkBootstrap.cpp
+    external/SPIRV-Reflect/spirv_reflect.cpp
+)
+
+target_sources(${PROJECT_NAME} PRIVATE ${EXTERNAL_SOURCES})
+set_source_files_properties(${EXTERNAL_SOURCES} PROPERTIES COMPILE_OPTIONS "-w")
 
 # Platform-specific sources
 
@@ -218,7 +141,8 @@ target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE
     external/VulkanMemoryAllocator/include
     external/tinyobjloader
     external/stb
-    "${Vulkan_INCLUDE_DIR}/spirv_cross"
+    external/vk-bootstrap/src
+    external/SPIRV-Reflect
 )
 
 #################################
@@ -229,6 +153,8 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(${PROJECT_NAME} PRIVATE
         -Wall -Wextra -Wpedantic -Wshadow -Wconversion
         -Werror=return-type
+        # Vulkan structs are set up as `VkXxxInfo info{ VK_STRUCTURE_TYPE_XXX }`: the rest is zeroed on purpose
+        -Wno-missing-field-initializers
     )
 endif()
 
@@ -238,7 +164,7 @@ endif()
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     Vulkan::Vulkan
-    ${VULKAN_SDK_LIBS}
+    Vulkan::shaderc_combined
     Boxer
 )
 
@@ -261,7 +187,7 @@ endif()
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/res/images" "${PLUGIN_STAGE_DIR}/assets/images"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/res/meshes" "${PLUGIN_STAGE_DIR}/assets/meshes"
-    COMMAND ${CMAKE_COMMAND} -E copy ${RS_SHADER_SOURCES} "${SHADERS_STAGE_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src/shaders" "${PLUGIN_STAGE_DIR}/assets/shaders"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src/ui" "${PLUGIN_STAGE_DIR}/rsui"
     COMMAND ${CMAKE_COMMAND} -E rm -rf "${PLUGIN_STAGE_DIR}/rsui/styles"
     COMMENT "Staging ReaShader resources next to the built plugin"
