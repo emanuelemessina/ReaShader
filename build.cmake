@@ -62,6 +62,7 @@ endif()
 #################################
 
 # Resolve user CLAP directory
+
 if(CMAKE_HOST_WIN32)
     set(CLAP_USER_DIR "$ENV{LOCALAPPDATA}/Programs/Common/CLAP")
 elseif(CMAKE_HOST_APPLE)
@@ -84,11 +85,13 @@ if(NOT COPY_RESULT EQUAL 0)
     return()
 endif()
 
-# Resources
+# Resources:
+# - replaced folder by folder
+# - resources/shaders/compiled (uploaded shaders) is kept
 
-foreach(RESOURCE_DIR assets rsui)
+foreach(RESOURCE_DIR resources/images resources/meshes resources/shaders/examples ui)
     file(REMOVE_RECURSE "${CLAP_USER_DIR}/${RESOURCE_DIR}")
-    file(COPY "${BUILD_PRESET_DIR}/${RESOURCE_DIR}" DESTINATION "${CLAP_USER_DIR}")
+    file(COPY "${BUILD_PRESET_DIR}/${RESOURCE_DIR}/" DESTINATION "${CLAP_USER_DIR}/${RESOURCE_DIR}")
 endforeach()
 
 message(STATUS "Deployed ReaShader.clap + resources")

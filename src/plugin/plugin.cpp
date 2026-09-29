@@ -9,6 +9,7 @@
 #include "plugin/plugin.h"
 
 #include "render/renderer.h"
+#include "render/shader_compiler.h"
 #include "util/logging.h"
 #include "util/paths.h"
 
@@ -33,23 +34,20 @@ namespace ReaShader
 
 	namespace
 	{
-		// the effects shipped with the plugin
-		const std::filesystem::path& effectsDir()
+		// compiled shaders: <name>.json, written on upload
+		std::filesystem::path compiledShaderPath(const std::string& name)
 		{
-			static const std::filesystem::path dir = util::paths::assetsDir() / "shaders" / "effects";
-			return dir;
+			return util::paths::compiledShadersDir() / (name + ".json");
 		}
 
-		constexpr const char* kDefaultShader = "default.frag";
-
-		std::vector<std::string> builtinShaders()
+		std::vector<std::string> compiledShaders()
 		{
 			std::vector<std::string> names;
 			std::error_code error;
-			for (const auto& entry : std::filesystem::directory_iterator(effectsDir(), error))
+			for (const auto& entry : std::filesystem::directory_iterator(util::paths::compiledShadersDir(), error))
 			{
-				if (entry.path().extension() == ".frag")
-					names.push_back(entry.path().filename().string());
+				if (entry.path().extension() == ".json")
+					names.push_back(entry.path().stem().string());
 			}
 			std::sort(names.begin(), names.end());
 			return names;
@@ -57,10 +55,19 @@ namespace ReaShader
 
 		std::string readFile(const std::filesystem::path& path)
 		{
-			std::ifstream file(path);
+			std::ifstream file(path, std::ios::binary);
 			std::stringstream content;
 			content << file.rdbuf();
 			return content.str();
+		}
+
+		void writeFile(const std::filesystem::path& path, const std::string& content)
+		{
+			std::filesystem::create_directories(path.parent_path());
+			std::ofstream file(path, std::ios::binary);
+			file << content;
+			if (!file)
+				throw std::runtime_error("Can't write " + path.string());
 		}
 	} // namespace
 
@@ -71,11 +78,7 @@ namespace ReaShader
 	{
 		host = clapHost;
 
-		// the default effect is current until the user picks another one; it's compiled by the
-		// renderer's first init()
-		shaderName = kDefaultShader;
-		shaderSource = readFile(effectsDir() / kDefaultShader);
-
+		// no shader until the user picks one: video passes through
 		// Vulkan isn't touched until activate()
 		reaShaderRenderer = std::make_unique<ReaShaderRenderer>(this);
 	}
@@ -236,17 +239,19 @@ namespace ReaShader
 	// -------- clap.state --------
 	//
 	// One JSON document:
-	// { "version": 1, "params": { "<name>": value }, "device": n, "shader": { "name": "", "source": "" } }
+	// { "version": 2, "params": { "<name>": value }, "device": n, "shader": { "name": "", "compiled": {...} } }
+	// The compiled shader is embedded, so a project doesn't depend on the plugin's shader folder.
 
 	bool ReaShaderPlugin::saveState(const clap_ostream_t* stream)
 	{
 		json state;
 		{
 			std::lock_guard lock(stateMutex);
-			state = { { "version", 1 },
+			json compiled = shaderData.empty() ? json() : json::parse(shaderData, nullptr, false);
+			state = { { "version", 2 },
 					  { "params", params.valuesToJson() },
 					  { "device", renderingDevice },
-					  { "shader", { { "name", shaderName }, { "source", shaderSource } } } };
+					  { "shader", { { "name", shaderName }, { "compiled", compiled } } } };
 		}
 
 		std::string data = state.dump();
@@ -273,7 +278,7 @@ namespace ReaShader
 			data.append(buffer, (size_t)n);
 
 		json state = json::parse(data, nullptr, /* allow_exceptions */ false);
-		if (!state.is_object() || state.value("version", 0) != 1)
+		if (!state.is_object() || state.value("version", 0) != 2)
 		{
 			// unknown or pre-JSON state: keep the defaults
 			LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "State load", "Unrecognized state, using defaults");
@@ -295,14 +300,17 @@ namespace ReaShader
 				if (value.is_number())
 					savedShaderValues[name] = value.get<double>();
 			}
-			const json shader = state.value("shader", json::object());
-			shaderName = shader.value("name", "");
-			shaderSource = shader.value("source", "");
 		}
 
 		if (deviceChanged)
 			reaShaderRenderer->changeRenderingDevice(device); // no-op when not active
-		_applyShader();
+
+		const json shader = state.value("shader", json::object());
+		const json compiled = shader.value("compiled", json());
+		if (compiled.is_object())
+			_useShader(shader.value("name", ""), compiled.dump());
+		else
+			_clearShader();
 		_webuiSendSnapshot();
 		return true;
 	}
@@ -410,52 +418,87 @@ namespace ReaShader
 		_webuiSendSnapshot();
 	}
 
-	// compiles the saved shader: installed now if active, else on the next activate()
-	void ReaShaderPlugin::_applyShader()
+	// -------- shaders --------
+	//
+	// A shader is compiled once, when uploaded, and stored in the compiled shaders folder as <name>.json.
+	// Selecting one loads the stored form; the current one is also embedded in the project state.
+
+	// compiles GLSL, stores it, then uses it
+	void ReaShaderPlugin::_uploadShader(const std::string& fileName, const std::string& source)
 	{
-		std::string name, source;
+		std::string name = std::filesystem::path(fileName).stem().string();
+		if (name.empty())
+			name = "shader";
+
+		std::string data;
+		try
 		{
-			std::lock_guard lock(stateMutex);
-			name = shaderName;
-			source = shaderSource;
+			data = gpu::toJson(gpu::compileShader(source, fileName)).dump();
+			writeFile(compiledShaderPath(name), data);
 		}
-		_loadShader(name, source);
+		catch (const std::exception& e)
+		{
+			LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "Shader upload failed", e.what());
+			_webuiSendShaderStatus(e.what(), "error");
+			return;
+		}
+		_useShader(name, data);
 	}
 
-	// compiles a shader and, if it compiles, makes it the current one (else the current one stays)
-	void ReaShaderPlugin::_loadShader(const std::string& name, const std::string& source)
+	// makes a compiled shader (its stored JSON) the current one; on error the current one stays
+	void ReaShaderPlugin::_useShader(const std::string& name, const std::string& data)
 	{
-		reaShaderRenderer->changeShader(
-			source, name, [this](const std::string& status) { _webuiSendShaderStatus(status, false); },
-			[this](const std::string& error) {
-				LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "Shader compilation failed", error);
-				_webuiSendShaderStatus(error, true);
-			},
-			[this, name, source]() {
-				{
-					std::lock_guard lock(stateMutex);
-					shaderName = name;
-					shaderSource = source;
-				}
-				_webuiSendShaderStatus("Loaded " + name, false);
-				_webuiSendSnapshot();
-			});
+		std::string error;
+		try
+		{
+			error = reaShaderRenderer->setShader(gpu::fromJson(json::parse(data)));
+		}
+		catch (const std::exception& e)
+		{
+			error = std::string("Invalid compiled shader: ") + e.what();
+		}
+
+		if (!error.empty())
+		{
+			LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "Shader load failed", error);
+			_webuiSendShaderStatus(error, "error");
+			return;
+		}
+
+		{
+			std::lock_guard lock(stateMutex);
+			shaderName = name;
+			shaderData = data;
+		}
+		_webuiSendShaderStatus("Loaded " + name, "ok");
+		_webuiSendSnapshot();
+	}
+
+	// no shader: video passes through
+	void ReaShaderPlugin::_clearShader()
+	{
+		reaShaderRenderer->clearShader();
+		{
+			std::lock_guard lock(stateMutex);
+			shaderName.clear();
+			shaderData.clear();
+		}
+		_webuiSendSnapshot();
 	}
 
 	// -------- web UI --------
 	//
 	// Messages to the UI:
-	// - snapshot    { track, params, devices, shader, shaders, shadersDir }: everything, the UI rebuilds itself from it
+	// - snapshot    { track, params, devices, shader, shaders }: everything, the UI rebuilds itself from it
 	// - paramValue  { id, value }: a host automation change
-	// - shaderStatus{ status, error }
+	// - shaderStatus{ status, state }: state is "busy", "ok" or "error"
 	//
 	// Messages from the UI:
 	// - ready       {}: the page loaded, send a snapshot
-	// - refresh     {}: send a snapshot (rescans the built-in effects)
 	// - paramValue  { id, value }
 	// - renderingDevice { index }
-	// - shaderSelect{ name }: one of the built-in effects
-	// - shaderUpload{ name, source }
+	// - shaderSelect{ name }: a compiled shader, "" = none
+	// - shaderUpload{ name, source }: GLSL to compile and store
 
 	void ReaShaderPlugin::setWebUISender(WebUISender sender)
 	{
@@ -493,16 +536,14 @@ namespace ReaShader
 					{ "shader", { { "name", shaderName } } } };
 		}
 		msg["params"] = params.toJson();
-		msg["shaders"] = builtinShaders();
-		std::u8string shadersDir = effectsDir().u8string();
-		msg["shadersDir"] = std::string(shadersDir.begin(), shadersDir.end());
+		msg["shaders"] = compiledShaders();
 
 		_webuiSend(msg);
 	}
 
-	void ReaShaderPlugin::_webuiSendShaderStatus(const std::string& status, bool error)
+	void ReaShaderPlugin::_webuiSendShaderStatus(const std::string& status, const char* state)
 	{
-		_webuiSend({ { "type", "shaderStatus" }, { "status", status }, { "error", error } });
+		_webuiSend({ { "type", "shaderStatus" }, { "status", status }, { "state", state } });
 	}
 
 	void ReaShaderPlugin::handleWebUIMessage(const std::string& text)
@@ -510,7 +551,7 @@ namespace ReaShader
 		json msg = json::parse(text, nullptr, /* allow_exceptions */ false);
 		const std::string type = msg.is_object() ? msg.value("type", "") : "";
 
-		if (type == "ready" || type == "refresh")
+		if (type == "ready")
 		{
 			_webuiSendSnapshot();
 		}
@@ -539,15 +580,21 @@ namespace ReaShader
 		else if (type == "shaderSelect")
 		{
 			std::string name = std::filesystem::path(msg.value("name", "")).filename().string(); // no paths from the UI
-			std::string source = readFile(effectsDir() / name);
-			if (source.empty())
-				_webuiSendShaderStatus("Can't read " + name, true);
+			if (name.empty())
+			{
+				_clearShader();
+				_webuiSendShaderStatus("No shader: video passes through", "ok");
+				return;
+			}
+			std::string data = readFile(compiledShaderPath(name));
+			if (data.empty())
+				_webuiSendShaderStatus("Can't read the compiled shader " + name, "error");
 			else
-				_loadShader(name, source);
+				_useShader(name, data);
 		}
 		else if (type == "shaderUpload")
 		{
-			_loadShader(msg.value("name", ""), msg.value("source", ""));
+			_uploadShader(msg.value("name", ""), msg.value("source", ""));
 		}
 		else
 		{

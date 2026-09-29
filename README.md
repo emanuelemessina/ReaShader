@@ -7,76 +7,99 @@ Reaper is a great and versatile DAW, capable of handling not just audio but also
 While it has its own video processing capabilities, currently (2024) the features are limited and the effects must be written by hand as custom scripts accessing an internal API.
 \
 \
-Thus, Reashader is my own experiment in trying to make a plugin that acts as a video processor for Reaper.
+Thus, ReaShader is my own experiment in trying to make a plugin that acts as a video processor for Reaper.
 \
 You install it the same way you would install any audio plugin, and it will process video frames instead of audio samples.
 \
 \
-It's a work in progress, proofs of concept are available in [Releases](https://github.com/emanuelemessina/ReaShader/releases).
-\
-Currently i've created a web based UI (instead of the default VSTGUI, given the complexity of the interface), and i use Vulkan to process the frames.
-\
-\
 Please cite me if you benefit from this project, as it required a lot of blood, sweat and tears, thank you 🙏.
 
-## Plugin format: migrating from VST3 to CLAP
+## What it does
 
-ReaShader is in the middle of moving from VST3 to [CLAP](https://cleveraudio.org/) — a lighter, C-ABI, header-only plugin format. REAPER's video-processing tap works just as well from CLAP as it did from VST3, and dropping the VST3 SDK removes most of the build-system pain (bundle folder structure, validator, processor/controller split, IDE-specific build hacks) while keeping the door open for future changes (e.g. embedding the UI in REAPER's FX window, a possible Rust rewrite).
+- A [CLAP](https://cleveraudio.org/) plugin for REAPER that runs the track's video through a GLSL fragment shader on the GPU, with Vulkan.
+- The plugin window is a web UI embedded in REAPER's FX window. From it you:
+  - pick a shader;
+  - upload new ones;
+  - move the shader's sliders;
+  - choose the GPU.
+- Every shader slider is also a host parameter, so it can be automated in REAPER.
+- With no shader selected, the video passes through unchanged.
 
-The build system, parameter/UI code, and the Vulkan renderer have all been ported off VST3 types and wired into the CLAP shell — real video processing (a custom fragment shader + 3D scene + post-process pass, confirmed working in REAPER against real video content). See [CLAUDE.md](CLAUDE.md) for the up-to-date architecture and migration status.
+It's a work in progress. Only Windows is supported for now; macOS/Linux builds are planned (the code has `TODO`s where platform work is missing).
 
-## Dependencies
+## Using it
 
-### CMake and Ninja
+1. Build it (below) or grab a release, and make sure the plugin folder ends up in your CLAP folder:
+   - Windows: `%LOCALAPPDATA%\Programs\Common\CLAP`
+   - macOS: `~/Library/Audio/Plug-Ins/CLAP`
+   - Linux: `~/.clap`
+2. In REAPER, add "ReaShader" (CLAP) to a track with a video item. If it's not listed, rescan: Preferences → Plug-ins → CLAP → Re-scan.
+3. Open REAPER's video window (View → Video).
+4. In the plugin window, **Upload** a shader: try the examples in `resources/shaders/examples` inside the plugin folder. An uploaded shader is compiled once and added to the shader list.
 
-Install [CMake](https://cmake.org/) (3.21+) and [Ninja](https://ninja-build.org/). On Windows, build from a Developer Command Prompt (or let VS Code's CMake Tools extension pick an MSVC kit for you) so `cl.exe` is available to Ninja.
+Writing your own shader is simple: see [the examples' README](src/shaders/examples/README.md).
 
-### CMake modules
-
-- [cmake-git-versioning](https://github.com/emanuelemessina/cmake-git-versioning): vendored as a git submodule — initialize submodules (see below), CMake hard-fails at configure time if it's missing rather than fetching it automatically.
-
-### Submodules
-
-This repo uses git submodules for most vendored dependencies. After cloning:
+The plugin folder contains:
 
 ```
-git submodule update --init --recursive
+ReaShader.clap
+ui/                          the plugin window (HTML/JS/CSS)
+resources/
+  images/, meshes/
+  shaders/examples/          example shader sources, to upload and learn from
+  shaders/compiled/          shaders compiled on upload (the shader list)
+rs.log                       the plugin's log
 ```
 
-(or clone with `git clone --recurse-submodules` in the first place)
+## Building
 
-### CLAP
+### Prerequisites
 
-Already vendored under `external/clap` (plain headers, MIT-licensed) — nothing to install.
+- [CMake](https://cmake.org/) 3.25+ and [Ninja](https://ninja-build.org/)
+- [clang](https://releases.llvm.org/) (`clang++`) on `PATH`
+- The [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/). Its installer sets `VULKAN_SDK`, which is how the build finds it; glslc and shaderc come with it.
+- [Dart Sass](https://sass-lang.com/install/) (`sass`) on `PATH`, e.g. `choco install sass`, `npm install -g sass` or `brew install sass/sass/sass`
+- The submodules, which hold every other dependency:
 
-### Vulkan / graphics libraries
+  ```
+  git submodule update --init --recursive
+  ```
 
-The Vulkan SDK is required to build the plugin — the renderer (`vkt/`/`rsrenderer.cpp`) is wired into the build.
+  (or clone with `git clone --recurse-submodules`)
 
-GLM, Tiny Obj Loader, STB, and Vulkan Memory Allocator are all header-only and vendored as git submodules (see above) — nothing to download or build by hand.
+- The first configure downloads the WebView2 headers from NuGet once, if no system copy is found.
 
-glslang and SPIRV-Cross are **not** vendored: install the [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/) (preferably in the default location) and CMake finds their headers/prebuilt static libraries directly inside the SDK install — no separate download, placement, or build step needed for either. If a given SDK's bundled version ever proves incompatible (this has happened in the past with older SDK releases), `RS_SPVC_PATH`/the glslang `find_library` hints in `CMakeLists.txt` can be overridden to point at a manually built checkout of [glslang](https://github.com/KhronosGroup/glslang) or [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) instead.
+### Tasks (VS Code)
 
-## Tasks
+- **build+deploy** (default build task, Ctrl+Shift+B): configures (the first time), builds, and deploys the plugin folder to your CLAP folder. If REAPER has the plugin loaded, the deploy is skipped with a warning: close REAPER and build again.
+- **clean**: wipes the build directory, for a fresh configure.
 
-- **build**: builds the plugin and automatically deploys it to the user's plugin folder
-  - Win: `%LOCALAPPDATA%\Programs\Common\CLAP`
-  - Mac: `~/Library/Audio/Plug-Ins/CLAP`
-  - Linux: `~/.clap`
+From a terminal:
 
-- **clean**: clean build products for a fresh reconfigure
+```
+cmake -DPROFILE=debug -P build.cmake
+```
 
-## Run
+or build without deploying:
 
-### Windows
+```
+cmake --preset windows-debug
+cmake --build --preset windows-debug
+```
 
-- Make sure to have all the **VC Redist** updated to the latest version. It can be downloaded from Microsoft website.
+## Project layout
 
-- If REAPER doesn't list the plugin, make sure it has rescanned for CLAP plugins (Preferences → Plug-ins → Clear cache/re-scan).
-
-## Development
-
-See [Development](doc/Development.md).
+```
+src/clap/        CLAP entry point, plugin window (Win32), embedded webview host
+src/plugin/      the plugin: parameters, state, UI messages, REAPER video tap
+src/render/      the Vulkan renderer and the shader compiler
+src/ui/          the web UI (index.html, scripts/, styles/)
+src/shaders/     example shaders, internal shaders, the logo scene's shaders
+src/util/        logging, paths, fault handling
+tests/shaders/   shaders for manual testing
+external/        dependencies (git submodules)
+doc/history.md   how the project got here (VST3 → CLAP, design decisions)
+```
 
 ## Credits
 
@@ -88,24 +111,22 @@ See [Development](doc/Development.md).
 
 #### Open source libraries
 
-- [WDL](https://github.com/justinfrankel/WDL)
+- [CLAP](https://github.com/free-audio/clap) _by the CLever Audio Plug-in project_
+- [Vulkan SDK](https://vulkan.lunarg.com/) _by Khronos Group_
+- [Reaper SDK](https://github.com/justinfrankel/reaper-sdk) _by Cockos_
+- [webview](https://github.com/webview/webview)
+- [vk-bootstrap](https://github.com/charles-lunarg/vk-bootstrap)
+- [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
+- [shaderc](https://github.com/google/shaderc) (from the Vulkan SDK)
+- [SPIRV-Reflect](https://github.com/KhronosGroup/SPIRV-Reflect)
 - [GLM](https://github.com/g-truc/glm)
 - [Tiny Obj Loader](https://github.com/tinyobjloader/tinyobjloader)
 - [STB](https://github.com/nothings/stb)
-- [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
-- [RESTinio](https://github.com/Stiffstream/restinio)
-- [cwalk](https://github.com/likle/cwalk)
 - [nlohmann-json](https://github.com/nlohmann/json)
-- [boxer](https://github.com/aaronmjacobs/Boxer)
-- [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross)
-- [glslang](https://github.com/KhronosGroup/glslang)
-- [iMurmurHash](https://github.com/jensyt/imurmurhash-js)
-
-#### Third Party
-
-- [CLAP](https://cleveraudio.org/) _by the CLever Audio Plug-in project_
-- [Vulkan](https://vulkan.lunarg.com/) _by Khronos Group_
-- [Reaper SDK](https://github.com/justinfrankel/reaper-sdk) _by Cockos_
+- [Boxer](https://github.com/aaronmjacobs/Boxer)
+- [WDL](https://github.com/justinfrankel/WDL)
+- [cmake-git-versioning](https://github.com/emanuelemessina/cmake-git-versioning)
+- [Dart Sass](https://sass-lang.com/dart-sass/) (build tool)
 
 #### Thanks to
 

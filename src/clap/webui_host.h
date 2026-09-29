@@ -16,7 +16,7 @@ namespace ReaShader
 {
 	class ReaShaderPlugin;
 
-	// The embedded web UI: a webview (WebView2 on Windows) showing rsui.html inside the FX window,
+	// The embedded web UI: a webview (WebView2 on Windows) showing ui/index.html inside the FX window,
 	// bridged to ReaShaderPlugin through JSON messages.
 	//
 	// The webview and its message loop live on a background thread owned by this class, because

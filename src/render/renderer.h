@@ -38,19 +38,18 @@ namespace ReaShader
 		explicit ReaShaderRenderer(ReaShaderPlugin* plugin);
 		~ReaShaderRenderer();
 
-		// Vulkan instance + the plugin's rendering device + the current shader (the default one if none).
+		// Vulkan instance + the plugin's rendering device + the current shader, if any.
 		// No-op when already up; after a failure it starts over.
 		void init();
 		void shutdown();
 
 		void changeRenderingDevice(int index);
 
-		// Compiles `source` (GLSL, see the shader contract in shader_pass.cpp; empty = the default shader).
-		// On success it becomes the current shader, installed now or on the next init(), and the plugin's
-		// shader params are replaced.
-		using StatusCallback = std::function<void(const std::string&)>;
-		void changeShader(const std::string& source, const std::string& name, StatusCallback onStatus,
-						  StatusCallback onError, std::function<void()> onSuccess);
+		// Makes `shader` the current one (installed now, or by the next init()) and replaces the plugin's
+		// shader params. Returns an error message, empty on success; on error the previous shader stays.
+		std::string setShader(const gpu::CompiledShader& shader);
+		// no shader: frames pass through unchanged
+		void clearShader();
 
 		struct FrameInputs
 		{
@@ -59,7 +58,7 @@ namespace ReaShader
 			const double* paramValues; // all the plugin's params, by id
 			size_t paramCount;
 		};
-		// false: nothing rendered (inactive, busy or failed), the caller passes the input through
+		// false: nothing rendered (inactive, busy, failed or no shader), the caller passes the input through
 		bool renderFrame(const FrameView& input, const FrameView& output, const FrameInputs& inputs);
 
 	  private:

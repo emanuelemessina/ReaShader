@@ -12,20 +12,26 @@
 
 // Resources are deployed next to the plugin binary:
 // <plugin dir>/ReaShader.clap
-// <plugin dir>/assets/...
-// <plugin dir>/rsui/...
+// <plugin dir>/resources/...
+// <plugin dir>/ui/...
 
 namespace util::paths
 {
 	const std::filesystem::path& pluginDir();
 
-	inline std::filesystem::path assetsDir()
+	inline std::filesystem::path resourcesDir()
 	{
-		return pluginDir() / "assets";
+		return pluginDir() / "resources";
 	}
 
-	inline std::filesystem::path rsuiDir()
+	inline std::filesystem::path uiDir()
 	{
-		return pluginDir() / "rsui";
+		return pluginDir() / "ui";
+	}
+
+	// shaders compiled on upload, as <name>.json
+	inline std::filesystem::path compiledShadersDir()
+	{
+		return resourcesDir() / "shaders" / "compiled";
 	}
 } // namespace util::paths
