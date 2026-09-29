@@ -17,7 +17,7 @@ function renderSnapshot(snapshot) {
     document.title = `${snapshot.track.number} | ${snapshot.track.name}`;
     renderParams(snapshot.params);
     renderDevices(snapshot.devices.names, snapshot.devices.selected);
-    renderShaderPicker(snapshot.shaders, snapshot.shader.name, snapshot.shadersDir);
+    renderShaderPicker(snapshot.shaders, snapshot.shader.name);
     renderShaderUploader();
 }
 
@@ -114,41 +114,36 @@ function renderDevices(names, selected) {
 
 // -------- shader --------
 
-// the built-in effects: .frag files in the plugin's effects folder (plus the current shader, if uploaded)
-function renderShaderPicker(builtinShaders, currentName, shadersDir) {
+// the compiled shaders (uploaded before) plus "none", which passes the video through
+function renderShaderPicker(shaders, currentName) {
     const picker = document.querySelector('#shader .picker');
     picker.replaceChildren();
 
     const label = document.createElement('label');
-    label.textContent = 'Built-in effects';
-    label.title = `Add your own .frag files to ${shadersDir}, then refresh`;
+    label.textContent = 'Shader';
 
     const select = document.createElement('select');
-    const names = builtinShaders.includes(currentName) ? builtinShaders : [...builtinShaders, currentName];
-    for (const name of names) {
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = 'None (passthrough)';
+    select.appendChild(none);
+    for (const name of shaders) {
         const option = document.createElement('option');
         option.value = name;
-        option.textContent = builtinShaders.includes(name) ? name : `${name} (uploaded)`;
-        option.selected = name === currentName;
+        option.textContent = name;
         select.appendChild(option);
     }
+    select.value = currentName;
     select.addEventListener('change', () => {
-        if (builtinShaders.includes(select.value)) {
-            setShaderStatus(`Loading ${select.value}...`, false);
-            native.shaderSelect(select.value);
-        }
+        setShaderStatus(select.value ? `Loading ${select.value}...` : 'Unloading...', 'busy');
+        native.shaderSelect(select.value);
     });
 
-    const refreshButton = document.createElement('button');
-    refreshButton.type = 'button';
-    refreshButton.textContent = '↻';
-    refreshButton.title = 'Rescan the effects folder';
-    refreshButton.addEventListener('click', () => native.refresh());
 
-    const folder = document.createElement('small');
-    folder.textContent = shadersDir;
+    const hint = document.createElement('small');
+    hint.textContent = 'Upload a .frag shader to compile it and add it to this list.';
 
-    picker.append(label, select, refreshButton, folder);
+    picker.append(label, select, hint);
 }
 
 // uploads a shader file from anywhere
@@ -176,8 +171,8 @@ function renderShaderUploader() {
     });
     submitButton.addEventListener('click', () => {
         submitButton.disabled = true;
-        setShaderStatus(`Loading ${fileInput.files[0].name}...`, false);
-        native.shaderUpload(fileInput.files[0]).catch(error => setShaderStatus(String(error), true));
+        setShaderStatus(`Compiling ${fileInput.files[0].name}...`, 'busy');
+        native.shaderUpload(fileInput.files[0]).catch(error => setShaderStatus(String(error), 'error'));
     });
 
     selector.append(fileInput, submitButton);
@@ -185,9 +180,9 @@ function renderShaderUploader() {
     uploader.appendChild(container);
 }
 
-// the last shader action's outcome; kept across snapshots
-function setShaderStatus(text, isError) {
+// the last shader action's outcome, kept across snapshots; state: "busy" (spinner), "ok" or "error"
+function setShaderStatus(text, state) {
     const status = document.getElementById('shaderStatus');
-    status.textContent = text;
-    status.classList.toggle('error', isError);
+    status.querySelector('.text').textContent = text;
+    status.className = state;
 }

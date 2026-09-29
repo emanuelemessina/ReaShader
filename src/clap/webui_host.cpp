@@ -28,7 +28,7 @@ namespace ReaShader
 	{
 		std::string fileUrlForRsuiHtml()
 		{
-			std::u8string path = (util::paths::rsuiDir() / "rsui.html").generic_u8string();
+			std::u8string path = (util::paths::uiDir() / "index.html").generic_u8string();
 			return "file:///" + std::string(path.begin(), path.end());
 		}
 

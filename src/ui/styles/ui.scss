@@ -61,6 +61,10 @@ flex-grow: 1;
 
 #paramsContainer{
     flex-grow: 2;
+    width: 100%;
+    max-width: 560px;
+    box-sizing: border-box;
+    padding: 0 1rem 1rem;
 }
 
 .slider-container{
@@ -135,18 +139,41 @@ fieldset{
 }
 
 #shaderStatus{
-    display: block;
+    display: none;
+    align-items: flex-start;
+    gap: 8px;
     margin: 6px 0 10px;
     font-family: monospace;
     font-size: .75rem;
     white-space: pre-wrap;
     text-align: left;
 
+    &.busy, &.ok, &.error{
+        display: flex;
+    }
+
     &.error{
         color: #ff7a7a;
     }
 
-    &:empty{
+    .spinner{
         display: none;
+        flex-shrink: 0;
+        width: 10px;
+        height: 10px;
+        border: 2px solid c.$w-50;
+        border-top-color: c.$accent;
+        border-radius: 50%;
+        animation: spin .8s linear infinite;
+    }
+
+    &.busy .spinner{
+        display: inline-block;
+    }
+}
+
+@keyframes spin{
+    to{
+        transform: rotate(360deg);
     }
 }

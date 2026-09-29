@@ -19,7 +19,7 @@ window.__reashaderOnMessage = (msg) => {
                 setParamValue(msg.id, msg.value);
                 break;
             case "shaderStatus":
-                setShaderStatus(msg.status, msg.error);
+                setShaderStatus(msg.status, msg.state);
                 break;
             default:
                 console.warn("Unexpected message from the plugin:", msg);

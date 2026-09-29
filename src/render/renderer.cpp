@@ -13,26 +13,9 @@
 #include "render/frame_targets.h"
 #include "render/shader_pass.h"
 #include "util/logging.h"
-#include "util/paths.h"
-
-#include <fstream>
-#include <sstream>
 
 namespace ReaShader
 {
-	namespace
-	{
-		gpu::CompiledShader compileDefaultShader()
-		{
-			std::ifstream file(util::paths::assetsDir() / "shaders" / "effects" / "default.frag");
-			if (!file)
-				throw std::runtime_error("Missing assets/shaders/effects/default.frag");
-			std::stringstream source;
-			source << file.rdbuf();
-			return gpu::compileShader(source.str(), "default.frag");
-		}
-	} // namespace
-
 	ReaShaderRenderer::ReaShaderRenderer(ReaShaderPlugin* reaShaderPlugin) : plugin(reaShaderPlugin)
 	{
 	}
@@ -66,9 +49,6 @@ namespace ReaShader
 				index = 0; // the saved GPU is gone
 				plugin->setRenderingDeviceIndex(index);
 			}
-
-			if (!shader)
-				shader = std::make_unique<gpu::CompiledShader>(compileDefaultShader());
 
 			_createDevice(index);
 			failed = false;
@@ -124,7 +104,8 @@ namespace ReaShader
 	void ReaShaderRenderer::_createDevice(int index)
 	{
 		context->createDevice((size_t)index);
-		_installShader();
+		if (shader)
+			_installShader();
 	}
 
 	void ReaShaderRenderer::_destroyDevice()
@@ -164,24 +145,10 @@ namespace ReaShader
 		frameCount = 0;
 	}
 
-	void ReaShaderRenderer::changeShader(const std::string& source, const std::string& name, StatusCallback onStatus,
-										 StatusCallback onError, std::function<void()> onSuccess)
+	std::string ReaShaderRenderer::setShader(const gpu::CompiledShader& compiled)
 	{
-		onStatus("Compiling...");
-
-		auto compiled = std::make_unique<gpu::CompiledShader>();
-		try
-		{
-			*compiled = source.empty() ? compileDefaultShader() : gpu::compileShader(source, name);
-		}
-		catch (const std::exception& e)
-		{
-			onError(e.what());
-			return;
-		}
-
 		std::vector<Parameters::Param> params;
-		for (const gpu::ShaderParamField& field : compiled->params)
+		for (const gpu::ShaderParamField& field : compiled.params)
 		{
 			Parameters::Param param;
 			param.name = field.name;
@@ -196,7 +163,7 @@ namespace ReaShader
 		{
 			std::lock_guard lock(frameMutex);
 			std::unique_ptr<gpu::CompiledShader> previous = std::move(shader);
-			shader = std::move(compiled);
+			shader = std::make_unique<gpu::CompiledShader>(compiled);
 
 			if (context && context->hasDevice())
 			{
@@ -207,14 +174,25 @@ namespace ReaShader
 				catch (const std::exception& e)
 				{
 					shader = std::move(previous); // keep rendering with the old one
-					onError(e.what());
-					return;
+					return e.what();
 				}
 			}
 		}
 
 		plugin->setShaderParams(std::move(params));
-		onSuccess();
+		return {};
+	}
+
+	void ReaShaderRenderer::clearShader()
+	{
+		{
+			std::lock_guard lock(frameMutex);
+			if (shaderPass)
+				shaderPass->destroy(*context);
+			shaderPass.reset();
+			shader.reset();
+		}
+		plugin->setShaderParams({});
 	}
 
 	// -------- frames --------

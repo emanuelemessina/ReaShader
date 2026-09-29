@@ -32,8 +32,9 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Stage directories
+# Directories
 set(PLUGIN_STAGE_DIR "${CMAKE_BINARY_DIR}")
+set(GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
 
 #################################
 # Libraries
@@ -41,9 +42,10 @@ set(PLUGIN_STAGE_DIR "${CMAKE_BINARY_DIR}")
 
 # Vulkan:
 # - require Vulkan SDK
-# - shaderc (runtime GLSL -> SPIR-V) ships with it
+# - glslc (build-time GLSL -> SPIR-V) and shaderc (compiles uploaded shaders) ship with it
 
-find_package(Vulkan REQUIRED COMPONENTS shaderc_combined)
+find_package(Vulkan REQUIRED COMPONENTS glslc shaderc_combined)
+
 
 # WebView
 
@@ -75,6 +77,49 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 )
 
 #################################
+# Generated
+#################################
+
+# Internal shaders: SPIR-V as a C array, included by the renderer (src/shaders/internal/*)
+
+set(INTERNAL_SHADERS
+    fullscreen.vert
+)
+
+foreach(_shader ${INTERNAL_SHADERS})
+    set(_src "${CMAKE_SOURCE_DIR}/src/shaders/internal/${_shader}")
+    set(_out "${GENERATED_DIR}/${_shader}.inc")
+    add_custom_command(
+        OUTPUT ${_out}
+        COMMAND Vulkan::glslc -mfmt=num ${_src} -o ${_out}
+        DEPENDS ${_src}
+        COMMENT "Compiling internal shader ${_shader}"
+        VERBATIM
+    )
+    target_sources(${PROJECT_NAME} PRIVATE ${_out})
+endforeach()
+
+# Sass
+
+find_program(SASS_EXECUTABLE sass)
+if(NOT SASS_EXECUTABLE)
+    message(FATAL_ERROR "sass not found: install Dart Sass and put it on PATH "
+                        "(e.g. `choco install sass`, `npm install -g sass`, `brew install sass/sass/sass`)")
+endif()
+
+file(GLOB_RECURSE UI_STYLES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/ui/styles/*.scss")
+
+add_custom_command(
+    OUTPUT "${GENERATED_DIR}/index.css"
+    COMMAND ${SASS_EXECUTABLE} --style=compressed --no-source-map
+            "${CMAKE_SOURCE_DIR}/src/ui/styles/ui.scss" "${GENERATED_DIR}/index.css"
+    DEPENDS ${UI_STYLES}
+    COMMENT "Compiling UI stylesheet"
+    VERBATIM
+)
+target_sources(${PROJECT_NAME} PRIVATE "${GENERATED_DIR}/index.css")
+
+#################################
 # Sources
 #################################
 
@@ -89,6 +134,7 @@ target_sources(${PROJECT_NAME} PRIVATE
     src/render/context.cpp
     src/render/frame_targets.cpp
     src/render/shader_pass.cpp
+    src/render/shader_compiler.cpp
     src/render/gpu.cpp
 
     src/util/logging.cpp
@@ -129,6 +175,7 @@ target_sources(${PROJECT_NAME} PRIVATE ${PLATFORM_SPECIFIC_SOURCES})
 # Core includes
 target_include_directories(${PROJECT_NAME} PRIVATE
     src
+    ${GENERATED_DIR}
 )
 
 # External includes
@@ -182,14 +229,18 @@ endif()
 # POST_BUILD
 #################################
 
-# Stage resources next to the plugin
+# Stage resources next to the plugin:
+# - resources/images, resources/meshes
+# - resources/shaders/examples: example shader sources for the user
+# - ui
 
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E rm -rf "${PLUGIN_STAGE_DIR}/assets" "${PLUGIN_STAGE_DIR}/rsui"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/res/images" "${PLUGIN_STAGE_DIR}/assets/images"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/res/meshes" "${PLUGIN_STAGE_DIR}/assets/meshes"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src/shaders" "${PLUGIN_STAGE_DIR}/assets/shaders"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src/ui" "${PLUGIN_STAGE_DIR}/rsui"
-    COMMAND ${CMAKE_COMMAND} -E rm -rf "${PLUGIN_STAGE_DIR}/rsui/styles"
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${PLUGIN_STAGE_DIR}/resources" "${PLUGIN_STAGE_DIR}/ui"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/res/images" "${PLUGIN_STAGE_DIR}/resources/images"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/res/meshes" "${PLUGIN_STAGE_DIR}/resources/meshes"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src/shaders/examples" "${PLUGIN_STAGE_DIR}/resources/shaders/examples"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src/ui" "${PLUGIN_STAGE_DIR}/ui"
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${PLUGIN_STAGE_DIR}/ui/styles"
+    COMMAND ${CMAKE_COMMAND} -E copy "${GENERATED_DIR}/index.css" "${PLUGIN_STAGE_DIR}/ui/index.css"
     COMMENT "Staging ReaShader resources next to the built plugin"
 )

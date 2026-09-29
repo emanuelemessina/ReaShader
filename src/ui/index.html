@@ -3,13 +3,13 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>RSUI</title>
+	<title>ReaShader</title>
 	<link rel="icon" href="images/favicon.ico" type="image/x-icon">
-	<link rel="stylesheet" href="rsui.css" charset="UTF-8">
+	<link rel="stylesheet" href="index.css" charset="UTF-8">
 
 	<!-- plain scripts in dependency order: file:// blocks ES module imports -->
 	<script defer src="scripts/api.js" charset="UTF-8"></script>
-	<script defer src="scripts/rsui.js" charset="UTF-8"></script>
+	<script defer src="scripts/ui.js" charset="UTF-8"></script>
 	<script defer src="scripts/client.js" charset="UTF-8"></script>
 </head>
 <body>
@@ -25,7 +25,7 @@
 			<legend>Shader</legend>
 			<div class="picker"></div>
 			<div class="uploader"></div>
-			<label id="shaderStatus"></label>
+			<div id="shaderStatus"><span class="spinner"></span><span class="text"></span></div>
 			<div class="params"></div>
 		</fieldset>
 	</div>

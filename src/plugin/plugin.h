@@ -98,13 +98,14 @@ namespace ReaShader
 											   int nparms, double projectTime, double frameRate, int forceFormat);
 		static bool _getVideoParam(IREAPERVideoProcessor* videoProcessor, int idx, double* valueOut);
 
-		void _applyShader();
-		void _loadShader(const std::string& name, const std::string& source);
+		void _uploadShader(const std::string& fileName, const std::string& source);
+		void _useShader(const std::string& name, const std::string& data);
+		void _clearShader();
 		void _applyPendingShaderParams();
 
 		void _webuiSend(const Parameters::json& msg);
 		void _webuiSendSnapshot();
-		void _webuiSendShaderStatus(const std::string& status, bool error);
+		void _webuiSendShaderStatus(const std::string& status, const char* state);
 
 		const clap_host_t* host{ nullptr };
 		std::unique_ptr<ReaShaderRenderer> reaShaderRenderer;
@@ -120,8 +121,8 @@ namespace ReaShader
 		mutable std::mutex stateMutex;
 		int renderingDevice{ 0 };
 		std::vector<std::string> renderingDeviceNames;
-		std::string shaderName;
-		std::string shaderSource;
+		std::string shaderName; // empty = no shader
+		std::string shaderData; // the current shader's compiled form (JSON)
 		Parameters::ValueMap savedShaderValues; // restored when the shader's params appear
 		std::vector<Parameters::Param> pendingShaderParams;
 		int trackNumber{ 0 };					// 1-based, 0 = not found, -1 = master
