@@ -8,7 +8,6 @@
 
 #pragma once
 
-#include "tools/fwd_decl.h"
 
 #include <vulkan/vulkan.h>
 

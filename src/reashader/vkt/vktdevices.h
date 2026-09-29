@@ -12,8 +12,8 @@
 
 namespace  vkt {
 
-	FWD_DECL(CommandPool);
-	FWD_DECL(Queue);
+	class CommandPool;
+	class Queue;
 
 	namespace Physical
 	{
