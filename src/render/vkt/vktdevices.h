@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "vkt/vktcommon.h"
+#include "render/vkt/vktcommon.h"
 
 namespace  vkt {
 

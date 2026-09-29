@@ -8,7 +8,9 @@
 
 #include "params.h"
 
-#include "tools/logging.h"
+#include "util/logging.h"
+
+#include <nlohmann/json.hpp>
 
 #include <format>
 
@@ -116,7 +118,7 @@ namespace ReaShader::Parameters
 		return count;
 	}
 
-	void ParamList::replaceShaderParams(std::vector<Param> shaderParams, const json& savedValues)
+	void ParamList::replaceShaderParams(std::vector<Param> shaderParams, const ValueMap& savedValues)
 	{
 		std::lock_guard lock(mutex);
 
@@ -131,8 +133,8 @@ namespace ReaShader::Parameters
 			}
 			p.id = (Id)params.size();
 			p.group = Group::Shader;
-			bool saved = savedValues.contains(p.name) && savedValues[p.name].is_number();
-			values[p.id] = saved ? savedValues[p.name].get<double>() : p.defaultValue;
+			auto saved = savedValues.find(p.name);
+			values[p.id] = saved != savedValues.end() ? saved->second : p.defaultValue;
 			params.push_back(std::move(p));
 		}
 		paramCount = params.size();

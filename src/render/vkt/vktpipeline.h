@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "tools/logging.h"
+#include "util/logging.h"
 
 #include "glslang/Public/ResourceLimits.h"
 #include "glslang/Public/ShaderLang.h"

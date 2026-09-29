@@ -16,7 +16,7 @@
 #include <dlfcn.h>
 #endif
 
-namespace tools::paths
+namespace util::paths
 {
 	namespace
 	{
@@ -53,4 +53,4 @@ namespace tools::paths
 		static const std::filesystem::path dir = pluginBinaryPath().parent_path();
 		return dir;
 	}
-} // namespace tools::paths
+} // namespace util::paths

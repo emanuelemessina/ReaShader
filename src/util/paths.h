@@ -15,7 +15,7 @@
 // <plugin dir>/assets/...
 // <plugin dir>/rsui/...
 
-namespace tools::paths
+namespace util::paths
 {
 	const std::filesystem::path& pluginDir();
 
@@ -28,4 +28,4 @@ namespace tools::paths
 	{
 		return pluginDir() / "rsui";
 	}
-} // namespace tools::paths
+} // namespace util::paths

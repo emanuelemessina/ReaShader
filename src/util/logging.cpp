@@ -7,7 +7,7 @@
  *****************************************************************************/
 
 #include "logging.h"
-#include "tools/paths.h"
+#include "util/paths.h"
 
 #include <boxer/boxer.h>
 
@@ -43,7 +43,7 @@ namespace
 		std::lock_guard lock(fileMutex);
 		if (!logFile.is_open())
 		{
-			logFile.open(tools::paths::pluginDir() / "rs.log", std::ios::out | std::ios::trunc);
+			logFile.open(util::paths::pluginDir() / "rs.log", std::ios::out | std::ios::trunc);
 			if (!logFile.is_open())
 			{
 				std::cerr << "Cannot open rs.log for writing" << std::endl;

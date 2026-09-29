@@ -17,10 +17,10 @@
 
 #include <clap/clap.h>
 
-#include "rsparams/params.h"
+#include "plugin/params.h"
 
-#include "wdltypes.h" // video_frame.h needs WDL_FIXALIGN/INT_PTR but doesn't include this itself
-#include "video_processor.h"
+class IREAPERVideoProcessor;
+class IVideoFrame;
 
 namespace ReaShader
 {
@@ -67,10 +67,6 @@ namespace ReaShader
 		bool saveState(const clap_ostream_t* stream);
 		bool loadState(const clap_istream_t* stream);
 
-		// -------- REAPER video tap --------
-
-		bool getVideoTapParamValue(int idx, double* valueOut) const;
-
 		// -------- renderer support --------
 
 		int getRenderingDeviceIndex() const;
@@ -93,10 +89,12 @@ namespace ReaShader
 
 		double getAudioGain() const;
 
-		// public because the REAPER video callback (processFrame in reashader_clap.cpp) drives it
-		std::unique_ptr<ReaShaderRenderer> reaShaderRenderer;
-
 	  private:
+		// REAPER video processor callbacks (video thread); userdata is the plugin
+		static IVideoFrame* _processVideoFrame(IREAPERVideoProcessor* videoProcessor, const double* parmlist,
+											   int nparms, double projectTime, double frameRate, int forceFormat);
+		static bool _getVideoParam(IREAPERVideoProcessor* videoProcessor, int idx, double* valueOut);
+
 		void _applyShader();
 
 		void _webuiSend(const Parameters::json& msg);
@@ -104,6 +102,8 @@ namespace ReaShader
 		void _webuiSendShaderStatus(const std::string& status, bool error);
 
 		const clap_host_t* host{ nullptr };
+		std::unique_ptr<ReaShaderRenderer> reaShaderRenderer;
+		IREAPERVideoProcessor* videoProcessor{ nullptr };
 
 		Parameters::ParamList params;
 		std::atomic<bool> hostChangedParams{ false }; // echo to the web UI on the main thread
@@ -114,18 +114,11 @@ namespace ReaShader
 		std::vector<std::string> renderingDeviceNames;
 		std::string shaderName;
 		std::string shaderSource;
-		Parameters::json savedShaderValues = Parameters::json::object(); // restored when the shader's params appear
-		int trackNumber{ 0 };											  // 1-based, 0 = not found, -1 = master
+		Parameters::ValueMap savedShaderValues; // restored when the shader's params appear
+		int trackNumber{ 0 };					// 1-based, 0 = not found, -1 = master
 		std::string trackName;
 
 		std::mutex webUISenderMutex;
 		WebUISender webUISender;
-
-		IREAPERVideoProcessor* videoProcessor{ nullptr };
 	};
-
-	// REAPER video processor callbacks, defined in reashader_clap.cpp
-	IVideoFrame* processVideoFrame(IREAPERVideoProcessor* vproc, const double* parmlist, int nparms,
-								   double project_time, double frate, int force_format);
-	bool getVideoParam(IREAPERVideoProcessor* vproc, int idx, double* valueOut);
 } // namespace ReaShader

@@ -11,17 +11,19 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
 
-#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 namespace ReaShader::Parameters
 {
 	using json = nlohmann::json;
 	using Id = uint32_t; // also the index in the list, and the CLAP param id
+	using ValueMap = std::map<std::string, double>; // param values by name
 
 	enum class Group
 	{
@@ -78,7 +80,7 @@ namespace ReaShader::Parameters
 		uint32_t automatableCount() const;
 
 		// replaces the Shader group; values are restored by name from `savedValues`, else defaulted
-		void replaceShaderParams(std::vector<Param> shaderParams, const json& savedValues);
+		void replaceShaderParams(std::vector<Param> shaderParams, const ValueMap& savedValues);
 
 		// [{ id, name, group, units, value, defaultValue }, ...]
 		json toJson() const;

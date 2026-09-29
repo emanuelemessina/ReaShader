@@ -12,29 +12,30 @@
 
 #include <clap/clap.h>
 
-#include "reashaderplugin.h"
-
-#ifdef _WIN32
-namespace ReaShader
-{
-	class WebUIHost;
-}
-#endif
+#include "plugin/plugin.h"
 
 namespace ReaShader
 {
-	// Per-instance data behind clap_plugin_t::plugin_data, shared by the plugin shell and the GUI extension.
+	// The plugin window (clap.gui), defined by the platform's GUI implementation
+	struct Gui;
+	struct GuiDeleter
+	{
+		void operator()(Gui* gui) const;
+	};
+
+	// One per plugin instance, behind clap_plugin_t::plugin_data: shared by the plugin shell and the GUI
 	struct ClapPluginState
 	{
+		clap_plugin_t clapPlugin{}; // what the host sees; plugin_data points back here
 		const clap_host_t* host{ nullptr };
 		std::unique_ptr<ReaShaderPlugin> plugin;
-#ifdef _WIN32
-		void* guiHwnd{ nullptr };			 // container child window, parent of the embedded webview
-		WebUIHost* webUIHost{ nullptr }; // owned; created and deleted by reashader_clap_gui_win32.cpp
-#endif
+		std::unique_ptr<Gui, GuiDeleter> gui;
 	};
 
 #ifdef _WIN32
-	extern const clap_plugin_gui_t reashaderClapGuiExtension;
+	extern const clap_plugin_gui_t guiExtension;
+#else
+	// TODO: clap.gui on macOS/Linux
+	inline void GuiDeleter::operator()(Gui*) const {}
 #endif
 } // namespace ReaShader

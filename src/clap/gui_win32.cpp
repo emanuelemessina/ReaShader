@@ -16,16 +16,36 @@
 #ifdef _WIN32
 
 #include <cstring>
+#include <memory>
 #include <string>
 
 #include <windows.h>
 
-#include "plugin_state.h"
-#include "tools/logging.h"
-#include "webui_host_win32.h"
+#include "clap/plugin_state.h"
+#include "util/logging.h"
+#include "clap/webui_host.h"
 
 namespace ReaShader
 {
+	// The container window plus the webview filling it
+	struct Gui
+	{
+		HWND window{ nullptr };
+		std::unique_ptr<WebUIHost> webUI;
+
+		~Gui()
+		{
+			webUI.reset(); // tears the webview down first
+			if (window)
+				DestroyWindow(window);
+		}
+	};
+
+	void GuiDeleter::operator()(Gui* gui) const
+	{
+		delete gui;
+	}
+
 	namespace
 	{
 		constexpr wchar_t kWindowClassName[] = L"ReaShaderGuiWindow";
@@ -40,9 +60,9 @@ namespace ReaShader
 		{
 			if (msg == WM_SIZE)
 			{
-				auto* state = reinterpret_cast<ClapPluginState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-				if (state && state->webUIHost)
-					state->webUIHost->resize(LOWORD(lParam), HIWORD(lParam));
+				auto* gui = reinterpret_cast<Gui*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+				if (gui && gui->webUI)
+					gui->webUI->resize(LOWORD(lParam), HIWORD(lParam));
 				return 0;
 			}
 			return DefWindowProcW(hwnd, msg, wParam, lParam);
@@ -101,14 +121,7 @@ namespace ReaShader
 		void gui_destroy(const clap_plugin_t* plugin)
 		{
 			auto* state = static_cast<ClapPluginState*>(plugin->plugin_data);
-
-			delete state->webUIHost; // tears down the embedded webview first (clears the plugin's sender)
-			state->webUIHost = nullptr;
-			if (state->guiHwnd)
-			{
-				DestroyWindow((HWND)state->guiHwnd);
-				state->guiHwnd = nullptr;
-			}
+			state->gui.reset();
 		}
 
 		bool set_scale(const clap_plugin_t*, double)
@@ -149,11 +162,11 @@ namespace ReaShader
 		bool set_size(const clap_plugin_t* plugin, uint32_t width, uint32_t height)
 		{
 			auto* state = static_cast<ClapPluginState*>(plugin->plugin_data);
-			if (!state->guiHwnd)
+			if (!state->gui)
 				return false;
 
 			// the container's WM_SIZE forwards the new size to the webview (see WndProc)
-			SetWindowPos((HWND)state->guiHwnd, nullptr, 0, 0, (int)width, (int)height,
+			SetWindowPos(state->gui->window, nullptr, 0, 0, (int)width, (int)height,
 						 SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE);
 			return true;
 		}
@@ -164,15 +177,7 @@ namespace ReaShader
 				return false;
 
 			auto* state = static_cast<ClapPluginState*>(plugin->plugin_data);
-
-			// set_parent() is called once per GUI lifetime; guard against a second call anyway
-			if (state->guiHwnd)
-			{
-				delete state->webUIHost;
-				state->webUIHost = nullptr;
-				DestroyWindow((HWND)state->guiHwnd);
-				state->guiHwnd = nullptr;
-			}
+			state->gui.reset(); // set_parent() is called once per GUI lifetime; guard against a second call anyway
 
 			// WS_EX_CONTROLPARENT: the host's dialog tab navigation must be able to walk through this
 			// window into the webview and back out; without it, it loops forever once the webview has focus
@@ -181,12 +186,13 @@ namespace ReaShader
 			if (!hwnd)
 				return false;
 
-			SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)state);
-			state->guiHwnd = hwnd;
+			std::unique_ptr<Gui, GuiDeleter> gui(new Gui());
+			gui->window = hwnd;
+			SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)gui.get());
 
 			try
 			{
-				state->webUIHost = new WebUIHost(hwnd, state->plugin.get());
+				gui->webUI = std::make_unique<WebUIHost>(hwnd, state->plugin.get());
 			}
 			catch (const std::exception& e)
 			{
@@ -199,6 +205,7 @@ namespace ReaShader
 					"unknown error");
 			}
 
+			state->gui = std::move(gui);
 			return true;
 		}
 
@@ -212,23 +219,23 @@ namespace ReaShader
 		bool gui_show(const clap_plugin_t* plugin)
 		{
 			auto* state = static_cast<ClapPluginState*>(plugin->plugin_data);
-			if (!state->guiHwnd)
+			if (!state->gui)
 				return false;
-			ShowWindow((HWND)state->guiHwnd, SW_SHOW);
+			ShowWindow(state->gui->window, SW_SHOW);
 			return true;
 		}
 
 		bool gui_hide(const clap_plugin_t* plugin)
 		{
 			auto* state = static_cast<ClapPluginState*>(plugin->plugin_data);
-			if (!state->guiHwnd)
+			if (!state->gui)
 				return false;
-			ShowWindow((HWND)state->guiHwnd, SW_HIDE);
+			ShowWindow(state->gui->window, SW_HIDE);
 			return true;
 		}
 	} // namespace
 
-	const clap_plugin_gui_t reashaderClapGuiExtension = {
+	const clap_plugin_gui_t guiExtension = {
 		is_api_supported, get_preferred_api, gui_create,  gui_destroy,   set_scale,     get_size,  can_resize,
 		get_resize_hints, adjust_size,       set_size,    set_parent,    set_transient, suggest_title,
 		gui_show,         gui_hide,
