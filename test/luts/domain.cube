@@ -1,0 +1,12 @@
+# The identity over the domain 0..2: resampled onto 0..1 it is still the identity.
+LUT_3D_SIZE 2
+DOMAIN_MIN 0 0 0
+DOMAIN_MAX 2 2 2
+0 0 0
+2 0 0
+0 2 0
+2 2 0
+0 0 2
+2 0 2
+0 2 2
+2 2 2

@@ -1,0 +1,6 @@
+# Deliberately broken: uploading it must show an error for line 6 and keep the previous LUT.
+LUT_3D_SIZE 2
+
+0 0 0
+1 0 0
+0 1 zero
