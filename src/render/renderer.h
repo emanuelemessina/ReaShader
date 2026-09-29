@@ -8,172 +8,72 @@
 
 #pragma once
 
-#include <atomic>
+#include "render/frame_view.h"
+
+#include <cstdint>
+#include <functional>
+#include <memory>
 #include <mutex>
-
-
-#include "render/vkt/vktcommon.h"
-#include "render/vkt/vktdescriptors.h"
-#include "render/vkt/vktdevices.h"
-#include "render/vkt/vktimages.h"
-#include "render/vkt/vktrendering.h"
-#include "render/vkt/vktpipeline.h"
-
+#include <string>
 
 namespace ReaShader
 {
 	class ReaShaderPlugin;
 
-class ReaShaderRenderer
-{
-  protected:
-    ReaShaderPlugin *reaShaderPlugin;
-
-    // must be greater than 0
-    uint32_t FRAME_W{1}, FRAME_H{1};
-
-  public:
-    ReaShaderRenderer(ReaShaderPlugin *reaShaderPlugin);
-
-    void init();
-    void shutdown();
-
-    void changeRenderingDevice(int renderingDeviceIndex);
-	// compiles the GLSL fragment shader and replaces the plugin's shader params with its reflected uniforms;
-	// never throws, errors go to onError
-	using StatusCallback = std::function<void(const std::string&)>;
-	void changeCustomShader(const std::string& source, StatusCallback onStatus, StatusCallback onError,
-							std::function<void()> onSuccess);
-
-    // Entry point for REAPER's video thread: runs checkFrameSize/loadBitsToImage/drawFrame/transferFrame
-    // as one unit. Never throws -- returns false (caller should pass the input frame through) if the
-    // renderer isn't initialized, is busy (device change/shutdown in progress), or hit a Vulkan error.
-    // A Vulkan error (e.g. VK_ERROR_DEVICE_LOST) disables rendering until the next init().
-    bool renderFrame(int w, int h, int *inputBits, double pushConstants[], int *outputBits);
-
-    // public functions that drive the renderer, asynchronously called
-    // make sure to invalidate the device if there's a device change in progress
-    void checkFrameSize(int &w, int &h, void (*listener)() = nullptr);
-    void loadBitsToImage(int *srcBuffer);
-    // called inside drawFrame to update the general scene parameters to pass to the shaders
-	void updateVirtualScene(double pushConstants[]);
-	void drawFrame(double pushConstants[]);
-    void transferFrame(int *&destBuffer);
-
-  private:
-    void _changeCustomShader(const std::string& source, const StatusCallback& onStatus,
-                             const StatusCallback& onError, const std::function<void()>& onSuccess);
-
-    bool exceptionOnInitialize{false};
-    std::atomic<bool> halted{false};
-    std::atomic<bool> frameFailed{false};
-
-    // held by renderFrame (try_lock, so REAPER's video thread never waits on it) and by anything
-    // that creates/destroys GPU resources frames use (init, shutdown, device and shader changes)
-    std::mutex frameMutex;
-
-    // wrap low level faults and circumvent seh object unwinding
-
-    void _initVulkanGuarded();
-    void _initVulkan();
-    void _cleanupVulkanGuarded();
-    void _cleanupVulkan();
-
-    //-----------------------------------------------
-
-    void setUpDevice(int renderingDeviceIndex);
-    void createRenderTargets();
-
-    // create defalt resources
-	void _createDefaultMeshes();
-	void _createDefaultTextures();
-	void _setupRendering();
-
-    std::vector<VkPhysicalDevice> vkSuitablePhysicalDevices;
-
-    VkInstance myVkInstance;
-
-    struct DeletionQueues
+	namespace gpu
 	{
-		vkt::deletion_queue vktMain{};
-		vkt::deletion_queue vktFrameResized{};
-		vkt::deletion_queue vktPhysicalDeviceChanged{};
-		vkt::deletion_queue vktCustomShaderChanged{};
-	} deletionQueues;
-    
-    vkt::Physical::Device *vktPhysicalDevice{ nullptr };
-    vkt::Logical::Device *vktDevice{ nullptr };
+		struct Context;
+		struct FrameTargets;
+		struct CompiledShader;
+		class ShaderPass;
+	} // namespace gpu
 
-	struct RenderTargets
+	// Renders REAPER's video frames through the current shader on the GPU.
+	// - every public function holds frameMutex; renderFrame only tries it, so REAPER's video thread
+	//   never waits (the frame passes through instead)
+	// - never throws: errors are logged, or reported through the callbacks
+	class ReaShaderRenderer
 	{
-		vkt::Images::AllocatedImage* vktFrameTransfer;
-		vkt::Images::AllocatedImage* vktPostProcessSource;
-		vkt::Images::AllocatedImage* vktColorAttachment;
-		vkt::Images::AllocatedImage* vktDepthAttachment;
-    } renderTargets;
-    
+	  public:
+		explicit ReaShaderRenderer(ReaShaderPlugin* plugin);
+		~ReaShaderRenderer();
 
-    VkRenderPass vkRenderPass;
-    VkFramebuffer vkFramebuffer;
+		// Vulkan instance + the plugin's rendering device + the current shader (the default one if none)
+		void init();
+		void shutdown();
 
-    struct CommandBuffers
-	{
-		VkCommandBuffer vkDraw;
-		VkCommandBuffer vkTransfer;
-    } commandBuffers;
-    
-    struct SyncObjects
-	{
-		VkSemaphore vkImageAvailableSemaphore;
-		VkSemaphore vkRenderFinishedSemaphore;
-		VkFence vkInFlightFence;
-    } syncObjects;
-    
-    vkt::vectors::searchable_map<int, vkt::Rendering::Mesh *> meshes;
-    vkt::vectors::searchable_map<int, vkt::Rendering::Material> materials;
-    vkt::vectors::searchable_map<int, vkt::Images::AllocatedImage *> textures;
+		void changeRenderingDevice(int index);
 
-    std::vector<vkt::Rendering::RenderObject> renderObjects;
+		// Compiles `source` (GLSL, see the shader contract in shader_pass.cpp; empty = the default shader).
+		// On success it becomes the current shader, installed now or on the next init(), and the plugin's
+		// shader params are replaced.
+		using StatusCallback = std::function<void(const std::string&)>;
+		void changeShader(const std::string& source, const std::string& name, StatusCallback onStatus,
+						  StatusCallback onError, std::function<void()> onSuccess);
 
-    vkt::Descriptors::DescriptorPool *vktDescriptorPool;
-
-    VkSampler vkSampler;
-
-    struct VirtualScene
-    {
-        vkt::Buffers::AllocatedBuffer *cameraBuffer;
-        vkt::Buffers::AllocatedBuffer *environmentBuffer;
-        vkt::Buffers::AllocatedBuffer *objectBuffer;
-
-        vkt::Descriptors::DescriptorSet globalSet;
-        vkt::Descriptors::DescriptorSet objectSet;
-        vkt::Descriptors::DescriptorSet textureSet;
-
-        struct VirtualCameraData
+		struct FrameInputs
 		{
-			glm::mat4 view;
-			glm::mat4 proj;
-			glm::mat4 viewproj;
-		} camData;
+			double time;
+			double frameRate;
+			const double* paramValues; // all the plugin's params, by id
+			size_t paramCount;
+		};
+		// false: nothing rendered (inactive, busy or failed), the caller passes the input through
+		bool renderFrame(const FrameView& input, const FrameView& output, const FrameInputs& inputs);
 
-        struct VirtualEnvironmentData
-		{
-			glm::vec4 fogColor;		// w is for exponent
-			glm::vec4 fogDistances; // x for min, y for max, zw unused.
-			glm::vec4 ambientColor;
-			glm::vec4 sunlightDirection; // w for sun power
-			glm::vec4 sunlightColor;
-		} envData;
+	  private:
+		void _createDevice(int index);
+		void _destroyDevice();
+		void _installShader(); // builds the pass for `shader`
 
-    } virtualScene{};
+		ReaShaderPlugin* plugin;
 
-    struct PostProcess
-	{
-		vkt::Descriptors::DescriptorSet globalSet;
-
-        std::vector<vkt::Buffers::AllocatedBuffer*> buffers;
-		std::vector<vkt::Images::AllocatedImage*> textures;
-
-	} postProcessData;
-};
+		std::mutex frameMutex; // guards everything below
+		std::unique_ptr<gpu::Context> context;
+		std::unique_ptr<gpu::FrameTargets> targets;
+		std::unique_ptr<gpu::ShaderPass> shaderPass;
+		std::unique_ptr<gpu::CompiledShader> shader; // kept to rebuild the pass on a device change
+		bool failed = false;						 // a Vulkan error stops rendering until the next init()
+		int32_t frameCount = 0;
+	};
 } // namespace ReaShader

@@ -83,8 +83,7 @@ namespace ReaShader
 				trackNumber = (int)getTrackValue(track, "IP_TRACKNUMBER");
 		}
 
-		reaShaderRenderer->init();
-		_applyShader();
+		reaShaderRenderer->init(); // uses the current shader (see _applyShader)
 		_webuiSendSnapshot();
 	}
 
@@ -269,14 +268,19 @@ namespace ReaShader
 		if (!output)
 			return input;
 
-		// parmlist[0] is wet/dry; plugin param i is at parmlist[i + 1], valued at video time
-		int videoParamIndex = Parameters::VideoParam + 1;
-		double videoParam = nparms > videoParamIndex ? parmlist[videoParamIndex] : 0.0;
-		double pushConstants[] = { projectTime, frameRate, videoParam };
+		// param values at video time: parmlist[0] is wet/dry, then param i is at parmlist[i + 1]
+		// (params REAPER doesn't know yet fall back to the current value)
+		double paramValues[Parameters::ParamList::maxCount];
+		size_t paramCount = plugin->params.count();
+		for (size_t id = 0; id < paramCount; id++)
+			paramValues[id] = (int)id + 1 < nparms ? parmlist[id + 1] : plugin->params.value((Parameters::Id)id);
+
+		FrameView inputFrame{ w, h, input->get_rowspan(), reinterpret_cast<uint8_t*>(input->get_bits()) };
+		FrameView outputFrame{ w, h, output->get_rowspan(), reinterpret_cast<uint8_t*>(output->get_bits()) };
+		ReaShaderRenderer::FrameInputs inputs{ projectTime, frameRate, paramValues, paramCount };
 
 		// false: renderer inactive, busy or failed -> pass the input through
-		if (!plugin->reaShaderRenderer->renderFrame(w, h, reinterpret_cast<int*>(input->get_bits()), pushConstants,
-													reinterpret_cast<int*>(output->get_bits())))
+		if (!plugin->reaShaderRenderer->renderFrame(inputFrame, outputFrame, inputs))
 		{
 			output->Release();
 			return input;
@@ -325,18 +329,18 @@ namespace ReaShader
 		params.replaceShaderParams(std::move(shaderParams), savedValues);
 	}
 
+	// compiles the saved shader (or the default one): installed now if active, else on the next activate()
 	void ReaShaderPlugin::_applyShader()
 	{
-		std::string source;
+		std::string name, source;
 		{
 			std::lock_guard lock(stateMutex);
+			name = shaderName;
 			source = shaderSource;
 		}
-		if (source.empty())
-			return;
 
-		reaShaderRenderer->changeCustomShader(
-			source, [this](const std::string& status) { _webuiSendShaderStatus(status, false); },
+		reaShaderRenderer->changeShader(
+			source, name, [this](const std::string& status) { _webuiSendShaderStatus(status, false); },
 			[this](const std::string& error) {
 				LOG(WARNING, toConsole | toFile | toBox, "ReaShaderPlugin", "Shader compilation failed", error);
 				_webuiSendShaderStatus(error, true);
@@ -438,8 +442,8 @@ namespace ReaShader
 			std::string name = msg.value("name", "");
 			std::string source = msg.value("source", "");
 
-			reaShaderRenderer->changeCustomShader(
-				source, [this](const std::string& status) { _webuiSendShaderStatus(status, false); },
+			reaShaderRenderer->changeShader(
+				source, name, [this](const std::string& status) { _webuiSendShaderStatus(status, false); },
 				[this](const std::string& error) {
 					LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "Shader compilation failed", error);
 					_webuiSendShaderStatus(error, true);

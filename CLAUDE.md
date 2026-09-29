@@ -11,11 +11,11 @@ ReaShader is a **CLAP** video-effect plugin for REAPER. It taps REAPER's video f
 A multi-phase cleanup is underway. The plan lives at `~/.claude/plans/picking-up-on-this-snug-aurora.md`.
 - **Phases:** 1 deletions/hygiene → 2 build → 3 utilities → 4 params/state/protocol → 5 layering → 6 renderer rewrite (vkt → vk-bootstrap + plain structs) → 7 docs.
 - **How it runs:** before each batch of changes, give the user a brief rationale and wait for approval. The user commits between phases.
-- **Status:** phase 5 done (built, awaiting REAPER check + user commit). Next: phase 6 (renderer rewrite).
+- **Status:** phase 6 in progress. The new renderer (context, frame targets, shader pass with reflected params) is built and passes a standalone GPU test. Still to do: shader params as host params through a rescan, `scene3d` (the logo easter egg, an off-by-default switch), then delete `render/vkt/` (no longer built; kept as the reference for `scene3d`).
 
 ## Hard rules
 
-- **Nothing may throw out of a REAPER or CLAP callback.** REAPER treats an escaped exception as fatal (`abort()`, exception `0x40000015` "inside reaper.exe"). `ReaShaderRenderer::renderFrame()` never throws. A Vulkan error sets `frameFailed`, and video passes through until the next FX activation.
+- **Nothing may throw out of a REAPER or CLAP callback.** REAPER treats an escaped exception as fatal (`abort()`, exception `0x40000015` "inside reaper.exe"). `ReaShaderRenderer` never throws: a Vulkan error during a frame sets `failed`, and video passes through until the next activation.
 - **Never block REAPER's video thread.** `renderFrame` `try_lock`s `frameMutex`. `init`, `shutdown` and `changeRenderingDevice` hold that mutex.
 - `deactivate()` deletes the video processor *before* the renderer's `shutdown()`.
 - REAPER's `'RGBA'` frames are laid out in memory as **B,G,R,A** (byte 0 = B).
@@ -30,7 +30,7 @@ There is no test suite or lint step. Verification is manual, in REAPER.
 **Prerequisites**
 - **CMake ≥ 3.25**: `CMakePresets.json` uses schema v6.
 - **Ninja**, and **clang** (`clang++`, GNU driver; not `clang-cl` or MSVC `cl`). The Windows presets pin `clang`/`clang++`, which must be on `PATH`.
-- **The Vulkan SDK:** found with `find_package(Vulkan)` through `VULKAN_SDK`, which its installer sets. `glslc`, glslang and SPIRV-Cross all come from the SDK. `CMakeLists.txt` picks the `d`-suffixed debug variants of the libraries for Debug builds.
+- **The Vulkan SDK:** found with `find_package(Vulkan COMPONENTS shaderc_combined)` through `VULKAN_SDK`, which its installer sets. shaderc (runtime GLSL → SPIR-V) comes from the SDK; FindVulkan picks the debug variant itself.
 - **Submodules:** run `git submodule update --init --recursive`. `clap` is a plain vendored copy. Everything else in `external/` is a submodule, including `cmake-git-versioning`, and configure fails without it.
 - **First configure needs network once:** `webview` fetches the WebView2 headers from NuGet if no system copy is found.
 
@@ -44,12 +44,11 @@ There is no test suite or lint step. Verification is manual, in REAPER.
 - The **`clean`** task wipes the preset build directory.
 - **CLI alternative** (builds without deploying): `cmake --preset windows-debug`, then `cmake --build --preset windows-debug`.
 - **The build itself (`CMakeLists.txt`):**
-  - compiles `src/shaders/*.glsl` to SPIR-V with `glslc`, into `build/<preset>/assets/shaders` (no `.spv` in git);
-  - stages `res/images`, `res/meshes`, the shader sources and the `rsui` frontend (minus `styles/`) next to the `.clap`.
+  - stages `res/images`, `res/meshes`, `src/shaders` and the `rsui` frontend (minus `styles/`) next to the `.clap`. Shaders are compiled at runtime, so no `.spv` files exist anywhere.
 
   The runtime resolves `assets/` and `rsui/` relative to the plugin binary, so they must travel with it.
 - **IntelliSense:** it reads `build/windows-debug/compile_commands.json`, which is written at configure time. On a fresh clone, run the build task once.
-- **Warnings:** `-Wall -Wextra -Wpedantic -Wshadow -Wconversion` apply to our code, and a missing `return` is an error. Third-party headers are `SYSTEM` includes and third-party sources build with `-w`. The goal is zero warnings from our code.
+- **Warnings:** `-Wall -Wextra -Wpedantic -Wshadow -Wconversion` apply to our code, and a missing `return` is an error. `-Wno-missing-field-initializers` is set because the `VkXxxInfo info{ VK_STRUCTURE_TYPE_XXX }` idiom zeroes the rest on purpose. Third-party headers are `SYSTEM` includes and third-party sources build with `-w`. The goal is zero warnings from our code.
 - Only Windows has been exercised. The macOS/Linux branches print `TODO` warnings for what's missing (the GUI, untested boxer).
 
 **Manual testing:**
@@ -67,8 +66,13 @@ src/clap/gui_win32.cpp       clap.gui (Win32): Gui = container window + WebUIHos
 src/clap/webui_host.*        WebUIHost: webview on its own thread, JSON bridge to the plugin (Win32)
 src/plugin/plugin.*          ReaShaderPlugin: params, state, web UI messages, REAPER video tap
 src/plugin/params.*          Param struct + ParamList (lock-free values)
-src/render/renderer.*        ReaShaderRenderer: the Vulkan pipeline (uses vkt/)
-src/render/vkt/              hand-rolled Vulkan wrapper toolkit
+src/render/renderer.*        ReaShaderRenderer: owns the GPU objects below, renders frames, never throws
+src/render/context.*         gpu::Context: vk-bootstrap instance/device, queue, command buffer + fence, VMA
+src/render/frame_targets.*   gpu::FrameTargets: upload/readback buffers + input/output images (per frame size)
+src/render/shader_pass.*     gpu::compileShader (shaderc + SPIRV-Reflect) and gpu::ShaderPass (fullscreen pipeline)
+src/render/gpu.*             Vulkan helpers: VK_CHECK, Buffer, Image, transition(); VMA implementation
+src/render/frame_view.h      FrameView: a CPU frame (BGRA, rowBytes)
+src/render/vkt/              old Vulkan toolkit, not built; reference for scene3d, to be deleted
 src/util/                    logging, paths, exceptions
 src/ui/                      the web UI (HTML/JS/SCSS), staged as rsui/
 src/shaders/                 built-in GLSL shaders, staged as assets/shaders/
@@ -106,12 +110,14 @@ src/shaders/                 built-in GLSL shaders, staged as assets/shaders/
 
 REAPER calls `ReaShaderPlugin::_processVideoFrame` (`plugin/plugin.cpp`), installed by `activate()`:
 1. `vproc->renderInputVideoFrame(0, 'RGBA')` gets the upstream frame. It is immutable, and is `Release()`d before returning.
-2. `ReaShaderRenderer::renderFrame()`, under `try_lock(frameMutex)`, runs:
-   - `checkFrameSize`
-   - `loadBitsToImage` (upload)
-   - `drawFrame` (3D scene + post-process pass)
-   - `transferFrame` (download into a new `vproc->newVideoFrame`)
-3. If `renderFrame` returns `false` (uninitialized, busy or failed), the input frame is passed through unchanged.
+2. Param values at video time come from `parmlist` (`[0]` = wet/dry, param `i` at `[i + 1]`), falling back to `ParamList` for params REAPER doesn't know yet.
+3. `ReaShaderRenderer::renderFrame()`, under `try_lock(frameMutex)`, does:
+   1. (re)creates `FrameTargets` if the size or row stride changed;
+   2. `memcpy` into the mapped upload buffer, and writes the shader's `Params` into its mapped UBO;
+   3. records one command buffer: buffer → input image, fullscreen shader pass → output image, output image → readback buffer;
+   4. one submit and one fence wait (2 s timeout = GPU hang = `failed`);
+   5. `memcpy` out into a new `vproc->newVideoFrame`.
+4. If `renderFrame` returns `false` (inactive, busy or failed), the input frame is passed through unchanged.
 
 ### Embedded web UI (WebUIHost)
 
@@ -155,12 +161,32 @@ Plain JSON objects with a `"type"` field. They're documented in `plugin/plugin.c
   - Values are a fixed array of `std::atomic<double>` (`maxCount` = 256), so the audio and video threads never lock.
   - `replaceShaderParams()` swaps the `Shader` group whenever a shader is compiled.
 
-### Vulkan layer (`vkt/`)
+### Renderer (`render/`)
 
-- Every `vkt` object pushes its cleanup into a `vkt::deletion_queue`. Never delete `vkt` objects manually.
-- `ReaShaderRenderer` keeps 4 queues: `vktMain`, `vktFrameResized`, `vktPhysicalDeviceChanged` and `vktCustomShaderChanged`.
-- Raw `Vk*` handles are initialized to `VK_NULL_HANDLE`.
-- `VK_CHECK_RESULT` throws `std::runtime_error`. Catch it before any callback boundary.
+- **Vulkan 1.3** with dynamic rendering and synchronization2, so there are no render pass or framebuffer objects.
+- **GPU list:** usable GPUs are the ones vk-bootstrap selects; the UI's device index is an index into that list.
+- **Lifetimes, three tiers, each a plain struct with `create()`/`destroy()` listing its handles:**
+  - `Context` (instance, device);
+  - `FrameTargets` (frame size);
+  - `ShaderPass` (per shader).
+
+  No deletion queues. A device switch destroys the targets, the pass and the device, then recreates the device and the pass. The targets come back with the next frame.
+- **Errors:** `VK_CHECK` throws `std::runtime_error`, and `ReaShaderRenderer`'s public functions catch everything.
+- **Shader changes:** `changeShader()` compiles outside the lock, then swaps the pass under `frameMutex`. Frames render one at a time and wait on the fence, so the old pass is idle. With no device (inactive), the compiled shader is kept and installed by the next `init()`. An empty source means `assets/shaders/default.frag`.
+
+### Shader contract (`shader_pass.cpp`, `kShaderPreamble`)
+
+- **User shaders write only `main()`, plus an optional `uniform Params { ... };` block.**
+- **Prepended automatically:**
+  - `#version 450`;
+  - `in vec2 uv` (0..1, top left = 0,0);
+  - `out vec4 fragColor`;
+  - `sampler2D iChannel0` (the input frame);
+  - push constants `iResolution`, `iTime`, `iFrameRate`, `iFrame`, `videoParam`.
+
+  A user `#version` is dropped, and `#extension` lines are hoisted above the preamble. `#line 1` keeps error line numbers matching the user's file.
+- **`Params`:** members must be `float`/`vec2`/`vec3`/`vec4`. Each component becomes one slider in [0, 1], named `member` or `member.x`, in reflection order. It is auto-bound to binding 1; any other resource is rejected with an error.
+- **Keep in sync:** `gpu::ShaderInputs` must match `ReaShaderInputs` in the preamble (std430 push-constant layout, 24 bytes).
 
 ### Logging
 
@@ -183,7 +209,7 @@ Plain JSON objects with a `"type"` field. They're documented in `plugin/plugin.c
   - clang's GNU driver doesn't define `UNICODE`, so call the explicit `...W` functions.
 - **The GUI container needs `WS_EX_CONTROLPARENT`.** REAPER's FX window is a dialog. Once the webview has keyboard focus, the dialog's tab navigation (`GetNextDlgTabItem`) starts from that focused window and climbs its parents. It can only climb back out through parents marked `WS_EX_CONTROLPARENT`, so an unmarked container makes it loop forever on the main thread (REAPER "Not Responding" at 100% CPU of one core).
 - **`CreateWindowExW`** with `WS_CHILD` and a null parent fails with error 1406 (`ERROR_TLW_WITH_WSCHILD`). Create the window in `set_parent()`, not in `gui::create()`.
-- **Vulkan SDK libs:** `OGLCompiler.lib` no longer exists. `GetDefaultResources()` lives in `glslang-default-resource-limits.lib`. `SpvTools.h` needs `SPIRV-Tools(-opt).lib` linked.
+- **vk-bootstrap and SPIRV-Reflect** are submodules pinned to the installed SDK version (`v1.4.357`, `vulkan-sdk-1.4.357.0`). Their sources are compiled into the plugin with `-w`. `spirv_reflect.cpp` exists upstream to build the C file as C++, so the project stays C++-only.
 - **GLM and VMA** stay as submodules. The SDK's GLM is older and doesn't compile with this code.
 - **Build warnings:** a bizarre native crash is usually a compiler warning that got ignored. Grep the build log for `-Wreturn-type`/`-Wuninitialized` before suspecting the toolchain.
 
@@ -198,8 +224,7 @@ Plain JSON objects with a `"type"` field. They're documented in `plugin/plugin.c
 - **Hangs:** run `"" | lldb -p <pid> -o "bt all" -o "process detach" -o quit` (not `--batch`). Get the module base from `(Get-Process -Id <pid>).Modules`.
 - **GPU faults:** recurring `nvlddmkm` events in the System log mean the Vulkan code is doing something invalid.
 - **Vulkan validation output:**
-  - `vkt/` has no debug messenger, so launch REAPER with these to get the Khronos layer's output (on in debug builds) as a log file:
-    - `VK_KHRONOS_VALIDATION_DEBUG_ACTION=VK_DBG_LAYER_ACTION_LOG_MSG`
-    - `VK_KHRONOS_VALIDATION_LOG_FILENAME=<path>`
-    - `VK_KHRONOS_VALIDATION_REPORT_FLAGS=error,warn`
-  - The log is empty in normal use, so anything in it is a bug.
+  - Debug builds request the Khronos validation layer (if installed). Its warnings and errors go to `rs.log` through vk-bootstrap's debug messenger.
+  - The log has none in normal use, so any is a bug.
+  - `VK_LOADER_DEBUG=layer` shows whether the layer was loaded.
+- **Testing the GPU code without REAPER:** a small executable that compiles `render/{gpu,context,frame_targets,shader_pass}.cpp` plus `util/` and runs frames through `FrameTargets` + `ShaderPass` checks output pixels exactly. This is how the renderer rewrite was verified, on both GPUs of the dev machine.
