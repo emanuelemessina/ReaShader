@@ -10,13 +10,6 @@ ReaShader is a **CLAP** video-effect plugin for REAPER. It taps REAPER's video f
 
 A **test application** (a fake REAPER host plus standardized tests, separate from the main build; the seed is `tests/seed/`) and a **render doc for humans** (`doc/rendering.md`, kept up to date with every render change). The full handoff, with requirements, what REAPER does to the plugin, the suggested designs and open questions, is in [doc/proposals.md](doc/proposals.md).
 
-**Before those: an installer** (agreed, not started; waits for the user to confirm the release build works in REAPER). The plan is one native installer per OS from a single CMake description: `install()` rules for the layout (`.clap`, `resources/`, `ui/`), plus CPack generators. Windows comes first, using CPack's Inno Setup generator (CMake ≥ 3.27; needs Inno Setup, `choco install innosetup`):
-- it installs per user into `%LOCALAPPDATA%\Programs\Common\CLAP\ReaShader`, with no admin, and the folder must stay writable for uploaded shaders;
-- upgrades keep `resources/shaders/compiled`, and it has an uninstaller;
-- it checks for the VC++ 2015–2022 x64 runtime and installs a bundled copy if it's missing. The release binary links `MSVCP140`/`VCRUNTIME140` dynamically, and a static CRT isn't an option because the SDK's `shaderc_combined` is `/MD`.
-
-The target machine also needs Vulkan (from the GPU driver) and WebView2 (built into Windows 11). macOS (a `.clap` bundle with its resources inside, a signed `.pkg`) and Linux (`TGZ`) get added when those ports exist.
-
 ## Hard rules
 
 - **Nothing may throw out of a REAPER or CLAP callback.** REAPER treats an escaped exception as fatal (`abort()`, exception `0x40000015` "inside reaper.exe"). `ReaShaderRenderer` never throws: a Vulkan error during a frame sets `failed`, and video passes through until the next activation.
@@ -39,6 +32,7 @@ There is no test suite or lint step. Verification is manual, in REAPER.
 - **Submodules:** run `git submodule update --init --recursive`. Everything in `external/` is a submodule (CLAP pinned to `1.2.10`), including `cmake-git-versioning`, and configure fails without it.
 - **First configure needs network once:** `webview` fetches the WebView2 headers from NuGet if no system copy is found.
 - **Dart Sass** (`sass`) on `PATH`: the build compiles the UI's SCSS, and configure fails with an install hint without it (`choco install sass` / `npm install -g sass` / `brew install sass/sass/sass`).
+- **Packaging only: Inno Setup 6** (`choco install innosetup`, or `winget install --id JRSoftware.InnoSetup --scope user`). `ISCC` is looked up in Program Files, Program Files (x86) and `%LOCALAPPDATA%\Programs`. It also needs a Visual Studio or Build Tools install, for `vc_redist.x64.exe`.
 
 **Building**
 - The VS Code **`build+deploy`** task is the default build task (Ctrl+Shift+B). It runs `cmake -DPROFILE=<debug|release> -P build.cmake`, which:
@@ -58,6 +52,7 @@ There is no test suite or lint step. Verification is manual, in REAPER.
 
   If REAPER has the `.clap` open, the deploy is skipped with a warning (close REAPER and build again).
   Deploy replaces `resources/images`, `resources/meshes`, `resources/shaders/examples` and `ui` one by one, so `resources/shaders/compiled` (the user's uploaded shaders) survives.
+- The **`package`** task builds the release preset, then the installer: `cmake -DPROFILE=release -DPACKAGE=ON -P build.cmake` runs CPack instead of deploying (release only, since the debug build needs the non-redistributable debug CRT). The output is `build/windows-release/package/ReaShader-<tag>-win64-setup.exe`. See Packaging.
 - The **`clean`** task wipes the preset build directory.
 - **CLI alternative** (builds without deploying): `cmake --preset windows-debug`, then `cmake --build --preset windows-debug`.
 - **The build itself (`CMakeLists.txt`):**
@@ -71,6 +66,17 @@ There is no test suite or lint step. Verification is manual, in REAPER.
 - **IntelliSense:** it reads `build/windows-debug/compile_commands.json`, which is written at configure time. On a fresh clone, run the build task once.
 - **Warnings:** `-Wall -Wextra -Wpedantic -Wshadow -Wconversion` apply to our code, and a missing `return` is an error. `-Wno-missing-field-initializers` is set because the `VkXxxInfo info{ VK_STRUCTURE_TYPE_XXX }` idiom zeroes the rest on purpose. Third-party headers are `SYSTEM` includes and third-party sources build with `-w`. The goal is zero warnings from our code.
 - Only Windows has been exercised. The macOS/Linux branches print `TODO` warnings for what's missing (the GUI, untested boxer).
+
+**Packaging** (`CMakeLists.txt` Install + Package, `installer/windows/`):
+- **One native installer per OS, from one CMake description:** `install()` rules lay out the plugin folder (`.clap`, `resources/`, `ui/`), and a CPack generator per OS builds the installer. Only Windows exists. macOS (a `.clap` bundle with its resources inside, a signed `.pkg`) and Linux (`TGZ`, untested) are TODOs.
+- **Windows: CPack's Inno Setup generator.**
+  - **Where it installs:** per user, into `%LOCALAPPDATA%\Programs\Common\CLAP\<PLUGIN_FILE_NAME>`, with no admin. The folder must be writable for uploaded shaders. `AppId` is the CLAP id.
+  - **Upgrades:** `reashader.iss` (`[InstallDelete]`) replaces the shipped folders like the deploy does, and keeps `resources/shaders/compiled`.
+  - **Uninstall:** `installer.pas` asks whether to delete the uploaded shaders (a silent uninstall keeps them), then removes the folders left empty.
+  - **VC++ runtime:** the release binary imports `MSVCP140`/`VCRUNTIME140`. A static CRT isn't possible because the SDK's `shaderc_combined` is `/MD`. So CMake finds the newest `VC/Redist/MSVC/<ver>/vc_redist.x64.exe` and passes its path and version as `CPACK_INNOSETUP_DEFINE_*`. `installer.pas` installs it when the registry's runtime (`VisualStudio\14.0\VC\Runtimes\x64`) is missing or older than that toolset.
+  - **Tasks page:** CPack always emits a "desktop icon" task, so `installer.pas` skips the tasks page.
+  - **What the target machine needs:** Vulkan (from the GPU driver) and WebView2 (built into Windows 11).
+  - **Debugging the installer:** the generated script is `build/windows-release/package/_CPack_Packages/win64/INNOSETUP/ISScript.iss`.
 
 **Manual testing:**
 1. Load "ReaShader" (CLAP) on a track that has a video item.
@@ -98,6 +104,7 @@ src/render/scene.*           gpu::Scene: textured meshes (tinyobjloader, stb) + 
 src/render/gpu.*             Vulkan helpers: VK_CHECK, Buffer, Image, createPipeline(), transition(); VMA implementation
 src/render/frame_view.h      FrameView: a CPU frame (BGRA, rowBytes)
 src/util/                    logging, paths, shell (openUrl)
+installer/windows/           Inno Setup extras for the CPack installer: reashader.iss (sections), installer.pas (code)
 src/ui/                      the web UI: index.html, scripts/{api,ui,client}.js, styles/ui.scss; staged as ui/
 src/shaders/examples/        example shader sources + README for users, staged as resources/shaders/examples/
 src/shaders/internal/        shaders built into the plugin (fullscreen.vert, scene.vert/.frag), compiled by glslc at build time

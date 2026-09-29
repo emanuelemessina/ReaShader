@@ -1,10 +1,11 @@
 # Build script:
-# - single entry point for the build loop: configure, build, deploy
+# - single entry point for the build loop: configure, build, deploy (or package)
 # - default profile to debug
 # - resolve host preset and build directory
 #
 # Usage:
 #   cmake [-DPROFILE=<debug|release>] -P build.cmake
+#   cmake -DPROFILE=release -DPACKAGE=ON -P build.cmake
 
 if(NOT DEFINED PROFILE)
     set(PROFILE debug)
@@ -55,6 +56,29 @@ execute_process(
 )
 if(NOT BUILD_RESULT EQUAL 0)
     message(FATAL_ERROR "Build failed (preset ${PRESET})")
+endif()
+
+#################################
+# Package
+#################################
+
+# -DPACKAGE=ON: build the installer (CPack, see CMakeLists.txt) instead of deploying.
+# Release only: debug builds need the debug C++ runtime, which isn't redistributable.
+
+if(PACKAGE)
+    if(NOT PROFILE STREQUAL "release")
+        message(FATAL_ERROR "Packaging needs -DPROFILE=release")
+    endif()
+    execute_process(
+        COMMAND ${CMAKE_CPACK_COMMAND} --config "${BUILD_PRESET_DIR}/CPackConfig.cmake"
+        WORKING_DIRECTORY "${BUILD_PRESET_DIR}"
+        RESULT_VARIABLE PACKAGE_RESULT
+    )
+    if(NOT PACKAGE_RESULT EQUAL 0)
+        message(FATAL_ERROR "Packaging failed (preset ${PRESET})")
+    endif()
+    message(STATUS "Installer written to ${BUILD_PRESET_DIR}/package")
+    return()
 endif()
 
 #################################
