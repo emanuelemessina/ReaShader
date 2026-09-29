@@ -11,7 +11,7 @@ ReaShader is a **CLAP** video-effect plugin for REAPER. It taps REAPER's video f
 A multi-phase cleanup is underway. The plan lives at `~/.claude/plans/picking-up-on-this-snug-aurora.md`.
 - **Phases:** 1 deletions/hygiene → 2 build → 3 utilities → 4 params/state/protocol → 5 layering → 6 renderer rewrite (vkt → vk-bootstrap + plain structs) → 7 docs.
 - **How it runs:** before each batch of changes, give the user a brief rationale and wait for approval. The user commits between phases.
-- **Status:** phase 3 done (built, awaiting REAPER check + user commit). Next: phase 4 (params, state, protocol, frontend).
+- **Status:** phase 4 done (built, awaiting REAPER check + user commit). Next: phase 5 (layering).
 
 ## Hard rules
 
@@ -55,7 +55,7 @@ There is no test suite or lint step. Verification is manual, in REAPER.
 **Manual testing:**
 1. Load "ReaShader" (CLAP) on a track that has a video item.
 2. Check the FX window shows the embedded web UI and resizes with the window.
-3. Check REAPER's generic parameter list shows "Audio Gain", "Video Param" and "Rendering Device".
+3. Check REAPER's generic parameter list shows "Audio Gain" and "Video Param", and that they sync both ways with the web UI sliders.
 4. Check REAPER's Video window shows the logo mesh composited over the video.
 
 ## Architecture
@@ -68,26 +68,38 @@ src/clap/webui_host_win32.*          WebUIHost: webview on its own thread, JSON 
 src/reashader/reashaderplugin.*      ReaShaderPlugin: params, state, web-UI messages, video-tap wiring
 src/reashader/rsrenderer.*           ReaShaderRenderer: the Vulkan pipeline (uses vkt/)
 src/reashader/vkt/                   hand-rolled Vulkan wrapper toolkit
-src/reashader/rsparams/              polymorphic parameter types + binary (de)serialization
-src/reashader/rsui/api.h             JSON message protocol (C++ side); frontend/ is the JS side
-src/reashader/tools/                 logging, paths, exceptions, base64
+src/reashader/rsparams/params.*      Param struct + ParamList (lock-free values)
+src/reashader/rsui/frontend/         the web UI (HTML/JS/SCSS)
+src/reashader/tools/                 logging, paths, exceptions
 ```
 
 ### ReaShaderPlugin (one object, no processor/controller split)
 
+- **Threads** (listed in `reashaderplugin.h`):
+
+  | Thread | Does |
+  |---|---|
+  | main | lifecycle, state, `onMainThread()` |
+  | audio | host param events, lock-free values only |
+  | video | renderer, `try_lock` only |
+  | webview | UI messages, device switch, shader upload |
 - **`clap.params`:**
-  - The `NumericParameter`/`Int8u` entries of `rsParams` are exposed as CLAP params.
-  - Host automation arrives as `CLAP_EVENT_PARAM_VALUE` events in `process()`/`flush()`, through `handleParamEvents()`, and is applied by `applyHostParamValue()`.
-  - Web-UI edits are queued (`_queueHostNotification`) and drained into `out_events` by the same helper.
-- **`clap.state`:** `saveState()`/`loadState()` serialize `rsParams` through `ParamWriter`/`ParamReader` (`rsparams/paramstream.h`).
-- **REAPER video tap:** `activate(host)` does:
+  - Params with `automatable = true` are exposed as CLAP params. Today that is Audio Gain and Video Param.
+  - **Host automation:** arrives in `process()`/`flush()` (`handleParamEvents()`) and goes into `applyHostParamValue()`, which is lock-free. It then requests a main-thread callback, and `onMainThread()` echoes the values to the web UI.
+  - **Web UI edits:** flagged with `ParamList::flagForHost()`, plus `host_params->request_flush()`. They are drained into `out_events` by `takeParamChangeForHost()`, which is lock-free.
+- **`clap.state`:** one JSON document: `{ version: 1, params: { name: value }, device, shader: { name, source } }`.
+  - The shader source is embedded, so projects are self-contained.
+  - Unknown or old state loads defaults.
+  - Values of shader params are restored by name, once the shader has been recompiled.
+- **Rendering device:** not a host param. It lives in state and the web UI. Changing it (from the UI or on state load) calls `changeRenderingDevice()`.
+- **REAPER video tap:** `activate()` does:
   1. `host->get_extension(host, "cockos.reaper_extension")`, cast to `reaper_plugin_info_t*`;
   2. `GetFunc("clap_get_reaper_context")`: with `sel=4` it gives the FxDsp context, with `1` the parent track;
   3. `GetFunc("video_CreateVideoProcessor")(fxctx, VERSION)`;
   4. `reaShaderRenderer->init()`.
 
   `deactivate()` undoes it. The same renderer instance survives repeated activate/deactivate cycles.
-- **Renderer access:** `ReaShaderRenderer` reaches plugin data only through narrow, mutex-guarded accessors (`getRenderingDeviceIndex`, `setRenderingDeviceIndex`, `setRenderingDevicesList`, `rsParamsCount`, `addRendererParam`).
+- **Renderer access:** `ReaShaderRenderer` reaches plugin data only through `getRenderingDeviceIndex`, `setRenderingDeviceIndex`, `setRenderingDevicesList` and `setShaderParams`.
 
 ### Per-frame video path
 
@@ -113,8 +125,7 @@ REAPER calls `processVideoFrame` → `processFrame` (`reashader_clap.cpp`):
 - **Transport:**
   - JS → C++: `bind("postToNative")` → `ReaShaderPlugin::handleWebUIMessage`.
   - C++ → JS: `eval()` → `window.__reashaderOnMessage`.
-  - The plugin holds a `WebUISender` (`std::function`) and no-ops when none is registered.
-- **Shader upload:** a custom shader arrives as one base64 JSON message (`FileUpload`).
+  - The plugin holds a `WebUISender` (`std::function`), invoked under its mutex so that `clearWebUISender()` waits for any in-flight send. It no-ops when no sender is registered.
 - **Frontend:**
   - Plain sequential `<script>` tags, no ES modules: `file://` blocks module imports.
   - SCSS is compiled ahead of time (Live Sass Compile, see `.vscode/settings.json`), and the compiled `rsui.css` is committed.
@@ -122,17 +133,26 @@ REAPER calls `processVideoFrame` → `processFrame` (`reashader_clap.cpp`):
 
 ### Web UI protocol
 
-- `rsui/api.h` defines the message types, `MessageHandler` for parsing, and `MessageBuilder` for building.
-- The C++ and JS sides match purely on the `"type"` string.
-- To add a message: extend the enum and `typeStrings`, then add a `reactTo*` and a `build*` method.
+Plain JSON objects with a `"type"` field. They're documented in `reashaderplugin.cpp` (web UI section) and handled by an `if`/`else` on the type there. On the JS side, `client.js` switches on the type and `api.js` sends.
+
+| Direction | Message | Payload / effect |
+|---|---|---|
+| to UI | `snapshot` | `{ track, params, devices, shader }`. The UI rebuilds itself from it; sent on `ready`, activate, state load, device and shader changes |
+| to UI | `paramValue` | `{ id, value }`: host automation |
+| to UI | `shaderStatus` | `{ status, error }` |
+| from UI | `ready` | — |
+| from UI | `paramValue` | `{ id, value }` |
+| from UI | `renderingDevice` | `{ index }` |
+| from UI | `shaderUpload` | `{ name, source }`: GLSL sent as text |
 
 ### Parameters (`rsparams/`)
 
-- **Types:** `Parameters::IParameter` is polymorphic and serializable to both JSON and binary.
-  - `NumericParameter`: host-automatable.
-  - `Int8u`: stepped/enum.
-  - `String`: UI and state only.
-- **Adding a type:** register it in `_registerParameterInstantiator` and implement the `...Derived` virtuals.
+- **`Param`:** one plain struct: id, name, group (`Main` or `Shader`), units, default value, automatable flag. Values are normalized to [0, 1].
+- **Ids:** a param's id is its index in the list, and also its CLAP param id. The defaults (`AudioGain`, `VideoParam`) come first.
+- **`ParamList`:**
+  - Metadata is behind a mutex.
+  - Values are a fixed array of `std::atomic<double>` (`maxCount` = 256), so the audio and video threads never lock.
+  - `replaceShaderParams()` swaps the `Shader` group whenever a shader is compiled.
 
 ### Vulkan layer (`vkt/`)
 
@@ -160,6 +180,7 @@ REAPER calls `processVideoFrame` → `processFrame` (`reashader_clap.cpp`):
   - `<shellapi.h>` goes after `<windows.h>`.
   - No `NOMINMAX` is defined, so `std::max`/`std::min` break in files that include `<windows.h>`.
   - clang's GNU driver doesn't define `UNICODE`, so call the explicit `...W` functions.
+- **The GUI container needs `WS_EX_CONTROLPARENT`.** REAPER's FX window is a dialog. Once the webview has keyboard focus, the dialog's tab navigation (`GetNextDlgTabItem`) starts from that focused window and climbs its parents. It can only climb back out through parents marked `WS_EX_CONTROLPARENT`, so an unmarked container makes it loop forever on the main thread (REAPER "Not Responding" at 100% CPU of one core).
 - **`CreateWindowExW`** with `WS_CHILD` and a null parent fails with error 1406 (`ERROR_TLW_WITH_WSCHILD`). Create the window in `set_parent()`, not in `gui::create()`.
 - **Vulkan SDK libs:** `OGLCompiler.lib` no longer exists. `GetDefaultResources()` lives in `glslang-default-resource-limits.lib`. `SpvTools.h` needs `SPIRV-Tools(-opt).lib` linked.
 - **GLM and VMA** stay as submodules. The SDK's GLM is older and doesn't compile with this code.

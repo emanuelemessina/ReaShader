@@ -7,20 +7,29 @@
 	<link rel="icon" href="images/favicon.ico" type="image/x-icon">
 	<link rel="stylesheet" href="rsui.css" charset="UTF-8">
 
-	<!-- app (plain scripts, not ES modules -- file:// blocks module imports via CORS in the
-	     webview engines on all three platforms; loaded in dependency order instead) -->
-
-	<script defer src="scripts/strings.js" charset="UTF-8"></script>
+	<!-- plain scripts in dependency order: file:// blocks ES module imports -->
 	<script defer src="scripts/api.js" charset="UTF-8"></script>
 	<script defer src="scripts/rsui.js" charset="UTF-8"></script>
 	<script defer src="scripts/client.js" charset="UTF-8"></script>
-
 </head>
 <body>
 	<div id="background"></div>
 	<div id="logo">
 		<img src="images/reashader-logo-hr.png"/>
 	</div>
-	<div id="paramsContainer"></div>
+	<div id="paramsContainer">
+		<fieldset id="main">
+			<legend>Main</legend>
+			<div class="params"></div>
+		</fieldset>
+		<fieldset id="renderingDevice">
+			<legend>Rendering Device</legend>
+		</fieldset>
+		<fieldset id="shader">
+			<legend>Shader</legend>
+			<div class="uploader"></div>
+			<div class="params"></div>
+		</fieldset>
+	</div>
 </body>
 </html>

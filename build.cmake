@@ -86,12 +86,16 @@ while(TRUE)
 
     message(NOTICE "\nCan't overwrite ReaShader.clap (${COPY_RESULT}).\n"
                    "Close REAPER (or remove ReaShader from all FX chains), then press Enter to retry. Ctrl+C cancels.")
+    # Wait for Enter (fails at end of input, i.e. no interactive terminal)
     if(CMAKE_HOST_WIN32)
-        execute_process(COMMAND cmd /c "set /p _="
+        execute_process(COMMAND powershell -NoProfile -Command "if ($null -eq [Console]::In.ReadLine()) { exit 1 }"
                         RESULT_VARIABLE WAIT_RESULT)
     else()
         execute_process(COMMAND sh -c "read _"
                         RESULT_VARIABLE WAIT_RESULT)
+    endif()
+    if(NOT WAIT_RESULT EQUAL 0)
+        message(FATAL_ERROR "Deploy aborted: no input to wait on. Close REAPER and build again.")
     endif()
 endwhile()
 

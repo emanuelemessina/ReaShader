@@ -8,7 +8,7 @@
 
 #include "rsrenderer.h"
 #include "reashaderplugin.h"
-#include "rsparams/rsparams.h"
+#include "rsparams/params.h"
 #include "tools/exceptions.h"
 #include "tools/logging.h"
 #include "tools/paths.h"
@@ -1060,35 +1060,68 @@ namespace ReaShader
 	{
 		std::lock_guard<std::mutex> lock(frameMutex);
 
-		if (!vktDevice) // renderer not initialized yet (e.g. a stray/early web UI message) -- nothing to switch from
+		if (!vktDevice) // not active: the index is picked up by the next init()
 			return;
 
-		halted = true;
+		if (renderingDeviceIndex < 0 || (size_t)renderingDeviceIndex >= vkSuitablePhysicalDevices.size())
+			renderingDeviceIndex = 0;
 
-		vktDevice->waitIdle();
+		try
+		{
+			halted = true;
 
-		deletionQueues.vktFrameResized.flush();
-		deletionQueues.vktPhysicalDeviceChanged.flush();
+			vktDevice->waitIdle();
 
-		setUpDevice(renderingDeviceIndex);
+			deletionQueues.vktFrameResized.flush();
+			deletionQueues.vktPhysicalDeviceChanged.flush();
 
-		frameFailed = false;
+			setUpDevice(renderingDeviceIndex);
+
+			frameFailed = false;
+		}
+		catch (const std::exception& e)
+		{
+			LOG(e, toFile | toConsole | toBox, "ReaShaderRenderer", "Rendering device change failed",
+				"Video passes through until the plugin is re-activated");
+			frameFailed = true;
+		}
 		halted = false;
 	}
 
-	void ReaShaderRenderer::changeCustomShader(std::vector<char>&& glsl,
-											   std::function<void(std::string&& msg)> onStatus,
-											   std::function<void(std::string&& msg)> onError,
-											   std::function<void(void)> onSuccess)
+	void ReaShaderRenderer::changeCustomShader(const std::string& source, StatusCallback onStatus,
+											   StatusCallback onError, std::function<void()> onSuccess)
+	{
+		std::lock_guard<std::mutex> lock(frameMutex);
+
+		if (!vktDevice)
+		{
+			onError("The renderer is not active");
+			return;
+		}
+
+		try
+		{
+			_changeCustomShader(source, onStatus, onError, onSuccess);
+		}
+		catch (const std::exception& e)
+		{
+			halted = false;
+			onError(e.what());
+		}
+	}
+
+	void ReaShaderRenderer::_changeCustomShader(const std::string& source, const StatusCallback& onStatus,
+												const StatusCallback& onError, const std::function<void()>& onSuccess)
 	{
 		onStatus("Compiling...");
 
 		// compile
 		std::vector<uint32_t> spv;
 		std::string msg;
-		if (!vkt::Pipeline::compile_glsl_to_spirv(std::move(glsl), EShLangFragment, spv, msg))
+		if (!vkt::Pipeline::compile_glsl_to_spirv(std::vector<char>(source.begin(), source.end()), EShLangFragment,
+												  spv, msg))
 		{
-			onError(std::move(msg));			
+			onError(msg);
 			return;
 		}
 
@@ -1103,9 +1136,7 @@ namespace ReaShader
 
 		std::vector<std::unique_ptr<ShaderVariable>> variables;
 
-		// vst param system
-		std::vector<std::unique_ptr<Parameters::IParameter>> newParameters;
-		int currentParamId = (int)reaShaderPlugin->rsParamsCount();
+		std::vector<Parameters::Param> newParameters;
 
 		// descriptors
 		auto dslb = vkt::Descriptors::DescriptorSetLayoutBuilder(vktDevice);
@@ -1137,11 +1168,9 @@ namespace ReaShader
 				{
 					for (int y = 0; y < m->rows; y++)
 					{
-						std::unique_ptr<Parameters::ShaderParameter> p = std::make_unique<Parameters::ShaderParameter>(
-							currentParamId, std::format("{} ({},{})", m->name, x, y), Parameters::Group::Shader,
-							"pushConstants", m->name, "");
+						Parameters::Param p;
+						p.name = std::format("{} ({},{})", m->name, x, y);
 						newParameters.push_back(std::move(p));
-						currentParamId++;
 					}
 				}
 			}
@@ -1184,11 +1213,9 @@ namespace ReaShader
 				{
 					for (int y = 0; y < m->rows; y++)
 					{
-						std::unique_ptr<Parameters::ShaderParameter> p = std::make_unique<Parameters::ShaderParameter>(
-							currentParamId, std::format("{} ({},{})", m->name, x,y), Parameters::Group::Shader, buff->name, m->name,
-							"");
+						Parameters::Param p;
+						p.name = std::format("{} ({},{})", m->name, x, y);
 						newParameters.push_back(std::move(p));
-						currentParamId++;
 					}
 				}
 			}
@@ -1227,10 +1254,7 @@ namespace ReaShader
 			currentBinding++;
 			*/
 
-			// add param
-			auto& i = (std::unique_ptr<ShaderSampledImage>&) variables.back();
-			auto p = std::make_unique<Parameters::String>(currentParamId, i->name, Parameters::Group::Shader);
-			newParameters.push_back(std::move(p));
+			// TODO: sampled images (textures) as shader inputs
 		}
 
 		// build descriptors layout
@@ -1271,8 +1295,7 @@ namespace ReaShader
 
 		// add parameters
 
-		for (auto& ptr : newParameters)
-			reaShaderPlugin->addRendererParam(ptr);
+		reaShaderPlugin->setShaderParams(std::move(newParameters));
 
 		// wait for param population
 

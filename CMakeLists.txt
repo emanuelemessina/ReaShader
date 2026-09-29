@@ -167,12 +167,10 @@ target_sources(${PROJECT_NAME} PRIVATE
     src/reashader/reashaderplugin.cpp
     src/reashader/rsrenderer.cpp
 
-    src/reashader/rsparams/rsparams.cpp
-    src/reashader/rsparams/serdes.cpp
+    src/reashader/rsparams/params.cpp
 
     src/reashader/tools/logging.cpp
     src/reashader/tools/paths.cpp
-    src/reashader/tools/base64.cpp
 
     src/reashader/vkt/vktbuffers.cpp
     src/reashader/vkt/vktcommandpool.cpp
