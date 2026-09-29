@@ -6,9 +6,11 @@ Guidance for Claude Code (claude.ai/code) when working in this repository. It de
 
 ReaShader is a **CLAP** video-effect plugin for REAPER. It taps REAPER's video frames, runs them through a Vulkan pipeline (GLSL shaders) and hands them back. Its HTML/JS/SCSS UI is embedded in REAPER's FX window through a native webview ([webview/webview](https://github.com/webview/webview)).
 
+The renderer is explained for humans in [doc/rendering.md](doc/rendering.md): the Vulkan concepts mapped to `src/render/`, every barrier of a frame, lifetimes and decisions.
+
 ## Proposals (the user's, not started)
 
-A **test application** (a fake REAPER host plus standardized tests, separate from the main build; the seed is `tests/seed/`) and a **render doc for humans** (`doc/rendering.md`, kept up to date with every render change). The full handoff, with requirements, what REAPER does to the plugin, the suggested designs and open questions, is in [doc/proposals.md](doc/proposals.md).
+A **test application**: a fake REAPER host plus standardized tests, separate from the main build (the seed is `test/seed/`). The full handoff, with requirements, what REAPER does to the plugin, the suggested design and open questions, is in [doc/proposals.md](doc/proposals.md).
 
 ## Hard rules
 
@@ -17,6 +19,7 @@ A **test application** (a fake REAPER host plus standardized tests, separate fro
 - `deactivate()` deletes the video processor, so REAPER stops calling into the plugin. The renderer (GPU) stays up until the plugin is destroyed: it is created by the first `activate()`, which keeps re-activation (and the restart for a param rescan) fast.
 - REAPER's `'RGBA'` frames are laid out in memory as **B,G,R,A** (byte 0 = B).
 - **Encoding:** frontend files must be UTF-8 (`file index.html` must not say "UTF-16"). A UTF-16 `index.html` loaded via `file://` renders as garbage text.
+- **Render doc:** any change in `src/render/` or `src/shaders/internal/` updates [doc/rendering.md](doc/rendering.md) in the same batch (barrier table, lifetimes, decisions). It is written for humans who don't know Vulkan, and references code by file and function, never by line.
 - **Comments:** they describe what the code does and why, for a reader with no session context. Investigation narratives go in `doc/history.md`, not in code.
 - **Changes:** before a batch of changes, give the user a brief rationale and wait for approval.
 - **Commits:** the user commits. Don't run `git commit` unless asked.
@@ -83,7 +86,7 @@ There is no test suite or lint step. Verification is manual, in REAPER.
 2. Check the FX window shows the embedded web UI and resizes with the window.
 3. With no shader (the initial state) video passes through unchanged.
 4. Upload `resources/shaders/examples/*.frag` from the plugin folder: each appears in the shader list, its sliders appear, and REAPER's generic parameter list shows "Audio Gain" plus the shader's params, synced both ways with the web UI sliders.
-5. Upload `tests/shaders/broken.frag`: the compile error shows in the UI, and the current shader stays.
+5. Upload `test/shaders/broken.frag`: the compile error shows in the UI, and the current shader stays.
 6. Click the UI's logo: the about box opens and the 3D logo spins in the video window; closing it removes the logo.
 
 ## Architecture
@@ -108,8 +111,8 @@ installer/windows/           Inno Setup extras for the CPack installer: reashade
 src/ui/                      the web UI: index.html, scripts/{api,ui,client}.js, styles/ui.scss; staged as ui/
 src/shaders/examples/        example shader sources + README for users, staged as resources/shaders/examples/
 src/shaders/internal/        shaders built into the plugin (fullscreen.vert, scene.vert/.frag), compiled by glslc at build time
-tests/shaders/               shaders for manual testing (broken.frag), not shipped
-tests/seed/                  standalone GPU test (own CMake project, not part of the plugin build)
+test/shaders/               shaders for manual testing (broken.frag), not shipped
+test/seed/                  standalone GPU test (own CMake project, not part of the plugin build)
 ```
 
 ### ReaShaderPlugin (one object, no processor/controller split)
@@ -228,7 +231,7 @@ Plain JSON objects with a `"type"` field. They're documented in `plugin/plugin.c
   - `Context` (instance, device);
   - `FrameTargets` (frame size);
   - `ShaderPass` (per shader);
-  - `Scene` (while the logo is on; its depth buffer per frame size).
+  - `Scene` (from the first time the logo is on until the device goes; its depth buffer per frame size).
 
   A device switch destroys the targets, the pass, the scene and the device, then recreates the device, the pass and the scene. The targets come back with the next frame.
 - **Errors:** `VK_CHECK` throws `std::runtime_error`, and `ReaShaderRenderer`'s public functions catch everything.
@@ -253,7 +256,7 @@ Plain JSON objects with a `"type"` field. They're documented in `plugin/plugin.c
   - push constants `iResolution`, `iTime`, `iFrameRate`, `iFrame`.
 
   A user `#version` is dropped, and `#extension` lines are hoisted above the preamble. `#line 1` keeps error line numbers matching the user's file.
-- **`Params`:** members must be `float`/`vec2`/`vec3`/`vec4`. Each component becomes one slider, named `member` or `member.x`, in reflection order. It is auto-bound to binding 1; any other resource is rejected with an error.
+- **`Params`:** members must be `float`/`vec2`/`vec3`/`vec4`. Each component becomes one slider, named `member` or `member.x`, in reflection order. It is auto-bound to binding 1 (shaderc shifts uniform-block bindings by 1, explicit ones too); any other resource, or anything outside descriptor set 0, is rejected with an error.
 - **Annotations:** `//@param member 'Label' default min max` (anywhere in the source; label and numbers optional, in that order) sets a slider's label, default and range. Without one: label = member name, 0.5, 0..1. Inspired by REAPER's video processor `//@param`, but keyed by member name, not index.
 - **Keep in sync:** `gpu::ShaderInputs` must match `ReaShaderInputs` in the preamble (std430 push-constant layout, 20 bytes).
 
@@ -293,7 +296,7 @@ Plain JSON objects with a `"type"` field. They're documented in `plugin/plugin.c
 - **Hangs:** run `"" | lldb -p <pid> -o "bt all" -o "process detach" -o quit` (not `--batch`). Get the module base from `(Get-Process -Id <pid>).Modules`.
 - **GPU faults:** recurring `nvlddmkm` events in the System log mean the Vulkan code is doing something invalid.
 - **Vulkan validation output:**
-  - Debug builds request the Khronos validation layer (if installed). Its warnings and errors go to `rs.log` through vk-bootstrap's debug messenger.
+  - Debug builds request the Khronos validation layer (if installed), with synchronization validation on (hazards between barriers and accesses). Its warnings and errors go to `rs.log` through vk-bootstrap's debug messenger. For the GPU test, no `rs.log` next to `gpu_test.exe` means no messages.
   - The log has none in normal use, so any is a bug.
   - `VK_LOADER_DEBUG=layer` shows whether the layer was loaded.
-- **Testing the GPU code without REAPER:** `tests/seed/` (`cmake -S tests/seed -B build/tests-seed -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++`, build, run `build/tests-seed/gpu_test`). It runs frames through `FrameTargets` + `ShaderPass` + `Scene` and the shader compiler on every GPU, and checks the output pixels exactly. It prints `ALL PASSED`.
+- **Testing the GPU code without REAPER:** `test/seed/` (`cmake -S test/seed -B build/tests-seed -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++`, build, run `build/tests-seed/gpu_test`). It runs frames through `FrameTargets` + `ShaderPass` + `Scene` and the shader compiler on every GPU, and checks the output pixels exactly. It prints `ALL PASSED`.

@@ -1,6 +1,8 @@
 # Proposals: handoff
 
-Two proposals by the user, not started. They were deferred until the September 2026 cleanup was done (see [history.md](history.md)), and it is. This document is the handoff for the session that picks them up.
+Two proposals by the user. They were deferred until the September 2026 cleanup was done (see [history.md](history.md)), and it is. This document is the handoff for the session that picks them up.
+
+**Status:** 1 (test application) is not started. 2 (render doc) is done: [rendering.md](rendering.md). Its section below is kept as the record of what was asked.
 
 **Before starting**, read [CLAUDE.md](../CLAUDE.md) (the current architecture) and follow its hard rules. In particular:
 - give a brief rationale before each batch of changes and wait for approval;
@@ -21,7 +23,7 @@ Two proposals by the user, not started. They were deferred until the September 2
 
 ### What exists
 
-- **`tests/seed/`:** a standalone CMake project (`gpu_test`), separate from the plugin's build. It compiles the renderer's GPU code (`render/{gpu,context,frame_targets,shader_pass,shader_compiler,scene}.cpp`) with a small `main`, then on **every GPU** of the machine:
+- **`test/seed/`:** a standalone CMake project (`gpu_test`), separate from the plugin's build. It compiles the renderer's GPU code (`render/{gpu,context,frame_targets,shader_pass,shader_compiler,scene}.cpp`) with a small `main`, then on **every GPU** of the machine:
   - checks pixels byte by byte for an example shader, at an odd width with padded rows;
   - checks `Params` reflection, UBO offsets and BGRA channel order;
   - checks the stored JSON round trip;
@@ -32,13 +34,13 @@ Two proposals by the user, not started. They were deferred until the September 2
   It has its own tiny `expect()`. Build and run it:
 
   ```
-  cmake -S tests/seed -B build/tests-seed -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++
+  cmake -S test/seed -B build/tests-seed -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++
   cmake --build build/tests-seed
   build/tests-seed/gpu_test
   ```
 
   It prints `ALL PASSED`, exits 0 on success, and was passing on 2026-09-29 (NVIDIA MX130 + Intel UHD 620).
-- **`tests/shaders/broken.frag`:** a deliberately broken shader.
+- **`test/shaders/broken.frag`:** a deliberately broken shader.
 
 ### What REAPER does to the plugin (what the host must emulate)
 
@@ -75,20 +77,20 @@ Everything the plugin relies on, with the code that uses it:
 
 ### Suggested design (to agree with the user first)
 
-- **Two levels, both in `tests/`, with their own `tests/CMakeLists.txt` (never included by the main build):**
+- **Two levels, both in `test/`, with their own `test/CMakeLists.txt` (never included by the main build):**
   - **Unit level** (what the seed already is): link the plugin's sources directly and test units, such as the renderer's blocks, `ParamList`, and the UI protocol. For the protocol, call `ReaShaderPlugin::handleWebUIMessage()` with a `WebUISender` that records the messages. Fast and precise.
-  - **Host level:** a fake REAPER (`tests/host/`) that loads the **built `ReaShader.clap`** through `clap_entry`, implements the host services and the REAPER extension above, and plays scenarios:
+  - **Host level:** a fake REAPER (`test/host/`) that loads the **built `ReaShader.clap`** through `clap_entry`, implements the host services and the REAPER extension above, and plays scenarios:
     - activate → frames → a shader change (restart + rescan) → state save/load → deactivate → destroy;
     - checks the frames coming back, the param list after a rescan, the state round trip, no crash or hang, and an empty `rs.log` (validation layer) in debug builds.
 
     A shader has to reach the plugin somehow, since the UI is the only entry today. Options:
     - a state blob with an embedded compiled shader (easiest, and already supported);
     - a test-only hook, which should be avoided.
-- **Standardized tests:** one file per area under `tests/cases/` (e.g. `render.cpp`, `params.cpp`, `protocol.cpp`, `host_lifecycle.cpp`), all in one format. Two options for the user:
+- **Standardized tests:** one file per area under `test/cases/` (e.g. `render.cpp`, `params.cpp`, `protocol.cpp`, `host_lifecycle.cpp`), all in one format. Two options for the user:
   - (a) a minimal self-registering `TEST("name") { EXPECT(...); }` header of our own (about 40 lines, no dependency);
   - (b) [doctest](https://github.com/doctest/doctest) as a submodule (a single header, the de-facto standard).
 
-  The seed moves into `tests/cases/render.cpp`.
+  The seed moves into `test/cases/render.cpp`.
 - **Discrepancy loop:** when REAPER behaves differently from the host (call order, threads, values), fix the fake host first, add a test that fails the way REAPER did, then fix the plugin. Record learned REAPER behaviours in CLAUDE.md.
 - **Running:** a VS Code task (`test`) next to `build+deploy`, running `cmake -S tests -B build/tests` + build + run. It should stay separate from the build task.
 
@@ -100,7 +102,7 @@ Everything the plugin relies on, with the code that uses it:
 
 ---
 
-## 2. Render doc for humans
+## 2. Render doc for humans (done: [rendering.md](rendering.md))
 
 ### Goal (the user's words, condensed)
 
@@ -143,7 +145,7 @@ Everything the plugin relies on, with the code that uses it:
    - one fence per frame instead of pipelining, since REAPER's callback is synchronous;
    - the sRGB logo texture on a UNORM target (kept from the old look).
 8. **How to extend:** add a pass; add a scene object or texture (`Mesh`/`Texture`/`Scene::objects`); add a built-in shader input (preamble ↔ `ShaderInputs` in sync, 20 bytes today).
-9. **Debugging:** the validation layer to `rs.log`, `VK_LOADER_DEBUG`, the GPU test in `tests/seed`, and crash dumps (link CLAUDE.md's section).
+9. **Debugging:** the validation layer to `rs.log`, `VK_LOADER_DEBUG`, the GPU test in `test/seed`, and crash dumps (link CLAUDE.md's section).
 
 ### Maintenance rule
 
@@ -153,7 +155,7 @@ Once the doc exists, add a hard rule to CLAUDE.md: *any change in `src/render/` 
 
 ## Other notes for the next session
 
-- **Only debug builds have been exercised** (build task, REAPER tests, GPU test). A release build (`-DPROFILE=release`) has never been tried since the rewrite. Worth one pass: validation is off there, and `NDEBUG` disables DevTools.
-- **Compiled shaders are written into the plugin folder** (`resources/shaders/compiled/`). A system-wide CLAP install (e.g. Program Files) may not be writable. If that matters, fall back to a per-user data folder.
+- **Release builds work in REAPER** (checked by the user, September 2026). Debug and release are separate plugins (`ReaShader (Debug)`), so both can be installed at once. A Windows installer exists (CLAUDE.md, Build → Packaging). The test application could also cover the release build.
+- **Compiled shaders are written into the plugin folder** (`resources/shaders/compiled/`). The installer installs per user, which is writable, but a manual system-wide CLAP install (e.g. Program Files) may not be. If that matters, fall back to a per-user data folder.
 - **macOS/Linux:** the GUI (`clap.gui` with webview on WKWebView/WebKitGTK) is not implemented, and Boxer and `util::shell::openUrl` are untested there. The CMake and code `TODO`s mark the spots.
 - **Restart + rescan** for shader params: the user reported the shader features working in REAPER after it was added. Worth an explicit host-level test (param list and automation after a shader change).

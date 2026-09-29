@@ -144,13 +144,24 @@ layout(push_constant) uniform ReaShaderInputs
 			std::string error;
 			for (const SpvReflectDescriptorBinding* binding : bindings)
 			{
+				// a block without an instance name (`uniform Params { ... };`) is named by its type
+				std::string name = binding->name;
+				if (name.empty() && binding->type_description && binding->type_description->type_name)
+					name = binding->type_description->type_name;
+
+				// the pipeline layout has one descriptor set: anything outside it is invalid for Vulkan
+				if (binding->set != 0)
+				{
+					error = std::format("'{}': only descriptor set 0 is available", name);
+					break;
+				}
 				if (binding->binding == kInputBinding)
 					continue;
 
 				if (binding->binding != kParamsBinding ||
 					binding->descriptor_type != SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
 				{
-					error = std::format("'{}': only iChannel0 and one uniform block (Params) are available", binding->name);
+					error = std::format("'{}': only iChannel0 and one uniform block (Params) are available", name);
 					break;
 				}
 

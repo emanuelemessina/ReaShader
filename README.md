@@ -97,8 +97,10 @@ src/render/      the Vulkan renderer and the shader compiler
 src/ui/          the web UI (index.html, scripts/, styles/)
 src/shaders/     example shaders, internal shaders, the logo scene's shaders
 src/util/        logging, paths, fault handling
-tests/shaders/   shaders for manual testing
+test/            shaders for manual testing, the standalone GPU test
+installer/       installer extras (Windows: Inno Setup, via CPack)
 external/        dependencies (git submodules)
+doc/rendering.md how the renderer works (Vulkan concepts mapped to src/render/)
 doc/history.md   how the project got here (VST3 → CLAP, design decisions)
 ```
 
