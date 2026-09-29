@@ -9,27 +9,14 @@
 #include "rsrenderer.h"
 #include "reashaderplugin.h"
 #include "rsparams/rsparams.h"
-#include "tools/compiler_codes.h"
 #include "tools/exceptions.h"
-#include "rsparams/rsparams.h"
+#include "tools/logging.h"
+#include "tools/paths.h"
 
 #include <queue>
 
-/* lice */
-#pragma warning(push)
-#pragma warning(disable : W_RESULT_OF_ARITHMETIC_OPERATION_CAST_TO_LARGER_SIZE)
-#pragma warning(disable : W_FUNC_MAY_BE_UNSAFE)
-
-#include "lice/lice.h"
-
-#pragma warning(pop)
-/* ---- */
-
 #define MAX_OBJECTS 100
-
-#include "tools/paths.h"
-#include <tools/exceptions.h>
-#include <tools/logging.h>
+#define BYTES_PER_PIXEL 4 // REAPER 'RGBA' frames: 4 bytes per pixel
 
 #define GET_ASSET_DIR(asset_dirname) tools::paths::join({ ASSETS_DIR, asset_dirname })
 
@@ -322,7 +309,6 @@ namespace ReaShader
 			constants.objectId = i;
 			constants.videoParam = pushConstants[2];
 
-#pragma warning(suppress : W_PTR_MIGHT_BE_NULL) // assert material is not nullptr
 			object.material->cmdPushConstants(commandBuffer, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
 											  &constants, 0);
 
@@ -454,7 +440,7 @@ namespace ReaShader
 		memcpy((void*)destBuffer,
 			   (void*)(reinterpret_cast<uintptr_t>((renderTargets.vktFrameTransfer->getAllocationInfo()).pMappedData) +
 					   subResourceLayout.offset),
-			   sizeof(LICE_pixel) * FRAME_W * FRAME_H);
+			   BYTES_PER_PIXEL * FRAME_W * FRAME_H);
 	}
 
 	// load vf bits to color attachment
@@ -472,7 +458,7 @@ namespace ReaShader
 		commandPool->restartCommandBuffer(commandBuffers.vkTransfer);
 
 		vkt::commands::transferRawBufferToImage(vktDevice, commandBuffer, srcBuffer, renderTargets.vktFrameTransfer,
-												sizeof(LICE_pixel) * FRAME_W * FRAME_H);
+												BYTES_PER_PIXEL * FRAME_W * FRAME_H);
 
 		// retransition frametransfer to src copy optimal
 

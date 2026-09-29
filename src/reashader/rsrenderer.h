@@ -11,7 +11,6 @@
 #include <atomic>
 #include <mutex>
 
-#include "tools/fwd_decl.h"
 
 #include "vkt/vktcommon.h"
 #include "vkt/vktdescriptors.h"
@@ -23,7 +22,7 @@
 
 namespace ReaShader
 {
-	FWD_DECL(ReaShaderPlugin)
+	class ReaShaderPlugin;
 
 class ReaShaderRenderer
 {

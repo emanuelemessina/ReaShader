@@ -13,7 +13,6 @@
 #include <string>
 
 #include "paramstream.h"
-#include "tools/fwd_decl.h"
 #include "tools/logging.h"
 
 #include <nlohmann/json.hpp>
@@ -57,7 +56,7 @@ namespace ReaShader::Parameters
 
 	// -----------------------------------
 
-	FWD_DECL(TypeInstantiator)
+	class TypeInstantiator;
 
 	// TODO: specific error messages instead of bool
 
