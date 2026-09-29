@@ -1,0 +1,6 @@
+# A 1D LUT: red is a curve through 0.25 at the middle, green is the identity, blue saturates at the middle.
+TITLE "Curve"
+LUT_1D_SIZE 3
+0 0 0
+0.25 0.5 1
+1 1 1

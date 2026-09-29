@@ -69,6 +69,7 @@ target_sources(reashader_tests PRIVATE
     main.cpp
     support/support.cpp
 
+    cases/lut.cpp
     cases/params.cpp
     cases/protocol.cpp
     cases/render.cpp
@@ -101,7 +102,9 @@ target_sources(reashader_tests PRIVATE
     "${REPO_DIR}/src/render/frame_targets.cpp"
     "${REPO_DIR}/src/render/shader_pass.cpp"
     "${REPO_DIR}/src/render/shader_compiler.cpp"
+    "${REPO_DIR}/src/render/lut_file.cpp"
     "${REPO_DIR}/src/render/scene.cpp"
+    "${REPO_DIR}/src/util/base64.cpp"
     "${REPO_DIR}/src/util/logging.cpp"
     "${REPO_DIR}/src/util/paths.cpp"
     "${REPO_DIR}/src/util/shell.cpp"

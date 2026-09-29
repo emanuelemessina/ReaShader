@@ -1,0 +1,12 @@
+# Inverts every channel. Rows are red fastest, then green, then blue.
+TITLE "Invert"
+LUT_3D_SIZE 2
+
+1 1 1
+0 1 1
+1 0 1
+0 0 1
+1 1 0
+0 1 0
+1 0 0
+0 0 0

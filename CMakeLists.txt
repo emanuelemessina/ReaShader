@@ -150,9 +150,11 @@ target_sources(${PROJECT_NAME} PRIVATE
     src/render/frame_targets.cpp
     src/render/shader_pass.cpp
     src/render/shader_compiler.cpp
+    src/render/lut_file.cpp
     src/render/scene.cpp
     src/render/gpu.cpp
 
+    src/util/base64.cpp
     src/util/logging.cpp
     src/util/paths.cpp
     src/util/shell.cpp
