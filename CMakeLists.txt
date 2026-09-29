@@ -162,25 +162,24 @@ add_dependencies(${PROJECT_NAME} rs_shaders)
 
 # Core sources
 target_sources(${PROJECT_NAME} PRIVATE
-    src/clap/reashader_clap.cpp
+    src/clap/plugin_entry.cpp
 
-    src/reashader/reashaderplugin.cpp
-    src/reashader/rsrenderer.cpp
+    src/plugin/plugin.cpp
+    src/plugin/params.cpp
 
-    src/reashader/rsparams/params.cpp
+    src/render/renderer.cpp
+    src/render/vkt/vktbuffers.cpp
+    src/render/vkt/vktcommandpool.cpp
+    src/render/vkt/vktcommon.cpp
+    src/render/vkt/vktdescriptors.cpp
+    src/render/vkt/vktdevices.cpp
+    src/render/vkt/vktimages.cpp
+    src/render/vkt/vktmesh.cpp
+    src/render/vkt/vktqueue.cpp
+    src/render/vkt/vktrenderpass.cpp
 
-    src/reashader/tools/logging.cpp
-    src/reashader/tools/paths.cpp
-
-    src/reashader/vkt/vktbuffers.cpp
-    src/reashader/vkt/vktcommandpool.cpp
-    src/reashader/vkt/vktcommon.cpp
-    src/reashader/vkt/vktdescriptors.cpp
-    src/reashader/vkt/vktdevices.cpp
-    src/reashader/vkt/vktimages.cpp
-    src/reashader/vkt/vktmesh.cpp
-    src/reashader/vkt/vktqueue.cpp
-    src/reashader/vkt/vktrenderpass.cpp
+    src/util/logging.cpp
+    src/util/paths.cpp
 )
 
 # Platform-specific sources
@@ -189,8 +188,8 @@ set(PLATFORM_SPECIFIC_SOURCES "")
 
 if(WIN32)
     list(APPEND PLATFORM_SPECIFIC_SOURCES
-        src/clap/reashader_clap_gui_win32.cpp
-        src/clap/webui_host_win32.cpp
+        src/clap/gui_win32.cpp
+        src/clap/webui_host.cpp
     )
 elseif(APPLE)
     message(WARNING "TODO: clap.gui and embedded webview are not implemented on macOS yet")
@@ -205,8 +204,8 @@ target_sources(${PROJECT_NAME} PRIVATE ${PLATFORM_SPECIFIC_SOURCES})
 #################################
 
 # Core includes
-target_include_directories(${PROJECT_NAME} PRIVATE 
-    src/reashader
+target_include_directories(${PROJECT_NAME} PRIVATE
+    src
 )
 
 # External includes
@@ -263,7 +262,7 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/res/images" "${PLUGIN_STAGE_DIR}/assets/images"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/res/meshes" "${PLUGIN_STAGE_DIR}/assets/meshes"
     COMMAND ${CMAKE_COMMAND} -E copy ${RS_SHADER_SOURCES} "${SHADERS_STAGE_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src/reashader/rsui/frontend" "${PLUGIN_STAGE_DIR}/rsui"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src/ui" "${PLUGIN_STAGE_DIR}/rsui"
     COMMAND ${CMAKE_COMMAND} -E rm -rf "${PLUGIN_STAGE_DIR}/rsui/styles"
     COMMENT "Staging ReaShader resources next to the built plugin"
 )
