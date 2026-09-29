@@ -12,12 +12,12 @@
 #include <mutex>
 
 
-#include "vkt/vktcommon.h"
-#include "vkt/vktdescriptors.h"
-#include "vkt/vktdevices.h"
-#include "vkt/vktimages.h"
-#include "vkt/vktrendering.h"
-#include "vkt/vktpipeline.h"
+#include "render/vkt/vktcommon.h"
+#include "render/vkt/vktdescriptors.h"
+#include "render/vkt/vktdevices.h"
+#include "render/vkt/vktimages.h"
+#include "render/vkt/vktrendering.h"
+#include "render/vkt/vktpipeline.h"
 
 
 namespace ReaShader

@@ -8,7 +8,7 @@
 
 #ifdef _WIN32
 
-#include "webui_host_win32.h"
+#include "clap/webui_host.h"
 
 #include <mutex>
 #include <thread>
@@ -16,10 +16,11 @@
 #include <windows.h>
 
 #include "webview/webview.h"
+#include <nlohmann/json.hpp>
 
-#include "reashaderplugin.h"
-#include "tools/logging.h"
-#include "tools/paths.h"
+#include "plugin/plugin.h"
+#include "util/logging.h"
+#include "util/paths.h"
 
 namespace ReaShader
 {
@@ -27,7 +28,7 @@ namespace ReaShader
 	{
 		std::string fileUrlForRsuiHtml()
 		{
-			std::u8string path = (tools::paths::rsuiDir() / "rsui.html").generic_u8string();
+			std::u8string path = (util::paths::rsuiDir() / "rsui.html").generic_u8string();
 			return "file:///" + std::string(path.begin(), path.end());
 		}
 

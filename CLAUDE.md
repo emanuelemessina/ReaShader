@@ -11,7 +11,7 @@ ReaShader is a **CLAP** video-effect plugin for REAPER. It taps REAPER's video f
 A multi-phase cleanup is underway. The plan lives at `~/.claude/plans/picking-up-on-this-snug-aurora.md`.
 - **Phases:** 1 deletions/hygiene → 2 build → 3 utilities → 4 params/state/protocol → 5 layering → 6 renderer rewrite (vkt → vk-bootstrap + plain structs) → 7 docs.
 - **How it runs:** before each batch of changes, give the user a brief rationale and wait for approval. The user commits between phases.
-- **Status:** phase 4 done (built, awaiting REAPER check + user commit). Next: phase 5 (layering).
+- **Status:** phase 5 done (built, awaiting REAPER check + user commit). Next: phase 6 (renderer rewrite).
 
 ## Hard rules
 
@@ -61,21 +61,22 @@ There is no test suite or lint step. Verification is manual, in REAPER.
 ## Architecture
 
 ```
-src/clap/reashader_clap.cpp          CLAP entry, descriptor, extension trampolines, REAPER video callbacks
-src/clap/plugin_state.h              ClapPluginState: owns ReaShaderPlugin + the GUI's HWND/WebUIHost
-src/clap/reashader_clap_gui_win32.cpp  clap.gui (Win32, embedded child window)
-src/clap/webui_host_win32.*          WebUIHost: webview on its own thread, JSON bridge to the plugin
-src/reashader/reashaderplugin.*      ReaShaderPlugin: params, state, web-UI messages, video-tap wiring
-src/reashader/rsrenderer.*           ReaShaderRenderer: the Vulkan pipeline (uses vkt/)
-src/reashader/vkt/                   hand-rolled Vulkan wrapper toolkit
-src/reashader/rsparams/params.*      Param struct + ParamList (lock-free values)
-src/reashader/rsui/frontend/         the web UI (HTML/JS/SCSS)
-src/reashader/tools/                 logging, paths, exceptions
+src/clap/plugin_entry.cpp    CLAP entry, descriptor, extension callbacks (forward to ReaShaderPlugin)
+src/clap/plugin_state.h      ClapPluginState: clap_plugin_t + ReaShaderPlugin + Gui, one per instance
+src/clap/gui_win32.cpp       clap.gui (Win32): Gui = container window + WebUIHost
+src/clap/webui_host.*        WebUIHost: webview on its own thread, JSON bridge to the plugin (Win32)
+src/plugin/plugin.*          ReaShaderPlugin: params, state, web UI messages, REAPER video tap
+src/plugin/params.*          Param struct + ParamList (lock-free values)
+src/render/renderer.*        ReaShaderRenderer: the Vulkan pipeline (uses vkt/)
+src/render/vkt/              hand-rolled Vulkan wrapper toolkit
+src/util/                    logging, paths, exceptions
+src/ui/                      the web UI (HTML/JS/SCSS), staged as rsui/
+src/shaders/                 built-in GLSL shaders, staged as assets/shaders/
 ```
 
 ### ReaShaderPlugin (one object, no processor/controller split)
 
-- **Threads** (listed in `reashaderplugin.h`):
+- **Threads** (listed in `plugin/plugin.h`):
 
   | Thread | Does |
   |---|---|
@@ -103,7 +104,7 @@ src/reashader/tools/                 logging, paths, exceptions
 
 ### Per-frame video path
 
-REAPER calls `processVideoFrame` → `processFrame` (`reashader_clap.cpp`):
+REAPER calls `ReaShaderPlugin::_processVideoFrame` (`plugin/plugin.cpp`), installed by `activate()`:
 1. `vproc->renderInputVideoFrame(0, 'RGBA')` gets the upstream frame. It is immutable, and is `Release()`d before returning.
 2. `ReaShaderRenderer::renderFrame()`, under `try_lock(frameMutex)`, runs:
    - `checkFrameSize`
@@ -129,11 +130,11 @@ REAPER calls `processVideoFrame` → `processFrame` (`reashader_clap.cpp`):
 - **Frontend:**
   - Plain sequential `<script>` tags, no ES modules: `file://` blocks module imports.
   - SCSS is compiled ahead of time (Live Sass Compile, see `.vscode/settings.json`), and the compiled `rsui.css` is committed.
-- **Ownership:** `ClapPluginState::webUIHost` is a raw pointer, `new`/`delete`d only in `reashader_clap_gui_win32.cpp`. `WebUIHost` is incomplete in `reashader_clap.cpp`.
+- **Ownership:** `ClapPluginState::gui` is a `unique_ptr<Gui, GuiDeleter>`. `Gui` and its deleter are defined in `gui_win32.cpp`, so the shell never needs the full type. `gui_destroy` is just `gui.reset()`: the webview is torn down first, then the window.
 
 ### Web UI protocol
 
-Plain JSON objects with a `"type"` field. They're documented in `reashaderplugin.cpp` (web UI section) and handled by an `if`/`else` on the type there. On the JS side, `client.js` switches on the type and `api.js` sends.
+Plain JSON objects with a `"type"` field. They're documented in `plugin/plugin.cpp` (web UI section) and handled by an `if`/`else` on the type there. On the JS side, `client.js` switches on the type and `api.js` sends.
 
 | Direction | Message | Payload / effect |
 |---|---|---|
@@ -145,7 +146,7 @@ Plain JSON objects with a `"type"` field. They're documented in `reashaderplugin
 | from UI | `renderingDevice` | `{ index }` |
 | from UI | `shaderUpload` | `{ name, source }`: GLSL sent as text |
 
-### Parameters (`rsparams/`)
+### Parameters (`plugin/params.*`)
 
 - **`Param`:** one plain struct: id, name, group (`Main` or `Shader`), units, default value, automatable flag. Values are normalized to [0, 1].
 - **Ids:** a param's id is its index in the list, and also its CLAP param id. The defaults (`AudioGain`, `VideoParam`) come first.
@@ -163,13 +164,13 @@ Plain JSON objects with a `"type"` field. They're documented in `reashaderplugin
 
 ### Logging
 
-- Use `LOG(level, toConsole | toFile | toBox, sender, title, message)` from `tools/logging.h`.
+- Use `LOG(level, toConsole | toFile | toBox, sender, title, message)` from `util/logging.h`.
 - The log file is `<plugin dir>/rs.log`. It is kept open, and truncated on the first write of each process.
 - **`toBox`:** message boxes are modal, so they are never shown on the calling thread.
   - `LOG` queues the box and calls the host's `request_callback()`.
   - `on_main_thread` then shows it (`showQueuedBoxes()`).
   - Each plugin instance registers the requester in `plugin_init`.
-- **Paths:** use `tools::paths::pluginDir()`, `assetsDir()` and `rsuiDir()` (`std::filesystem::path`). Pass `.string()` to narrow file APIs (`fopen`, `ifstream`).
+- **Paths:** use `util::paths::pluginDir()`, `assetsDir()` and `rsuiDir()` (`std::filesystem::path`). Pass `.string()` to narrow file APIs (`fopen`, `ifstream`).
 
 ## Gotchas
 

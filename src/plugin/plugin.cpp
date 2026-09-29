@@ -6,11 +6,17 @@
  * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
  *****************************************************************************/
 
-#include "reashaderplugin.h"
+#include "plugin/plugin.h"
+
+#include "render/renderer.h"
+#include "util/logging.h"
 
 #include "reaper_plugin.h"
-#include "rsrenderer.h"
-#include "tools/logging.h"
+#include "wdltypes.h" // video_frame.h needs WDL_FIXALIGN/INT_PTR but doesn't include this itself
+#include "video_frame.h"
+#include "video_processor.h"
+
+#include <nlohmann/json.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -56,8 +62,8 @@ namespace ReaShader
 			if (videoProcessor)
 			{
 				videoProcessor->userdata = this;
-				videoProcessor->process_frame = processVideoFrame;
-				videoProcessor->get_parameter_value = getVideoParam;
+				videoProcessor->process_frame = _processVideoFrame;
+				videoProcessor->get_parameter_value = _getVideoParam;
 			}
 		}
 
@@ -225,7 +231,12 @@ namespace ReaShader
 			std::lock_guard lock(stateMutex);
 			deviceChanged = device != renderingDevice;
 			renderingDevice = device;
-			savedShaderValues = savedParams;
+			savedShaderValues.clear();
+			for (const auto& [name, value] : savedParams.items())
+			{
+				if (value.is_number())
+					savedShaderValues[name] = value.get<double>();
+			}
 			const json shader = state.value("shader", json::object());
 			shaderName = shader.value("name", "");
 			shaderSource = shader.value("source", "");
@@ -240,11 +251,47 @@ namespace ReaShader
 
 	// -------- REAPER video tap --------
 
-	bool ReaShaderPlugin::getVideoTapParamValue(int idx, double* valueOut) const
+	// Renders one frame. The input frame from renderInputVideoFrame() is immutable: it must be
+	// returned as-is or Release()d. The result goes into a separate frame from newVideoFrame().
+	IVideoFrame* ReaShaderPlugin::_processVideoFrame(IREAPERVideoProcessor* videoProcessor, const double* parmlist,
+													 int nparms, double projectTime, double frameRate, int)
 	{
-		if (idx < 0 || (size_t)idx >= params.count())
+		auto* plugin = static_cast<ReaShaderPlugin*>(videoProcessor->userdata);
+
+		IVideoFrame* input = videoProcessor->renderInputVideoFrame(0, 'RGBA');
+		if (!input)
+			return nullptr;
+
+		int w = input->get_w();
+		int h = input->get_h();
+
+		IVideoFrame* output = videoProcessor->newVideoFrame(w, h, 'RGBA');
+		if (!output)
+			return input;
+
+		// parmlist[0] is wet/dry; plugin param i is at parmlist[i + 1], valued at video time
+		int videoParamIndex = Parameters::VideoParam + 1;
+		double videoParam = nparms > videoParamIndex ? parmlist[videoParamIndex] : 0.0;
+		double pushConstants[] = { projectTime, frameRate, videoParam };
+
+		// false: renderer inactive, busy or failed -> pass the input through
+		if (!plugin->reaShaderRenderer->renderFrame(w, h, reinterpret_cast<int*>(input->get_bits()), pushConstants,
+													reinterpret_cast<int*>(output->get_bits())))
+		{
+			output->Release();
+			return input;
+		}
+
+		input->Release();
+		return output;
+	}
+
+	bool ReaShaderPlugin::_getVideoParam(IREAPERVideoProcessor* videoProcessor, int idx, double* valueOut)
+	{
+		auto* plugin = static_cast<ReaShaderPlugin*>(videoProcessor->userdata);
+		if (idx < 0 || (size_t)idx >= plugin->params.count())
 			return false;
-		*valueOut = params.value((Parameters::Id)idx);
+		*valueOut = plugin->params.value((Parameters::Id)idx);
 		return true;
 	}
 
@@ -270,7 +317,7 @@ namespace ReaShader
 
 	void ReaShaderPlugin::setShaderParams(std::vector<Parameters::Param> shaderParams)
 	{
-		json savedValues;
+		Parameters::ValueMap savedValues;
 		{
 			std::lock_guard lock(stateMutex);
 			savedValues = savedShaderValues;

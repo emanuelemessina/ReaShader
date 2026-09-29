@@ -6,23 +6,23 @@
  * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
  *****************************************************************************/
 
-#include "rsrenderer.h"
-#include "reashaderplugin.h"
-#include "rsparams/params.h"
-#include "tools/exceptions.h"
-#include "tools/logging.h"
-#include "tools/paths.h"
+#include "render/renderer.h"
+#include "plugin/plugin.h"
+#include "plugin/params.h"
+#include "util/exceptions.h"
+#include "util/logging.h"
+#include "util/paths.h"
 
 #include <queue>
 
 #define MAX_OBJECTS 100
 #define BYTES_PER_PIXEL 4 // REAPER 'RGBA' frames: 4 bytes per pixel
 
-#include "vkt/vktcommandpool.h"
-#include "vkt/vktcommands.h"
-#include "vkt/vktpipeline.h"
-#include "vkt/vktqueue.h"
-#include "vkt/vkttextures.h"
+#include "render/vkt/vktcommandpool.h"
+#include "render/vkt/vktcommands.h"
+#include "render/vkt/vktpipeline.h"
+#include "render/vkt/vktqueue.h"
+#include "render/vkt/vkttextures.h"
 
 namespace ReaShader
 {
@@ -36,7 +36,7 @@ namespace ReaShader
 		// <plugin dir>/assets/<subdir>/<file>, as a narrow path for the file-loading APIs
 		std::string assetPath(const char* subdir, const char* file)
 		{
-			return (tools::paths::assetsDir() / subdir / file).string();
+			return (util::paths::assetsDir() / subdir / file).string();
 		}
 	} // namespace
 

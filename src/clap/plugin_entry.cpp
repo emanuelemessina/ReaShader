@@ -7,8 +7,7 @@
  *****************************************************************************/
 
 // CLAP entry point: plugin factory, descriptor, and the C-ABI callbacks for the audio-ports,
-// params and state extensions, all forwarding to ReaShaderPlugin. Also hosts the REAPER video
-// processor callbacks.
+// params and state extensions, all forwarding to ReaShaderPlugin.
 
 #include <cstdint>
 #include <cstdio>
@@ -16,12 +15,8 @@
 
 #include <clap/clap.h>
 
-#include "wdltypes.h" // video_frame.h needs WDL_FIXALIGN/INT_PTR but doesn't include this itself
-#include "video_frame.h"
-
-#include "plugin_state.h"
-#include "rsrenderer.h"
-#include "tools/logging.h"
+#include "clap/plugin_state.h"
+#include "util/logging.h"
 
 namespace ReaShader
 {
@@ -29,57 +24,6 @@ namespace ReaShader
 	{
 		constexpr const char* kPluginId = "com.emanuelemessina.reashader";
 		constexpr const char* kPluginName = "ReaShader";
-
-		// -------- REAPER video processor callbacks --------
-
-		// Renders one frame. The input frame from renderInputVideoFrame() is immutable: it must be
-		// returned as-is or Release()d. The result goes into a separate frame from newVideoFrame().
-		IVideoFrame* processFrame(IREAPERVideoProcessor* vproc, const double* parmlist, int nparms,
-								   double project_time, double frate, int /*force_format*/)
-		{
-			auto* reaShaderPlugin = static_cast<ReaShaderPlugin*>(vproc->userdata);
-			if (!reaShaderPlugin || !reaShaderPlugin->reaShaderRenderer)
-				return nullptr;
-
-			IVideoFrame* inputVf = vproc->renderInputVideoFrame(0, 'RGBA');
-			if (!inputVf)
-				return nullptr;
-
-			int w = inputVf->get_w();
-			int h = inputVf->get_h();
-			int* inputBits = reinterpret_cast<int*>(inputVf->get_bits()); // get_bits() returns char* upstream
-
-			IVideoFrame* outputVf = vproc->newVideoFrame(w, h, 'RGBA');
-			if (!outputVf)
-			{
-				inputVf->Release();
-				return nullptr;
-			}
-
-			// parmlist[0] is wet/dry; plugin param index i is at parmlist[i + 1]
-			int videoParamIndex = Parameters::VideoParam + 1;
-			double videoParam = nparms > videoParamIndex ? parmlist[videoParamIndex] : 0.0;
-			double pushConstants[] = { project_time, frate, videoParam };
-			int* outputBits = reinterpret_cast<int*>(outputVf->get_bits());
-
-			// never throws; false = renderer unavailable/busy/failed -> pass the input through untouched
-			if (!reaShaderPlugin->reaShaderRenderer->renderFrame(w, h, inputBits, pushConstants, outputBits))
-			{
-				outputVf->Release();
-				return inputVf;
-			}
-
-			inputVf->Release();
-			return outputVf;
-		}
-
-		bool getVideoParamLocal(IREAPERVideoProcessor* vproc, int idx, double* valueOut)
-		{
-			auto* reaShaderPlugin = static_cast<ReaShaderPlugin*>(vproc->userdata);
-			if (!reaShaderPlugin)
-				return false;
-			return reaShaderPlugin->getVideoTapParamValue(idx, valueOut);
-		}
 
 		// -------- clap_plugin_t vtable --------
 
@@ -100,7 +44,6 @@ namespace ReaShader
 		{
 			unregisterBoxRequester(plugin->plugin_data);
 			delete static_cast<ClapPluginState*>(plugin->plugin_data);
-			delete plugin;
 		}
 
 		bool plugin_activate(const clap_plugin_t* plugin, double /*sample_rate*/, uint32_t /*min_frames*/,
@@ -298,7 +241,7 @@ namespace ReaShader
 				return &stateExtension;
 #ifdef _WIN32
 			if (std::strcmp(id, CLAP_EXT_GUI) == 0)
-				return &reashaderClapGuiExtension;
+				return &guiExtension;
 #endif
 			return nullptr;
 		}
@@ -321,23 +264,16 @@ namespace ReaShader
 			if (std::strcmp(pluginId, kPluginId) != 0)
 				return nullptr;
 
+			// deleted by plugin_destroy
 			auto* state = new ClapPluginState();
 			state->host = host;
-
-			auto* plugin = new clap_plugin_t();
-			plugin->desc = &pluginDescriptor;
-			plugin->plugin_data = state;
-			plugin->init = plugin_init;
-			plugin->destroy = plugin_destroy;
-			plugin->activate = plugin_activate;
-			plugin->deactivate = plugin_deactivate;
-			plugin->start_processing = plugin_start_processing;
-			plugin->stop_processing = plugin_stop_processing;
-			plugin->reset = plugin_reset;
-			plugin->process = plugin_process;
-			plugin->get_extension = plugin_get_extension;
-			plugin->on_main_thread = plugin_on_main_thread;
-			return plugin;
+			state->clapPlugin = { &pluginDescriptor, state,
+								  plugin_init, plugin_destroy,
+								  plugin_activate, plugin_deactivate,
+								  plugin_start_processing, plugin_stop_processing,
+								  plugin_reset, plugin_process,
+								  plugin_get_extension, plugin_on_main_thread };
+			return &state->clapPlugin;
 		}
 
 		uint32_t get_plugin_count(const clap_plugin_factory_t*)
@@ -366,16 +302,6 @@ namespace ReaShader
 		}
 	} // namespace
 
-	// REAPER video processor callbacks, installed by ReaShaderPlugin::activate() (declared in reashaderplugin.h)
-	IVideoFrame* processVideoFrame(IREAPERVideoProcessor* vproc, const double* parmlist, int nparms,
-									double project_time, double frate, int force_format)
-	{
-		return processFrame(vproc, parmlist, nparms, project_time, frate, force_format);
-	}
-	bool getVideoParam(IREAPERVideoProcessor* vproc, int idx, double* valueOut)
-	{
-		return getVideoParamLocal(vproc, idx, valueOut);
-	}
 } // namespace ReaShader
 
 extern "C" CLAP_EXPORT const clap_plugin_entry_t clap_entry = { CLAP_VERSION_INIT, ReaShader::entry_init,
