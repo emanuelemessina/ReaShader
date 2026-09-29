@@ -28,6 +28,7 @@ namespace ReaShader::gpu
 layout(location = 0) in vec2 uv;                          // 0..1 over the frame, (0, 0) = top left
 layout(location = 0) out vec4 fragColor;
 layout(set = 0, binding = 0) uniform sampler2D iChannel0; // the input video frame
+layout(set = 0, binding = 2) uniform sampler3D iChannel1; // the LUT (an identity unless the LUT mode is "In shader")
 
 layout(push_constant) uniform ReaShaderInputs
 {
@@ -36,6 +37,13 @@ layout(push_constant) uniform ReaShaderInputs
     float iFrameRate;
     int iFrame;       // frames rendered since the shader was loaded
 };
+
+// iChannel1 applied to a color: 0 and 1 land on the LUT's first and last entries (texel centers)
+vec3 iLut(vec3 color)
+{
+    float size = float(textureSize(iChannel1, 0).x);
+    return texture(iChannel1, (clamp(color, 0.0, 1.0) * (size - 1.0) + 0.5) / size).rgb;
+}
 )";
 
 		std::vector<uint32_t> compileGlsl(const std::string& source, shaderc_shader_kind kind, const std::string& name)
@@ -44,7 +52,7 @@ layout(push_constant) uniform ReaShaderInputs
 			options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_3);
 			options.SetAutoBindUniforms(true);
 			options.SetBindingBase(shaderc_uniform_kind_buffer, kParamsBinding);
-			options.SetBindingBase(shaderc_uniform_kind_texture, kParamsBinding + 1);
+			options.SetBindingBase(shaderc_uniform_kind_texture, kLutBinding + 1);
 			options.SetAutoMapLocations(true);
 
 			shaderc::Compiler compiler;
@@ -155,13 +163,15 @@ layout(push_constant) uniform ReaShaderInputs
 					error = std::format("'{}': only descriptor set 0 is available", name);
 					break;
 				}
-				if (binding->binding == kInputBinding)
+				// the preamble's samplers (a user declaration at their bindings would alias them)
+				if ((binding->binding == kInputBinding && name == "iChannel0") ||
+					(binding->binding == kLutBinding && name == "iChannel1"))
 					continue;
 
 				if (binding->binding != kParamsBinding ||
 					binding->descriptor_type != SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
 				{
-					error = std::format("'{}': only iChannel0 and one uniform block (Params) are available", name);
+					error = std::format("'{}': only iChannel0, iChannel1 and one uniform block (Params) are available", name);
 					break;
 				}
 

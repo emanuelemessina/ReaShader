@@ -63,17 +63,28 @@ TEST_SUITE("shader_compiler")
 		CHECK(tintX.maxValue == 1);
 	}
 
+	TEST_CASE("iLut applies iChannel1 (the LUT)")
+	{
+		CHECK_NOTHROW(gpu::compileShader(
+			"void main() { vec4 c = texture(iChannel0, uv); fragColor = vec4(iLut(c.rgb), c.a); }\n", "ilut.glsl"));
+	}
+
 	TEST_CASE("compile errors point at the user's own line")
 	{
 		CHECK_THROWS_WITH(gpu::compileShader(test::readFile(test::repoPath("test/shaders/broken.frag")), "broken.frag"),
 						  doctest::Contains("broken.frag:7"));
 	}
 
-	TEST_CASE("resources other than iChannel0 and Params are rejected")
+	TEST_CASE("resources other than iChannel0, iChannel1 and Params are rejected")
 	{
 		CHECK_THROWS_WITH(
 			gpu::compileShader("uniform sampler2D other;\nvoid main() { fragColor = texture(other, uv); }\n", "sampler.glsl"),
-			doctest::Contains("only iChannel0 and one uniform block"));
+			doctest::Contains("'other': only iChannel0, iChannel1 and one uniform block"));
+
+		// a declaration at iChannel1's binding would alias it
+		CHECK_THROWS(gpu::compileShader(
+			"layout(binding = 2) uniform sampler2D alias;\nvoid main() { fragColor = texture(alias, uv); }\n",
+			"alias.glsl"));
 
 		CHECK_THROWS_WITH(gpu::compileShader("layout(set = 1) uniform Params { float amount; };\n"
 											 "void main() { fragColor = vec4(amount); }\n",

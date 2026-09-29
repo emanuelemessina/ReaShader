@@ -10,11 +10,15 @@
 
 #include "render/context.h"
 #include "render/frame_view.h"
+#include "render/pass.h"
+
+#include <span>
 
 namespace ReaShader::gpu
 {
 	// The frame's way through the GPU, recreated when the frame size changes:
 	//   REAPER frame -> upload buffer -> input image -> (passes) -> output image -> readback buffer -> REAPER frame
+	// Between passes the frame ping-pongs through two work images.
 	struct FrameTargets
 	{
 		void create(Context& context, const FrameView& inputFrame, const FrameView& outputFrame);
@@ -27,17 +31,24 @@ namespace ReaShader::gpu
 
 		// GPU side:
 		// - upload: input ends up readable by shaders
-		// - passes leave output as a color attachment
+		// - passes: in order, the first samples input, the last renders to output, the ones between go through
+		//   the work images; binds each pass's input. No passes: output = input (a copy)
+		// - either way output is left a color attachment
 		// - download: output is copied back
 		void recordUpload(VkCommandBuffer commandBuffer);
-		void recordInputToOutput(VkCommandBuffer commandBuffer); // stands in for passes: output = input
+		void recordPasses(Context& context, VkCommandBuffer commandBuffer, std::span<Pass* const> passes,
+						  const ShaderInputs& inputs);
 		void recordDownload(VkCommandBuffer commandBuffer);
 
 		VkExtent2D extent{};
-		Image input;  // sampled by the passes
+		Image input;  // sampled by the first pass
 		Image output; // rendered to by the last pass
 
 	  private:
+		void _recordInputToOutput(VkCommandBuffer commandBuffer);
+		Image& _workImage(Context& context, size_t index); // created the first time a chain needs it
+
+		Image work[2];
 		Buffer upload;
 		Buffer readback;
 		int inputRowBytes = 0;

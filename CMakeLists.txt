@@ -99,6 +99,7 @@ set(INTERNAL_SHADERS
     fullscreen.vert
     scene.vert
     scene.frag
+    lut.frag
 )
 
 foreach(_shader ${INTERNAL_SHADERS})
@@ -148,7 +149,9 @@ target_sources(${PROJECT_NAME} PRIVATE
     src/render/renderer.cpp
     src/render/context.cpp
     src/render/frame_targets.cpp
+    src/render/pass.cpp
     src/render/shader_pass.cpp
+    src/render/lut.cpp
     src/render/shader_compiler.cpp
     src/render/lut_file.cpp
     src/render/scene.cpp

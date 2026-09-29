@@ -52,10 +52,21 @@ namespace ReaShader::gpu
 	void Image::create(VkDevice device, VmaAllocator allocator, VkExtent2D imageExtent, VkFormat format,
 					   VkImageUsageFlags usage, VkImageAspectFlags aspect)
 	{
+		_create(device, allocator, VK_IMAGE_TYPE_2D, { imageExtent.width, imageExtent.height, 1 }, format, usage, aspect);
+	}
+
+	void Image::create3D(VkDevice device, VmaAllocator allocator, uint32_t size, VkFormat format, VkImageUsageFlags usage)
+	{
+		_create(device, allocator, VK_IMAGE_TYPE_3D, { size, size, size }, format, usage, VK_IMAGE_ASPECT_COLOR_BIT);
+	}
+
+	void Image::_create(VkDevice device, VmaAllocator allocator, VkImageType type, VkExtent3D imageExtent,
+						VkFormat format, VkImageUsageFlags usage, VkImageAspectFlags aspect)
+	{
 		VkImageCreateInfo imageInfo{ VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
-		imageInfo.imageType = VK_IMAGE_TYPE_2D;
+		imageInfo.imageType = type;
 		imageInfo.format = format;
-		imageInfo.extent = { imageExtent.width, imageExtent.height, 1 };
+		imageInfo.extent = imageExtent;
 		imageInfo.mipLevels = 1;
 		imageInfo.arrayLayers = 1;
 		imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -70,12 +81,12 @@ namespace ReaShader::gpu
 
 		VkImageViewCreateInfo viewInfo{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
 		viewInfo.image = image;
-		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		viewInfo.viewType = type == VK_IMAGE_TYPE_3D ? VK_IMAGE_VIEW_TYPE_3D : VK_IMAGE_VIEW_TYPE_2D;
 		viewInfo.format = format;
 		viewInfo.subresourceRange = { aspect, 0, 1, 0, 1 };
 		VK_CHECK(vkCreateImageView(device, &viewInfo, nullptr, &view));
 
-		extent = imageExtent;
+		extent = { imageExtent.width, imageExtent.height };
 	}
 
 	void Image::destroy(VkDevice device, VmaAllocator allocator)

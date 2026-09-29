@@ -9,26 +9,27 @@
 #pragma once
 
 #include "render/context.h"
+#include "render/pass.h"
 #include "render/shader_compiler.h"
 
 #include <vector>
 
 namespace ReaShader::gpu
 {
-	// Runs a compiled shader over the whole frame: samples the input image, renders to the output image
-	class ShaderPass
+	// Runs a compiled shader over the whole frame: samples its input as iChannel0, renders to the target
+	class ShaderPass : public Pass
 	{
 	  public:
 		void create(Context& context, const CompiledShader& shader);
 		void destroy(Context& context);
 
-		// the image sampled as iChannel0 (rebind after the frame targets are recreated)
-		void bindInput(Context& context, VkImageView input);
+		void bindInput(Context& context, VkImageView input) override; // iChannel0
+		void bindLut(Context& context, VkImageView lut);			  // iChannel1, bound every frame like the input
 
 		// values in the order of CompiledShader::params; params past `count` get their default
 		void writeParams(Context& context, const float* values, size_t count);
 
-		void record(VkCommandBuffer commandBuffer, const Image& target, const ShaderInputs& inputs);
+		void record(VkCommandBuffer commandBuffer, const Image& target, const ShaderInputs& inputs) override;
 
 	  private:
 		std::vector<ShaderParamField> params;

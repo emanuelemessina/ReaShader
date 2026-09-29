@@ -46,7 +46,7 @@ add_executable(reashader_tests)
 
 # Internal shaders: SPIR-V as a C array, included by the render code under test
 
-foreach(_shader fullscreen.vert scene.vert scene.frag)
+foreach(_shader fullscreen.vert scene.vert scene.frag lut.frag)
     set(_src "${REPO_DIR}/src/shaders/internal/${_shader}")
     set(_out "${GENERATED_DIR}/${_shader}.inc")
     add_custom_command(
@@ -100,7 +100,9 @@ target_sources(reashader_tests PRIVATE
     "${REPO_DIR}/src/render/gpu.cpp"
     "${REPO_DIR}/src/render/context.cpp"
     "${REPO_DIR}/src/render/frame_targets.cpp"
+    "${REPO_DIR}/src/render/pass.cpp"
     "${REPO_DIR}/src/render/shader_pass.cpp"
+    "${REPO_DIR}/src/render/lut.cpp"
     "${REPO_DIR}/src/render/shader_compiler.cpp"
     "${REPO_DIR}/src/render/lut_file.cpp"
     "${REPO_DIR}/src/render/scene.cpp"

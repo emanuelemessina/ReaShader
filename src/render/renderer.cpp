@@ -11,6 +11,7 @@
 #include "plugin/plugin.h"
 #include "render/context.h"
 #include "render/frame_targets.h"
+#include "render/lut.h"
 #include "render/scene.h"
 #include "render/shader_pass.h"
 #include "util/logging.h"
@@ -105,6 +106,9 @@ namespace ReaShader
 	void ReaShaderRenderer::_createDevice(int index)
 	{
 		context->createDevice((size_t)index);
+		_createLutPass();
+		if (lut)
+			_installLut();
 		if (shader)
 			_installShader();
 		if (logoEnabled)
@@ -119,10 +123,19 @@ namespace ReaShader
 			scene->destroy(*context);
 		if (shaderPass)
 			shaderPass->destroy(*context);
+		if (lutPass)
+			lutPass->destroy(*context);
+		if (lutImage)
+			lutImage->destroy(*context);
+		if (identityLut)
+			identityLut->destroy(*context);
 		if (targets)
 			targets->destroy(*context);
 		scene.reset();
 		shaderPass.reset();
+		lutPass.reset();
+		lutImage.reset();
+		identityLut.reset();
 		targets.reset();
 		context->destroyDevice();
 	}
@@ -141,9 +154,6 @@ namespace ReaShader
 			newPass->destroy(*context);
 			throw;
 		}
-		if (targets)
-			newPass->bindInput(*context, targets->input.view);
-
 		// frames render one at a time and wait for the GPU, so the old pass is idle
 		if (shaderPass)
 			shaderPass->destroy(*context);
@@ -201,6 +211,82 @@ namespace ReaShader
 		plugin->setShaderParams({});
 	}
 
+	// -------- LUT --------
+
+	void ReaShaderRenderer::_createLutPass()
+	{
+		auto newPass = std::make_unique<gpu::LutPass>();
+		auto identity = std::make_unique<gpu::Lut>();
+		try
+		{
+			newPass->create(*context);
+			identity->create(*context, gpu::identityLut(gpu::kIdentityLutSize));
+		}
+		catch (...)
+		{
+			identity->destroy(*context);
+			newPass->destroy(*context);
+			throw;
+		}
+		lutPass = std::move(newPass);
+		identityLut = std::move(identity);
+	}
+
+	void ReaShaderRenderer::_installLut()
+	{
+		auto newLut = std::make_unique<gpu::Lut>();
+		try
+		{
+			newLut->create(*context, *lut);
+		}
+		catch (...)
+		{
+			newLut->destroy(*context);
+			throw;
+		}
+
+		// frames render one at a time and wait for the GPU, so the old LUT is idle
+		if (lutImage)
+			lutImage->destroy(*context);
+		lutImage = std::move(newLut);
+	}
+
+	std::string ReaShaderRenderer::setLut(const gpu::LutData& data)
+	{
+		std::lock_guard lock(frameMutex);
+		std::unique_ptr<gpu::LutData> previous = std::move(lut);
+		lut = std::make_unique<gpu::LutData>(data);
+
+		if (context && context->hasDevice())
+		{
+			try
+			{
+				_installLut();
+			}
+			catch (const std::exception& e)
+			{
+				lut = std::move(previous); // keep rendering with the old one
+				return e.what();
+			}
+		}
+		return {};
+	}
+
+	void ReaShaderRenderer::clearLut()
+	{
+		std::lock_guard lock(frameMutex);
+		if (lutImage)
+			lutImage->destroy(*context);
+		lutImage.reset();
+		lut.reset();
+	}
+
+	void ReaShaderRenderer::setLutMode(LutMode mode)
+	{
+		std::lock_guard lock(frameMutex);
+		lutMode = mode;
+	}
+
 	// -------- logo scene --------
 
 	void ReaShaderRenderer::setLogoEnabled(bool enabled)
@@ -242,7 +328,7 @@ namespace ReaShader
 		if (!lock || failed)
 			return false;
 		bool drawLogo = logoEnabled && scene;
-		if (!shaderPass && !drawLogo)
+		if (!shaderPass && !lutImage && !drawLogo)
 			return false;
 
 		try
@@ -253,8 +339,6 @@ namespace ReaShader
 					targets->destroy(*context);
 				targets = std::make_unique<gpu::FrameTargets>();
 				targets->create(*context, input, output);
-				if (shaderPass)
-					shaderPass->bindInput(*context, targets->input.view);
 			}
 			if (drawLogo)
 				scene->prepare(*context, targets->extent);
@@ -272,17 +356,33 @@ namespace ReaShader
 			shaderInputs.frameRate = (float)inputs.frameRate;
 			shaderInputs.frame = frameCount++;
 
+			// the passes in order; in Shader mode the shader samples the LUT itself
+			bool lutInShader = lutImage && shaderPass && lutMode == LutMode::Shader;
+			gpu::Pass* passes[2];
+			size_t passCount = 0;
+			if (lutImage && lutMode == LutMode::Before)
+				passes[passCount++] = lutPass.get();
+			if (shaderPass)
+				passes[passCount++] = shaderPass.get();
+			if (lutImage && lutMode != LutMode::Before && !lutInShader)
+				passes[passCount++] = lutPass.get();
+
 			targets->writeInput(*context, input);
 			if (shaderPass)
+			{
 				shaderPass->writeParams(*context, shaderParams, shaderParamCount);
+				shaderPass->bindLut(*context, (lutInShader ? lutImage : identityLut)->image.view);
+			}
+			if (lutImage)
+			{
+				lutPass->bindLut(*context, lutImage->image.view);
+				lutPass->setAmount(1.0f);
+			}
 
-			// upload -> shader (or a plain copy) -> logo -> download
+			// upload -> passes (or a plain copy) -> logo -> download
 			VkCommandBuffer commandBuffer = context->beginCommands();
 			targets->recordUpload(commandBuffer);
-			if (shaderPass)
-				shaderPass->record(commandBuffer, targets->output, shaderInputs);
-			else
-				targets->recordInputToOutput(commandBuffer);
+			targets->recordPasses(*context, commandBuffer, std::span<gpu::Pass* const>(passes, passCount), shaderInputs);
 			if (drawLogo)
 				scene->record(commandBuffer, targets->output, inputs.time, inputs.frameRate);
 			targets->recordDownload(commandBuffer);
