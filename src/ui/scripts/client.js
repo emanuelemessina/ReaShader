@@ -29,4 +29,6 @@ window.__reashaderOnMessage = (msg) => {
     }
 };
 
+document.getElementById('showLogo').addEventListener('change', (event) => native.logo(event.target.checked));
+
 native.ready();

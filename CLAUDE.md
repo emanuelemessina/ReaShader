@@ -13,7 +13,8 @@ A multi-phase cleanup is underway. The plan lives at `~/.claude/plans/picking-up
 - **How it runs:** before each batch of changes, give the user a brief rationale and wait for approval. The user commits between phases.
 - **Status:** phase 6 in progress.
   - **Done** (built, standalone GPU test passes, awaiting the REAPER test): the new renderer; shaders compiled on upload and stored; `//@param`; shader params as host params through restart + rescan.
-  - **Still to do:** `scene3d` (the logo easter egg, an off-by-default switch), then delete `render/vkt/` (no longer built; kept as the reference for `scene3d`).
+  - **6b done** (built, standalone GPU test passes, awaiting the REAPER test): `render/scene.*`, the logo easter egg behind an off-by-default "3D logo" switch.
+  - **Still to do:** 6d, delete `render/vkt/` (no longer built).
 
 ## Proposals for after the cleanup (user's, not started)
 
@@ -62,7 +63,7 @@ There is no test suite or lint step. Verification is manual, in REAPER.
   - **generates, into `build/<preset>/generated/`:**
     - `src/shaders/internal/*` → `<name>.inc`, SPIR-V as a C array (glslc `-mfmt=num`), `#include`d by the renderer. Internal shaders are never read from disk.
     - `src/ui/styles/ui.scss` → `index.css` (compressed, `sass`). The CSS is a build output, not committed.
-  - **stages next to the `.clap`:** `res/images`, `res/meshes`, `src/shaders/examples` → `resources/shaders/examples`, and `src/ui` (minus `styles/`, plus `index.css`) → `ui`. The staged `resources/` and `ui/` are wiped first, so no stale files are left.
+  - **stages next to the `.clap`** (the `stage` target, run on every build, so UI or shader edits alone get staged too): `res/images`, `res/meshes`, `src/shaders/examples` → `resources/shaders/examples`, and `src/ui` (minus `styles/`, plus `index.css`) → `ui`. The staged `resources/` and `ui/` are wiped first, so no stale files are left.
   - **Examples are sources for the user to try;** the plugin never reads that folder. User shaders are compiled only on upload (see Shaders), so no `.spv` files exist in the repo.
 
   The runtime resolves `resources/` and `ui/` relative to the plugin binary, so they must travel with it.
@@ -91,14 +92,14 @@ src/render/context.*         gpu::Context: vk-bootstrap instance/device, queue, 
 src/render/frame_targets.*   gpu::FrameTargets: upload/readback buffers + input/output images (per frame size)
 src/render/shader_compiler.* gpu::compileShader (contract preamble, shaderc, SPIRV-Reflect, //@param), stored JSON form
 src/render/shader_pass.*     gpu::ShaderPass: fullscreen pipeline for a compiled shader
-src/render/gpu.*             Vulkan helpers: VK_CHECK, Buffer, Image, transition(); VMA implementation
+src/render/scene.*           gpu::Scene: textured meshes (tinyobjloader, stb) + depth, drawn over the frame; today the logo
+src/render/gpu.*             Vulkan helpers: VK_CHECK, Buffer, Image, createPipeline(), transition(); VMA implementation
 src/render/frame_view.h      FrameView: a CPU frame (BGRA, rowBytes)
-src/render/vkt/              old Vulkan toolkit, not built; reference for scene3d, to be deleted
+src/render/vkt/              old Vulkan toolkit, not built, to be deleted (6d)
 src/util/                    logging, paths, exceptions
 src/ui/                      the web UI: index.html, scripts/{api,ui,client}.js, styles/ui.scss; staged as ui/
 src/shaders/examples/        example shader sources + README for users, staged as resources/shaders/examples/
-src/shaders/internal/        shaders built into the plugin (fullscreen.vert), compiled by glslc at build time
-src/shaders/scene/           the logo scene's shaders (for scene3d)
+src/shaders/internal/        shaders built into the plugin (fullscreen.vert, scene.vert/.frag), compiled by glslc at build time
 tests/shaders/               shaders for manual testing (broken.frag), not shipped
 ```
 
@@ -116,10 +117,11 @@ tests/shaders/               shaders for manual testing (broken.frag), not shipp
   - Params with `automatable = true` are exposed as CLAP params: Audio Gain (host-only, not in the web UI) and every shader param.
   - **Host automation:** arrives in `process()`/`flush()` (`handleParamEvents()`) and goes into `applyHostParamValue()`, which is lock-free. It then requests a main-thread callback, and `onMainThread()` echoes the values to the web UI.
   - **Web UI edits:** flagged with `ParamList::flagForHost()`, plus `host_params->request_flush()`. They are drained into `out_events` by `takeParamChangeForHost()`, which is lock-free.
-- **`clap.state`:** one JSON document: `{ version: 2, params: { name: value }, device, shader: { name, compiled } }`.
+- **`clap.state`:** one JSON document: `{ version: 2, params: { name: value }, device, logo, shader: { name, compiled } }`.
   - The compiled shader (its stored JSON) is embedded, so projects are self-contained and never recompile.
   - Unknown or old state loads defaults.
   - Values of shader params are restored by name, once the shader is loaded.
+- **Logo (easter egg):** `showLogo`, off by default, saved in state as `logo`, set by the UI's "3D logo" checkbox (`logo` message). Not a host param. It calls `ReaShaderRenderer::setLogoEnabled()`.
 - **Rendering device:** not a host param. It lives in state and the web UI. Changing it (from the UI or on state load) calls `changeRenderingDevice()`.
 - **REAPER video tap:** `activate()` does:
   1. `host->get_extension(host, "cockos.reaper_extension")`, cast to `reaper_plugin_info_t*`;
@@ -152,10 +154,10 @@ REAPER calls `ReaShaderPlugin::_processVideoFrame` (`plugin/plugin.cpp`), instal
 3. `ReaShaderRenderer::renderFrame()`, under `try_lock(frameMutex)`, does:
    1. (re)creates `FrameTargets` if the size or row stride changed;
    2. `memcpy` into the mapped upload buffer, and writes the shader's `Params` into its mapped UBO;
-   3. records one command buffer: buffer → input image, fullscreen shader pass → output image, output image → readback buffer;
+   3. records one command buffer: buffer → input image → shader pass (or a plain copy when there's no shader) → output image → logo scene on top (if enabled) → readback buffer;
    4. one submit and one fence wait (2 s timeout = GPU hang = `failed`);
    5. `memcpy` out into a new `vproc->newVideoFrame`.
-4. If `renderFrame` returns `false` (inactive, busy or failed), the input frame is passed through unchanged.
+4. If `renderFrame` returns `false` (inactive, busy, failed, or no shader and no logo), the input frame is passed through unchanged.
 
 ### Embedded web UI (WebUIHost)
 
@@ -185,13 +187,14 @@ Plain JSON objects with a `"type"` field. They're documented in `plugin/plugin.c
 
 | Direction | Message | Payload / effect |
 |---|---|---|
-| to UI | `snapshot` | `{ track, params, devices, shader, shaders }`. The UI rebuilds itself from it (except the shader status line); its shader list is rescanned each time, e.g. when the UI opens and after an upload; sent on `ready`, activate, state load, device and shader changes |
+| to UI | `snapshot` | `{ track, params, devices, logo, shader, shaders }`. The UI rebuilds itself from it (except the shader status line); its shader list is rescanned each time, e.g. when the UI opens and after an upload; sent on `ready`, activate, state load, device and shader changes |
 | to UI | `paramValue` | `{ id, value }`: host automation |
 | to UI | `shaderStatus` | `{ status, state }`, state = `busy`/`ok`/`error` |
 | from UI | `ready` | — |
 | from UI | `shaderSelect` | `{ name }`: a compiled shader, `""` = none (passthrough) |
 | from UI | `paramValue` | `{ id, value }` |
 | from UI | `renderingDevice` | `{ index }` |
+| from UI | `logo` | `{ enabled }`: the 3D logo switch |
 | from UI | `shaderUpload` | `{ name, source }`: GLSL sent as text |
 
 ### Parameters (`plugin/params.*`)
@@ -215,7 +218,14 @@ Plain JSON objects with a `"type"` field. They're documented in `plugin/plugin.c
   No deletion queues. A device switch destroys the targets, the pass and the device, then recreates the device and the pass. The targets come back with the next frame.
 - **Errors:** `VK_CHECK` throws `std::runtime_error`, and `ReaShaderRenderer`'s public functions catch everything.
 - **Shader changes:** the renderer never compiles. `setShader(CompiledShader)` swaps the pass under `frameMutex`. Frames render one at a time and wait on the fence, so the old pass is idle. With no device (inactive), the shader is kept and installed by the next `init()`. `clearShader()` removes it. With no shader, `renderFrame` returns `false` (passthrough).
-- **Internal shaders** (`fullscreen.vert`) are SPIR-V arrays compiled at build time, never read from disk.
+- **Internal shaders** (`fullscreen.vert`, `scene.vert`, `scene.frag`) are SPIR-V arrays compiled at build time, never read from disk.
+- **Scene (`scene.*`):**
+  - `Mesh` (.obj via tinyobjloader, host-visible vertex/index buffers) and `Texture` (stb, staged to a device image) are reusable for more 3D content.
+  - `Scene` holds objects (mesh + texture descriptor set + local transform), a depth buffer (`prepare()` per frame size) and one pipeline (push constant: the object's MVP matrix).
+  - It is drawn with `loadOp = LOAD` over the output.
+  - It is created on `setLogoEnabled(true)` or with the device if the logo is on, and destroyed with the device.
+  - Camera: z = -5, 70° FOV, the frame's aspect, y flipped via `proj[1][1] *= -1`. The spin is one degree per video frame (`time * frameRate`), wobbling with time.
+- **Frame layouts:** after the passes, `output` is always `COLOR_ATTACHMENT_OPTIMAL` (the shader pass, or `recordInputToOutput()`); `recordDownload()` expects that.
 
 ### Shader contract (`shader_compiler.cpp`, `kShaderPreamble`; user docs in `src/shaders/examples/README.md`)
 
@@ -271,4 +281,4 @@ Plain JSON objects with a `"type"` field. They're documented in `plugin/plugin.c
   - Debug builds request the Khronos validation layer (if installed). Its warnings and errors go to `rs.log` through vk-bootstrap's debug messenger.
   - The log has none in normal use, so any is a bug.
   - `VK_LOADER_DEBUG=layer` shows whether the layer was loaded.
-- **Testing the GPU code without REAPER:** a small executable that compiles `render/{gpu,context,frame_targets,shader_pass,shader_compiler}.cpp` plus `util/` (and includes the generated `fullscreen.vert.inc`) and runs frames through `FrameTargets` + `ShaderPass` checks output pixels exactly. This is how the renderer rewrite was verified, on both GPUs of the dev machine.
+- **Testing the GPU code without REAPER:** a small executable that compiles `render/{gpu,context,frame_targets,shader_pass,shader_compiler,scene}.cpp` plus `util/` (and includes the generated `*.inc`; the scene needs `resources/{meshes,images}` next to the exe) and runs frames through `FrameTargets` + `ShaderPass` checks output pixels exactly. This is how the renderer rewrite was verified, on both GPUs of the dev machine.

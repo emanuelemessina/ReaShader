@@ -27,6 +27,10 @@ const native = {
         this.send({ type: "renderingDevice", index: index });
     },
 
+    logo(enabled) {
+        this.send({ type: "logo", enabled: enabled });
+    },
+
     // a compiled shader by name, "" = none
     shaderSelect(name) {
         this.send({ type: "shaderSelect", name: name });

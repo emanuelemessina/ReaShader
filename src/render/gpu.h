@@ -58,14 +58,28 @@ namespace ReaShader::gpu
 		VkExtent2D extent{};
 
 		void create(VkDevice device, VmaAllocator allocator, VkExtent2D extent, VkFormat format,
-					VkImageUsageFlags usage);
+					VkImageUsageFlags usage, VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT);
 		void destroy(VkDevice device, VmaAllocator allocator);
 	};
+
+	// A graphics pipeline for dynamic rendering into the frame format:
+	// triangle list, no culling, no blending, dynamic viewport and scissor
+	struct PipelineDesc
+	{
+		const uint32_t* vertexSpirv = nullptr;
+		size_t vertexWords = 0;
+		const uint32_t* fragmentSpirv = nullptr;
+		size_t fragmentWords = 0;
+		VkPipelineLayout layout = VK_NULL_HANDLE;
+		const VkPipelineVertexInputStateCreateInfo* vertexInput = nullptr; // none: the shader makes the vertices
+		VkFormat depthFormat = VK_FORMAT_UNDEFINED;						   // undefined: no depth test
+	};
+	VkPipeline createPipeline(VkDevice device, const PipelineDesc& desc);
 
 	// Image layout transition (synchronization2 barrier)
 	void transition(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout from, VkImageLayout to,
 					VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess, VkPipelineStageFlags2 dstStage,
-					VkAccessFlags2 dstAccess);
+					VkAccessFlags2 dstAccess, VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT);
 
 	// REAPER's 'RGBA' frames are B,G,R,A in memory: the same byte order as this format
 	constexpr VkFormat kFrameFormat = VK_FORMAT_B8G8R8A8_UNORM;

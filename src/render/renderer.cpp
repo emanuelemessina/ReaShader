@@ -11,6 +11,7 @@
 #include "plugin/plugin.h"
 #include "render/context.h"
 #include "render/frame_targets.h"
+#include "render/scene.h"
 #include "render/shader_pass.h"
 #include "util/logging.h"
 
@@ -106,16 +107,21 @@ namespace ReaShader
 		context->createDevice((size_t)index);
 		if (shader)
 			_installShader();
+		if (logoEnabled)
+			_createScene();
 	}
 
 	void ReaShaderRenderer::_destroyDevice()
 	{
 		if (!context->hasDevice())
 			return;
+		if (scene)
+			scene->destroy(*context);
 		if (shaderPass)
 			shaderPass->destroy(*context);
 		if (targets)
 			targets->destroy(*context);
+		scene.reset();
 		shaderPass.reset();
 		targets.reset();
 		context->destroyDevice();
@@ -195,12 +201,48 @@ namespace ReaShader
 		plugin->setShaderParams({});
 	}
 
+	// -------- logo scene --------
+
+	void ReaShaderRenderer::setLogoEnabled(bool enabled)
+	{
+		std::lock_guard lock(frameMutex);
+		logoEnabled = enabled;
+		if (!enabled || scene || !context || !context->hasDevice())
+			return;
+		try
+		{
+			_createScene();
+		}
+		catch (const std::exception& e)
+		{
+			LOG(e, toFile | toConsole, "ReaShaderRenderer", "Logo scene failed", "The logo stays off");
+		}
+	}
+
+	void ReaShaderRenderer::_createScene()
+	{
+		auto newScene = std::make_unique<gpu::Scene>();
+		try
+		{
+			newScene->create(*context);
+		}
+		catch (...)
+		{
+			newScene->destroy(*context);
+			throw;
+		}
+		scene = std::move(newScene);
+	}
+
 	// -------- frames --------
 
 	bool ReaShaderRenderer::renderFrame(const FrameView& input, const FrameView& output, const FrameInputs& inputs)
 	{
 		std::unique_lock lock(frameMutex, std::try_to_lock);
-		if (!lock || failed || !shaderPass)
+		if (!lock || failed)
+			return false;
+		bool drawLogo = logoEnabled && scene;
+		if (!shaderPass && !drawLogo)
 			return false;
 
 		try
@@ -211,8 +253,11 @@ namespace ReaShader
 					targets->destroy(*context);
 				targets = std::make_unique<gpu::FrameTargets>();
 				targets->create(*context, input, output);
-				shaderPass->bindInput(*context, targets->input.view);
+				if (shaderPass)
+					shaderPass->bindInput(*context, targets->input.view);
 			}
+			if (drawLogo)
+				scene->prepare(*context, targets->extent);
 
 			// shader params follow the default ones in the plugin's param list
 			float shaderParams[Parameters::ParamList::maxCount];
@@ -228,11 +273,18 @@ namespace ReaShader
 			shaderInputs.frame = frameCount++;
 
 			targets->writeInput(*context, input);
-			shaderPass->writeParams(*context, shaderParams, shaderParamCount);
+			if (shaderPass)
+				shaderPass->writeParams(*context, shaderParams, shaderParamCount);
 
+			// upload -> shader (or a plain copy) -> logo -> download
 			VkCommandBuffer commandBuffer = context->beginCommands();
 			targets->recordUpload(commandBuffer);
-			shaderPass->record(commandBuffer, targets->output, shaderInputs);
+			if (shaderPass)
+				shaderPass->record(commandBuffer, targets->output, shaderInputs);
+			else
+				targets->recordInputToOutput(commandBuffer);
+			if (drawLogo)
+				scene->record(commandBuffer, targets->output, inputs.time, inputs.frameRate);
 			targets->recordDownload(commandBuffer);
 			context->submitAndWait();
 

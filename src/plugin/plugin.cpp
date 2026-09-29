@@ -239,7 +239,7 @@ namespace ReaShader
 	// -------- clap.state --------
 	//
 	// One JSON document:
-	// { "version": 2, "params": { "<name>": value }, "device": n, "shader": { "name": "", "compiled": {...} } }
+	// { "version": 2, "params": { "<name>": value }, "device": n, "logo": false, "shader": { "name": "", "compiled": {...} } }
 	// The compiled shader is embedded, so a project doesn't depend on the plugin's shader folder.
 
 	bool ReaShaderPlugin::saveState(const clap_ostream_t* stream)
@@ -251,6 +251,7 @@ namespace ReaShader
 			state = { { "version", 2 },
 					  { "params", params.valuesToJson() },
 					  { "device", renderingDevice },
+					  { "logo", showLogo },
 					  { "shader", { { "name", shaderName }, { "compiled", compiled } } } };
 		}
 
@@ -289,11 +290,13 @@ namespace ReaShader
 		params.valuesFromJson(savedParams);
 
 		int device = state.value("device", 0);
+		bool logo = state.value("logo", false);
 		bool deviceChanged;
 		{
 			std::lock_guard lock(stateMutex);
 			deviceChanged = device != renderingDevice;
 			renderingDevice = device;
+			showLogo = logo;
 			savedShaderValues.clear();
 			for (const auto& [name, value] : savedParams.items())
 			{
@@ -304,6 +307,7 @@ namespace ReaShader
 
 		if (deviceChanged)
 			reaShaderRenderer->changeRenderingDevice(device); // no-op when not active
+		reaShaderRenderer->setLogoEnabled(logo);
 
 		const json shader = state.value("shader", json::object());
 		const json compiled = shader.value("compiled", json());
@@ -489,7 +493,7 @@ namespace ReaShader
 	// -------- web UI --------
 	//
 	// Messages to the UI:
-	// - snapshot    { track, params, devices, shader, shaders }: everything, the UI rebuilds itself from it
+	// - snapshot    { track, params, devices, logo, shader, shaders }: everything, the UI rebuilds itself from it
 	// - paramValue  { id, value }: a host automation change
 	// - shaderStatus{ status, state }: state is "busy", "ok" or "error"
 	//
@@ -497,6 +501,7 @@ namespace ReaShader
 	// - ready       {}: the page loaded, send a snapshot
 	// - paramValue  { id, value }
 	// - renderingDevice { index }
+	// - logo        { enabled }: the spinning logo over the video
 	// - shaderSelect{ name }: a compiled shader, "" = none
 	// - shaderUpload{ name, source }: GLSL to compile and store
 
@@ -533,6 +538,7 @@ namespace ReaShader
 			msg = { { "type", "snapshot" },
 					{ "track", { { "number", trackNumber }, { "name", track } } },
 					{ "devices", { { "names", renderingDeviceNames }, { "selected", renderingDevice } } },
+					{ "logo", showLogo },
 					{ "shader", { { "name", shaderName } } } };
 		}
 		msg["params"] = params.toJson();
@@ -576,6 +582,15 @@ namespace ReaShader
 			setRenderingDeviceIndex(index);
 			reaShaderRenderer->changeRenderingDevice(index);
 			_webuiSendSnapshot();
+		}
+		else if (type == "logo")
+		{
+			bool enabled = msg.value("enabled", false);
+			{
+				std::lock_guard lock(stateMutex);
+				showLogo = enabled;
+			}
+			reaShaderRenderer->setLogoEnabled(enabled);
 		}
 		else if (type == "shaderSelect")
 		{

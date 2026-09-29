@@ -18,16 +18,6 @@ namespace ReaShader::gpu
 		constexpr uint32_t kFullscreenVertexSpirv[] = {
 #include "fullscreen.vert.inc"
 		};
-
-		VkShaderModule createShaderModule(VkDevice device, const uint32_t* spirv, size_t words)
-		{
-			VkShaderModuleCreateInfo moduleInfo{ VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
-			moduleInfo.codeSize = words * sizeof(uint32_t);
-			moduleInfo.pCode = spirv;
-			VkShaderModule module = VK_NULL_HANDLE;
-			VK_CHECK(vkCreateShaderModule(device, &moduleInfo, nullptr, &module));
-			return module;
-		}
 	} // namespace
 
 	// -------- ShaderPass --------
@@ -75,76 +65,14 @@ namespace ReaShader::gpu
 		write.pBufferInfo = &bufferInfo;
 		vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
 
-		// pipeline: fullscreen triangle, no blending, renders straight to the frame format
-		VkShaderModule vertexModule =
-			createShaderModule(device, kFullscreenVertexSpirv, std::size(kFullscreenVertexSpirv));
-		VkShaderModule fragmentModule = createShaderModule(device, shader.spirv.data(), shader.spirv.size());
-
-		VkPipelineShaderStageCreateInfo stages[2]{};
-		stages[0] = { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO };
-		stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-		stages[0].module = vertexModule;
-		stages[0].pName = "main";
-		stages[1] = { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO };
-		stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		stages[1].module = fragmentModule;
-		stages[1].pName = "main";
-
-		VkPipelineVertexInputStateCreateInfo vertexInput{ VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
-
-		VkPipelineInputAssemblyStateCreateInfo inputAssembly{
-			VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO
-		};
-		inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-
-		VkPipelineViewportStateCreateInfo viewport{ VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO };
-		viewport.viewportCount = 1;
-		viewport.scissorCount = 1;
-
-		VkPipelineRasterizationStateCreateInfo rasterization{
-			VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO
-		};
-		rasterization.polygonMode = VK_POLYGON_MODE_FILL;
-		rasterization.cullMode = VK_CULL_MODE_NONE;
-		rasterization.lineWidth = 1.0f;
-
-		VkPipelineMultisampleStateCreateInfo multisample{ VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
-		multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-		VkPipelineColorBlendAttachmentState blendAttachment{};
-		blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-										 VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-		VkPipelineColorBlendStateCreateInfo blend{ VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
-		blend.attachmentCount = 1;
-		blend.pAttachments = &blendAttachment;
-
-		VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
-		VkPipelineDynamicStateCreateInfo dynamic{ VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
-		dynamic.dynamicStateCount = 2;
-		dynamic.pDynamicStates = dynamicStates;
-
-		VkFormat colorFormat = kFrameFormat;
-		VkPipelineRenderingCreateInfo rendering{ VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO };
-		rendering.colorAttachmentCount = 1;
-		rendering.pColorAttachmentFormats = &colorFormat;
-
-		VkGraphicsPipelineCreateInfo pipelineInfo{ VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
-		pipelineInfo.pNext = &rendering;
-		pipelineInfo.stageCount = 2;
-		pipelineInfo.pStages = stages;
-		pipelineInfo.pVertexInputState = &vertexInput;
-		pipelineInfo.pInputAssemblyState = &inputAssembly;
-		pipelineInfo.pViewportState = &viewport;
-		pipelineInfo.pRasterizationState = &rasterization;
-		pipelineInfo.pMultisampleState = &multisample;
-		pipelineInfo.pColorBlendState = &blend;
-		pipelineInfo.pDynamicState = &dynamic;
-		pipelineInfo.layout = pipelineLayout;
-
-		VkResult result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline);
-		vkDestroyShaderModule(device, fragmentModule, nullptr);
-		vkDestroyShaderModule(device, vertexModule, nullptr);
-		VK_CHECK(result);
+		// pipeline: fullscreen triangle, renders straight to the frame format
+		PipelineDesc pipelineDesc;
+		pipelineDesc.vertexSpirv = kFullscreenVertexSpirv;
+		pipelineDesc.vertexWords = std::size(kFullscreenVertexSpirv);
+		pipelineDesc.fragmentSpirv = shader.spirv.data();
+		pipelineDesc.fragmentWords = shader.spirv.size();
+		pipelineDesc.layout = pipelineLayout;
+		pipeline = createPipeline(device, pipelineDesc);
 	}
 
 	void ShaderPass::destroy(Context& context)
