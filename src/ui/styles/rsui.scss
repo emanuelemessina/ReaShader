@@ -6,14 +6,14 @@
  * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
  *****************************************************************************/
 
-@use './palette' as c;
+@use './components/palette' as c;
 
-@use './radio-button';
-@use './slider';
-@use './button';
-@use './textarea';
-@use './input-file';
-@use './bars';
+@use './components/radio-button';
+@use './components/slider';
+@use './components/button';
+@use './components/textarea';
+@use './components/input-file';
+@use './components/bars';
 
 $img_background: "images/background.png";
 
