@@ -1,6 +1,6 @@
 .claude
 
-tests/.stuff
+*.stuff
 releases
 
 build

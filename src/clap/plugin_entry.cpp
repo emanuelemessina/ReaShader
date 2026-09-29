@@ -22,8 +22,9 @@ namespace ReaShader
 {
 	namespace
 	{
-		constexpr const char* kPluginId = "com.emanuelemessina.reashader";
-		constexpr const char* kPluginName = "ReaShader";
+		// set by CMakeLists.txt: debug builds get their own name and id
+		constexpr const char* kPluginId = REASHADER_ID;
+		constexpr const char* kPluginName = REASHADER_NAME;
 
 		// -------- clap_plugin_t vtable --------
 
