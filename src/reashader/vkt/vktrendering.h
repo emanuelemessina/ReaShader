@@ -91,7 +91,7 @@ namespace vkt
 			}
 
 			template <typename P>
-			void cmdPushConstants(VkCommandBuffer commandBuffer, VkShaderStageFlagBits stages, P* constants, uint32_t offset)
+			void cmdPushConstants(VkCommandBuffer commandBuffer, VkShaderStageFlags stages, P* constants, uint32_t offset)
 			{
 				vkCmdPushConstants(commandBuffer, pipelineLayout, stages, 0,
 								   sizeof(P), constants);

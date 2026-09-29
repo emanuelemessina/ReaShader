@@ -8,97 +8,120 @@
 
 #include "logging.h"
 #include "tools/paths.h"
+
+#include <boxer/boxer.h>
+
+#include <chrono>
+#include <format>
 #include <fstream>
+#include <iostream>
+#include <map>
+#include <mutex>
+#include <string>
+#include <vector>
 
-static bool log_files_erase{ true }; // erase all logs on first launch
-
-std::string build_log_line(LogLevel level, const char* sender, const char* title, const char* message)
+namespace
 {
-	std::string ret = std::format("{:%d-%m-%Y %H:%M:%OS} | ", std::chrono::system_clock::now()) +
-					  std::format("[{}] ({}) {} : {}", logLevelStrings[level], sender, title, message);
-	return ret;
+	constexpr const char* levelNames[] = { "Info", "Warning", "Error" };
+
+	struct Box
+	{
+		LogLevel level;
+		std::string caption;
+		std::string text;
+	};
+
+	std::mutex fileMutex;
+	std::ofstream logFile; // opened (and truncated) on first use
+
+	std::mutex boxMutex;
+	std::vector<Box> queuedBoxes;
+	std::map<const void*, std::function<void()>> boxRequesters;
+
+	void writeToFile(const std::string& line)
+	{
+		std::lock_guard lock(fileMutex);
+		if (!logFile.is_open())
+		{
+			logFile.open(tools::paths::pluginDir() / "rs.log", std::ios::out | std::ios::trunc);
+			if (!logFile.is_open())
+			{
+				std::cerr << "Cannot open rs.log for writing" << std::endl;
+				return;
+			}
+		}
+		logFile << line << std::endl;
+	}
+
+	void showBox(const Box& box)
+	{
+		boxer::Style style = box.level == EXCEPTION ? boxer::Style::Error
+							 : box.level == WARNING ? boxer::Style::Warning
+													: boxer::Style::Info;
+		boxer::show(box.text.c_str(), box.caption.c_str(), style);
+	}
+
+	void queueBox(Box box)
+	{
+		std::function<void()> requestMainThread;
+		{
+			std::lock_guard lock(boxMutex);
+			if (!boxRequesters.empty())
+			{
+				queuedBoxes.push_back(std::move(box));
+				requestMainThread = boxRequesters.begin()->second;
+			}
+		}
+
+		if (requestMainThread)
+			requestMainThread();
+		else
+			showBox(box);
+	}
+} // namespace
+
+void LOG(LogLevel level, unsigned destinations, std::string_view sender, std::string_view title,
+		 std::string_view message)
+{
+	if (destinations & (toFile | toConsole))
+	{
+		std::string line = std::format("{:%d-%m-%Y %H:%M:%OS} | [{}] ({}) {} : {}", std::chrono::system_clock::now(),
+									   levelNames[level], sender, title, message);
+		if (destinations & toFile)
+			writeToFile(line);
+		if (destinations & toConsole)
+			(level == EXCEPTION ? std::cerr : std::cout) << line << std::endl;
+	}
+
+	if (destinations & toBox)
+		queueBox({ level, std::format("[{}] ({})", levelNames[level], sender), std::format("{} : {}", title, message) });
 }
 
-void console_log(LogLevel level, const char* sender, const char* title, const char* message)
+void LOG(const std::exception& e, unsigned destinations, std::string_view sender, std::string_view title,
+		 std::string_view message)
 {
-	std::ostream* o;
-	switch (level)
-	{
-		case EXCEPTION:
-			o = &std::cerr;
-			break;
-		default:
-			o = &std::cout;
-			break;
-	}
-	(*o) << build_log_line(level, sender, title, message) << std::endl;
-}
-void log_to_file(LogLevel level, const char* sender, const char* title, const char* message)
-{
-	int openMode{ 0 };
-	if (log_files_erase)
-	{
-		openMode |= std::ios::trunc;
-		log_files_erase = false;
-	}
-	else
-		openMode |= std::ios::app;
-
-	std::string filePath = tools::paths::join({ REASHADER_PLUGIN_DIR, "rs.log" });
-	std::ofstream logFile;
-
-	logFile.open(filePath, openMode | std::ios::out);
-
-	if (!logFile.is_open())
-	{
-		LOG(WARNING, toConsole | toBox, "Logger", "Filesytem error",
-			std::move(std::format("Cannot open {} for writing", filePath)));
-		return;
-	}
-
-	logFile << build_log_line(level, sender, title, message) << std::endl;
-
-	logFile.close();
-}
-void show_box(LogLevel level, const char* sender, const char* title, const char* message)
-{
-	boxer::Style style;
-	switch (level)
-	{
-		case EXCEPTION:
-			style = boxer::Style::Error;
-			break;
-		case WARNING:
-			style = boxer::Style::Warning;
-			break;
-		default:
-			style = boxer::Style::Info;
-			break;
-	}
-	boxer::show(std::format("{} : {}", title, message).c_str(),
-				std::format("[{}] ({})", logLevelStrings[level], sender).c_str(), style);
+	LOG(EXCEPTION, destinations, sender, title, std::format("{} | {}", message, e.what()));
 }
 
-void _LOG(LogLevel level, LogDestFlags flags, const char* sender, const char* title, const char* message)
+void registerBoxRequester(const void* owner, std::function<void()> requestMainThreadCallback)
 {
-	if (flags & toFile)
-	{
-		log_to_file(level, sender, title, message);
-	}
-	if (flags & toConsole)
-	{
-		console_log(level, sender, title, message);
-	}
-	if (flags & toBox)
-	{
-		show_box(level, sender, title, message);
-	}
+	std::lock_guard lock(boxMutex);
+	boxRequesters[owner] = std::move(requestMainThreadCallback);
 }
-void LOG(LogLevel level, LogDestFlags flags, std::string&& sender, std::string&& title, std::string&& message)
+
+void unregisterBoxRequester(const void* owner)
 {
-	_LOG(level, flags, sender.c_str(), title.c_str(), message.c_str());
+	std::lock_guard lock(boxMutex);
+	boxRequesters.erase(owner);
 }
-void LOG(STDEXC e, LogDestFlags flags, std::string&& sender, std::string&& title, std::string&& message)
+
+void showQueuedBoxes()
 {
-	LOG(EXCEPTION, flags, std::move(sender), std::move(title), std::format("{} | {}", message, e.what()));
+	std::vector<Box> boxes;
+	{
+		std::lock_guard lock(boxMutex);
+		boxes.swap(queuedBoxes);
+	}
+	for (const Box& box : boxes)
+		showBox(box);
 }

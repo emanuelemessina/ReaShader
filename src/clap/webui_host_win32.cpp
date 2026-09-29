@@ -27,13 +27,8 @@ namespace ReaShader
 	{
 		std::string fileUrlForRsuiHtml()
 		{
-			std::string path = tools::paths::join({ RSUI_DIR, "rsui.html" });
-			for (auto& c : path)
-			{
-				if (c == '\\')
-					c = '/';
-			}
-			return "file:///" + path;
+			std::u8string path = (tools::paths::rsuiDir() / "rsui.html").generic_u8string();
+			return "file:///" + std::string(path.begin(), path.end());
 		}
 
 		// JSON is valid JS literal syntax, so the message is embedded verbatim (no string escaping);
@@ -83,7 +78,7 @@ namespace ReaShader
 					catch (const std::exception& e)
 					{
 						LOG(WARNING, toConsole | toFile, "WebUIHost", "Malformed message from web UI",
-							std::string(e.what()));
+							e.what());
 					}
 					return "null";
 				});
@@ -130,12 +125,12 @@ namespace ReaShader
 			catch (const std::exception& e)
 			{
 				LOG(WARNING, toConsole | toFile | toBox, "WebUIHost", "Failed to create embedded web UI",
-					std::string(e.what()));
+					e.what());
 			}
 			catch (...)
 			{
 				LOG(WARNING, toConsole | toFile | toBox, "WebUIHost", "Failed to create embedded web UI",
-					std::string("unknown error"));
+					"unknown error");
 			}
 
 			// COM/Win32 objects must be destroyed on the thread that created them

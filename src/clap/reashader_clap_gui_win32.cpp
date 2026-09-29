@@ -189,12 +189,12 @@ namespace ReaShader
 			catch (const std::exception& e)
 			{
 				LOG(WARNING, toConsole | toFile | toBox, "ReaShaderGui", "Failed to create embedded web UI",
-					std::string(e.what()));
+					e.what());
 			}
 			catch (...)
 			{
 				LOG(WARNING, toConsole | toFile | toBox, "ReaShaderGui", "Failed to create embedded web UI",
-					std::string("unknown error"));
+					"unknown error");
 			}
 
 			return true;
