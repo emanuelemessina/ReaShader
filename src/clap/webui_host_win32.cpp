@@ -31,12 +31,10 @@ namespace ReaShader
 			return "file:///" + std::string(path.begin(), path.end());
 		}
 
-		// JSON is valid JS literal syntax, so the message is embedded verbatim (no string escaping);
-		// the receiver gets it back as a JSON string in event.data.
+		// JSON is valid JS literal syntax: the message is passed to the receiver as an object, no escaping needed
 		std::string buildDispatchScript(const std::string& jsonMsg)
 		{
-			return "window.__reashaderOnMessage && window.__reashaderOnMessage({data: JSON.stringify(" + jsonMsg +
-				   ")});";
+			return "window.__reashaderOnMessage && window.__reashaderOnMessage(" + jsonMsg + ");";
 		}
 	} // namespace
 
@@ -71,7 +69,7 @@ namespace ReaShader
 					// req is the JSON array of the JS call's arguments: ["<message-json>"]
 					try
 					{
-						json args = json::parse(req);
+						auto args = nlohmann::json::parse(req);
 						if (_impl->plugin && args.is_array() && !args.empty())
 							_impl->plugin->handleWebUIMessage(args.at(0).get<std::string>());
 					}

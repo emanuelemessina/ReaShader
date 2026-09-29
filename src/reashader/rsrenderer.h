@@ -39,8 +39,11 @@ class ReaShaderRenderer
     void shutdown();
 
     void changeRenderingDevice(int renderingDeviceIndex);
-	void changeCustomShader(std::vector<char>&& glsl, std::function<void(std::string&& msg)> onStatus,
-							std::function<void(std::string&& msg)> onError, std::function<void(void)> onSuccess);
+	// compiles the GLSL fragment shader and replaces the plugin's shader params with its reflected uniforms;
+	// never throws, errors go to onError
+	using StatusCallback = std::function<void(const std::string&)>;
+	void changeCustomShader(const std::string& source, StatusCallback onStatus, StatusCallback onError,
+							std::function<void()> onSuccess);
 
     // Entry point for REAPER's video thread: runs checkFrameSize/loadBitsToImage/drawFrame/transferFrame
     // as one unit. Never throws -- returns false (caller should pass the input frame through) if the
@@ -58,12 +61,15 @@ class ReaShaderRenderer
     void transferFrame(int *&destBuffer);
 
   private:
+    void _changeCustomShader(const std::string& source, const StatusCallback& onStatus,
+                             const StatusCallback& onError, const std::function<void()>& onSuccess);
+
     bool exceptionOnInitialize{false};
     std::atomic<bool> halted{false};
     std::atomic<bool> frameFailed{false};
 
     // held by renderFrame (try_lock, so REAPER's video thread never waits on it) and by anything
-    // that creates/destroys GPU resources frames use (init, shutdown, changeRenderingDevice)
+    // that creates/destroys GPU resources frames use (init, shutdown, device and shader changes)
     std::mutex frameMutex;
 
     // wrap low level faults and circumvent seh object unwinding

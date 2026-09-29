@@ -174,7 +174,9 @@ namespace ReaShader
 				state->guiHwnd = nullptr;
 			}
 
-			HWND hwnd = CreateWindowExW(0, kWindowClassName, L"", WS_CHILD, 0, 0, (int)kDefaultWidth,
+			// WS_EX_CONTROLPARENT: the host's dialog tab navigation must be able to walk through this
+			// window into the webview and back out; without it, it loops forever once the webview has focus
+			HWND hwnd = CreateWindowExW(WS_EX_CONTROLPARENT, kWindowClassName, L"", WS_CHILD, 0, 0, (int)kDefaultWidth,
 										 (int)kDefaultHeight, (HWND)window->win32, nullptr, thisModuleHandle(), nullptr);
 			if (!hwnd)
 				return false;

@@ -6,73 +6,27 @@
  * See the LICENSE file (https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE) for more information.
  *****************************************************************************/
 
-// Transport adapter over webview/webview's postToNative()/eval() bridge (see
-// webui_host_win32.cpp), duck-typed against the same { send(), addEventListener('message', cb) }
-// shape the old WebSocket object had -- postToNative is injected automatically by the C++ side's
-// webview.bind("postToNative", ...) call, before this script ever runs.
-const socket = {
-    send: (msg) => window.postToNative(msg),
-    addEventListener: (type, cb) => {
-        if (type === 'message')
-            window.__reashaderOnMessage = cb;
+// Messages from the plugin (see ReaShaderPlugin's web UI section).
+// The webview host calls window.__reashaderOnMessage(msg) with the message object.
+
+window.__reashaderOnMessage = (msg) => {
+    try {
+        switch (msg.type) {
+            case "snapshot":
+                renderSnapshot(msg);
+                break;
+            case "paramValue":
+                setParamValue(msg.id, msg.value);
+                break;
+            case "shaderStatus":
+                setShaderStatus(msg.status, msg.error);
+                break;
+            default:
+                console.warn("Unexpected message from the plugin:", msg);
+        }
+    } catch (error) {
+        console.error("Failed to handle message from the plugin:", error, msg);
     }
 };
-const messager = new Messager(socket);
 
-// postToNative is already available by the time this (deferred) script runs, so request the
-// initial data straight away instead of waiting for a connection-opened event.
-messager
-    .sendRequestTrackInfo()
-    .sendRequestParamGroupsList()
-    .sendRequestParamsList()
-    .sendRequestRenderingDevicesList()
-    .sendRequestParamTypesList()
-    ;
-
-// Listen for messages
-socket.addEventListener('message', (event) => {
-    try {
-        const handler = new MessageHandler(event.data);
-
-        handler
-            .handleServerShutdown(() => {
-                window.close();
-            })
-            .handleVSTParamUpdate((json) => {
-                uiVSTParamUpdate(json.paramId, json.value);
-            })
-            .handleParamUpdate((json) => {
-                uiParamUpdate(json.paramId, json.value);
-            })
-            .handleTrackInfo((json) => {
-                document.title = `${json.trackNumber} | ${json.trackName}`;
-            })
-            .handleParamGroupsList((json) => {
-                uiCreateParamGroups(json.groups);
-            })
-            .handleParamsList((json) => {
-
-                // iterate over params
-                for (let paramIndex in json.params) {
-                    const param = json.params[paramIndex];
-                    const paramId = param.id;
-
-                    uiCreateParam(messager, paramId, param);
-                }
-            })
-            .handleParamAdd((json) => {
-                let param = json["param"];
-                uiCreateParam(messager, param.id, param);
-            })
-            .handleRenderingDevicesList((json) => {
-                uiCreateDeviceSelector(messager, json.devices, json.selected);
-            })
-            .handleParamTypesList((json) => {
-                setParamTypesList(json.types);
-            })
-            ;
-    } catch (error) {
-        // leave it, might be for other handlers
-        //console.error('Error parsing incoming JSON:', error, event.data);
-    }
-});
+native.ready();

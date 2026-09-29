@@ -57,7 +57,8 @@ namespace ReaShader
 			}
 
 			// parmlist[0] is wet/dry; plugin param index i is at parmlist[i + 1]
-			double videoParam = nparms > (int)Parameters::uVideoParam ? parmlist[Parameters::uVideoParam + 1] : 0.0;
+			int videoParamIndex = Parameters::VideoParam + 1;
+			double videoParam = nparms > videoParamIndex ? parmlist[videoParamIndex] : 0.0;
 			double pushConstants[] = { project_time, frate, videoParam };
 			int* outputBits = reinterpret_cast<int*>(outputVf->get_bits());
 
@@ -91,7 +92,7 @@ namespace ReaShader
 			registerBoxRequester(state, [host]() { host->request_callback(host); });
 
 			state->plugin = std::make_unique<ReaShaderPlugin>();
-			state->plugin->initialize();
+			state->plugin->initialize(state->host);
 			return true;
 		}
 
@@ -106,7 +107,7 @@ namespace ReaShader
 							  uint32_t /*max_frames*/)
 		{
 			auto* state = static_cast<ClapPluginState*>(plugin->plugin_data);
-			state->plugin->activate(state->host);
+			state->plugin->activate();
 			return true;
 		}
 
@@ -146,7 +147,7 @@ namespace ReaShader
 			{
 				clap_id id;
 				double value;
-				while (state->plugin->popPendingHostNotification(id, value))
+				while (state->plugin->takeParamChangeForHost(id, value))
 				{
 					clap_event_param_value_t ev{};
 					ev.header.size = sizeof(ev);
@@ -198,8 +199,10 @@ namespace ReaShader
 			return CLAP_PROCESS_CONTINUE;
 		}
 
-		void plugin_on_main_thread(const clap_plugin_t*)
+		void plugin_on_main_thread(const clap_plugin_t* plugin)
 		{
+			auto* state = static_cast<ClapPluginState*>(plugin->plugin_data);
+			state->plugin->onMainThread();
 			showQueuedBoxes();
 		}
 
@@ -272,15 +275,13 @@ namespace ReaShader
 		bool state_save(const clap_plugin_t* plugin, const clap_ostream_t* stream)
 		{
 			auto* state = static_cast<ClapPluginState*>(plugin->plugin_data);
-			state->plugin->saveState(stream);
-			return true;
+			return state->plugin->saveState(stream);
 		}
 
 		bool state_load(const clap_plugin_t* plugin, const clap_istream_t* stream)
 		{
 			auto* state = static_cast<ClapPluginState*>(plugin->plugin_data);
-			state->plugin->loadState(stream);
-			return true;
+			return state->plugin->loadState(stream);
 		}
 
 		const clap_plugin_state_t stateExtension = { state_save, state_load };
