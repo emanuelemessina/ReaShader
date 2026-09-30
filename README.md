@@ -2,17 +2,17 @@
 
 ## Motivation
 
-Reaper is a great and versatile DAW, capable of handling not just audio but also video.
-\
-While it has its own video processing capabilities, currently (2024) the features are limited and the effects must be written by hand as custom scripts accessing an internal API.
-\
-\
-Thus, ReaShader is my own experiment in trying to make a plugin that acts as a video processor for Reaper.
-\
-You install it the same way you would install any audio plugin, and it will process video frames instead of audio samples.
-\
-\
-Please cite me if you benefit from this project, as it required a lot of blood, sweat and tears, thank you 🙏.
+REAPER is a great, versatile DAW, and it edits video as well as audio. For many musicians and creators, that makes it the one place where a whole project lives: the song, the mix and the music video on the same timeline.
+
+REAPER's own video effects, though, are limited. A custom effect means writing an EEL2 script against REAPER's video API, a language no other graphics tool shares. Meanwhile, the rest of the graphics world writes effects as **shaders**: small programs that run on the GPU, are fast enough for real time, and are shared by the thousands online.
+
+ReaShader brings the two together. It's a plugin you add to a track like any audio effect, but it processes video frames instead of audio samples:
+
+- **Effects are shaders.** Write one, or adapt one you found, and upload it. The plugin compiles it and runs it on your GPU.
+- **Shader params are REAPER params** Every parameter a shader declares becomes a REAPER parameter, so it can be automated, modulated or linked like any plugin knob.
+- **Projects are self-contained.** The compiled shader is saved inside the project, so it opens the same way anywhere.
+
+It started as my own experiment in making a video processor for REAPER, and grew into a full plugin. It took a lot of blood, sweat and tears: if you benefit from it, please cite me. Thank you 🙏
 
 ## What it does
 
@@ -27,15 +27,23 @@ Please cite me if you benefit from this project, as it required a lot of blood, 
 
 It's a work in progress. Only Windows is supported for now; macOS/Linux builds are planned (the code has `TODO`s where platform work is missing).
 
+## Installing
+
+**With the installer (Windows):** run `ReaShader-<version>-win64-setup.exe` from a release. It installs for your user only, needs no admin rights, and installs the VC++ runtime if it's missing. Upgrading keeps the shaders you uploaded, and uninstalling asks whether to delete them.
+
+**By hand:** put the `ReaShader` plugin folder (from a release, or [built from source](doc/building.md)) inside your CLAP folder. Hosts search it recursively.
+
+- Windows: `%LOCALAPPDATA%\Programs\Common\CLAP\ReaShader`
+- macOS: `~/Library/Audio/Plug-Ins/CLAP/ReaShader`
+- Linux: `~/.clap/ReaShader`
+
+ReaShader needs Vulkan (from your GPU driver) and, on Windows, WebView2 (built into Windows 11).
+
 ## Using it
 
-1. Build it (below) or grab a release, and put the `ReaShader` plugin folder inside your CLAP folder (hosts search it recursively):
-   - Windows: `%LOCALAPPDATA%\Programs\Common\CLAP\ReaShader`
-   - macOS: `~/Library/Audio/Plug-Ins/CLAP/ReaShader`
-   - Linux: `~/.clap/ReaShader`
-2. In REAPER, add "ReaShader" (CLAP) to a track with a video item. If it's not listed, rescan: Preferences → Plug-ins → CLAP → Re-scan.
-3. Open REAPER's video window (View → Video).
-4. In the plugin window, **Upload** a shader: try the examples in `resources/shaders/examples` inside the plugin folder. An uploaded shader is compiled once and added to the shader list.
+1. In REAPER, add "ReaShader" (CLAP) to a track with a video item. If it's not listed, rescan: Preferences → Plug-ins → CLAP → Re-scan.
+2. Open REAPER's video window (View → Video).
+3. In the plugin window, **Upload** a shader: try the examples in `resources/shaders/examples` inside the plugin folder. An uploaded shader is compiled once and added to the shader list.
 
 Writing your own shader is simple: see [the examples' README](src/shaders/examples/README.md).
 
@@ -52,59 +60,20 @@ ReaShader/
   rs.log                     the plugin's log
 ```
 
-## Building
+## Documentation
 
-### Prerequisites
+For users:
 
-- [CMake](https://cmake.org/) 3.25+ and [Ninja](https://ninja-build.org/)
-- [clang](https://releases.llvm.org/) (`clang++`) on `PATH`
-- The [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/). Its installer sets `VULKAN_SDK`, which is how the build finds it; glslc and shaderc come with it.
-- [Dart Sass](https://sass-lang.com/install/) (`sass`) on `PATH`, e.g. `choco install sass`, `npm install -g sass` or `brew install sass/sass/sass`
-- The submodules, which hold every other dependency:
+- [Writing a shader](src/shaders/examples/README.md): the built-in inputs, sliders and `//@param`.
 
-  ```
-  git submodule update --init --recursive
-  ```
+For developers:
 
-  (or clone with `git clone --recurse-submodules`)
-
-- The first configure downloads the WebView2 headers from NuGet once, if no system copy is found.
-
-### Tasks (VS Code)
-
-- **build+deploy** (default build task, Ctrl+Shift+B): configures (the first time), builds, and deploys the plugin folder to `<your CLAP folder>/ReaShader`. If REAPER has the plugin loaded, the deploy is skipped with a warning: close REAPER and build again.
-- **test**: builds the plugin without deploying, then builds and runs the tests (see [doc/testing.md](doc/testing.md)).
-- **package** (Windows): builds the release installer, `build/windows-release/package/ReaShader-<version>-win64-setup.exe`. Needs [Inno Setup 6](https://jrsoftware.org/isinfo.php).
-- **clean**: wipes the build directories, for a fresh configure.
-
-From a terminal:
-
-```
-cmake -DPROFILE=debug -P build.cmake
-```
-
-or build without deploying:
-
-```
-cmake --preset windows-debug
-cmake --build --preset windows-debug
-```
-
-## Project layout
-
-```
-src/clap/        CLAP entry point, plugin window (Win32), embedded webview host
-src/plugin/      the plugin: parameters, state, UI messages, REAPER video tap
-src/render/      the Vulkan renderer and the shader compiler
-src/ui/          the web UI (index.html, scripts/, styles/)
-src/shaders/     example shaders, internal shaders, the logo scene's shaders
-src/util/        logging, paths, fault handling
-test/            the test application (doctest; see doc/testing.md)
-installer/       installer extras (Windows: Inno Setup, via CPack)
-external/        dependencies (git submodules)
-doc/rendering.md how the renderer works (Vulkan concepts mapped to src/render/)
-doc/testing.md   how to run and write tests
-```
+- [Building](doc/building.md): prerequisites, building and deploying, packaging the installer.
+- [Contributing](CONTRIBUTING.md): the workflow, runtime rules, code style and documentation rules.
+- [Architecture](doc/architecture.md): how the plugin, the web UI and the renderer fit together.
+- [Rendering](doc/rendering.md): the Vulkan renderer, explained for readers who don't know Vulkan.
+- [Testing](doc/testing.md): the test application and the manual test in REAPER.
+- [Gotchas](doc/gotchas.md): platform and toolchain traps, and debugging crashes and hangs.
 
 ## Credits
 
@@ -132,6 +101,7 @@ doc/testing.md   how to run and write tests
 - [WDL](https://github.com/justinfrankel/WDL)
 - [cmake-git-versioning](https://github.com/emanuelemessina/cmake-git-versioning)
 - [Dart Sass](https://sass-lang.com/dart-sass/) (build tool)
+- [doctest](https://github.com/doctest/doctest) (tests)
 
 #### Thanks to
 
