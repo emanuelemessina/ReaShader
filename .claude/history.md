@@ -120,3 +120,9 @@ The user's proposals from the cleanup's handoff (`doc/proposals.md`, now deleted
 - **Cause:** webview (0.12.0, and upstream master too) registers `webview_widget`/`webview_message` under `GetModuleHandle(nullptr)`, i.e. reaper.exe. The release plugin, loaded first, owned the classes. The debug plugin's windows then ran the release plugin's window procedure, which read the debug build's `win32_edge_engine` with a different layout.
 - **Fix:** CMake writes a patched copy of the header (`generated/webview-include`), which registers the classes under the plugin's own module (`GetModuleHandleExW` on a static in the header). The submodule stays untouched, and configure fails if the patched line disappears.
 - **Not covered by tests:** the fake host has no GUI or WebView2. The user's check is two plugin windows (release and debug) open in one REAPER session.
+
+## False alarm: effects leaking onto the tracks below (September 2026)
+
+- **What the user saw:** `brightness` on a resized top track brightened the whole video window, including the tracks below and the empty canvas.
+- **Real cause:** FX order. "Track opacity/zoom/pan" came *before* ReaShader in the track's chain. That preset composites the track over the tracks below, so ReaShader received the whole picture. With ReaShader first, only the track is affected.
+- **Rolled back:** a premultiplied-alpha fix (unpremultiply/premultiply passes around the chain) and a temporary input-logging diagnostic were written for it, then reverted. Whether REAPER's RGBA frames are premultiplied or straight is still unverified. Don't assume either without checking in REAPER, e.g. a half-transparent frame through an identity shader.
