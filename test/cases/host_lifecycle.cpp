@@ -31,16 +31,14 @@ TEST_SUITE("host")
 		test::checkNoProblems(reaper);
 	}
 
-	TEST_CASE("a new plugin lists only its fixed params, Audio Gain and LUT Mix, at 1")
+	TEST_CASE("a new plugin lists only its fixed param, Audio Gain, at 1")
 	{
 		host::Reaper reaper(host::builtPlugin());
 		reaper.createPlugin();
 
-		REQUIRE(reaper.params().size() == 2);
+		REQUIRE(reaper.params().size() == 1);
 		CHECK(reaper.params()[0].name == "Audio Gain");
 		CHECK(reaper.params()[0].value == 1.0);
-		CHECK(reaper.params()[1].name == "LUT Mix");
-		CHECK(reaper.params()[1].value == 1.0);
 
 		reaper.destroyPlugin();
 		test::checkNoProblems(reaper);

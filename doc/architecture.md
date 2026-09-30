@@ -2,7 +2,7 @@
 
 ReaShader is a **CLAP** video-effect plugin for REAPER. It taps REAPER's video frames, runs them through a Vulkan pipeline (GLSL shaders) and hands them back. Its HTML/JS/SCSS UI is embedded in REAPER's FX window through a native webview ([webview/webview](https://github.com/webview/webview)).
 
-This doc maps the pieces: the plugin object, the video path, the web UI and its protocol, parameters, the renderer, the shader contract, LUTs and logging. The renderer has its own, deeper guide: [rendering.md](rendering.md).
+This doc maps the pieces: the plugin object and its chain of shaders and LUTs, the video path, the web UI and its protocol, parameters, the renderer, the shader contract and logging. The renderer has its own, deeper guide: [rendering.md](rendering.md).
 
 Contents:
 
@@ -23,7 +23,7 @@ src/clap/plugin_entry.cpp    CLAP entry, descriptor, extension callbacks (forwar
 src/clap/plugin_state.h      ClapPluginState: clap_plugin_t + ReaShaderPlugin + Gui, one per instance
 src/clap/gui_win32.cpp       clap.gui (Win32): Gui = container window + WebUIHost
 src/clap/webui_host.*        WebUIHost: webview on its own thread, JSON bridge to the plugin (Win32)
-src/plugin/plugin.*          ReaShaderPlugin: params, state, web UI messages, REAPER video tap
+src/plugin/plugin.*          ReaShaderPlugin: the chain, params, state, web UI messages, REAPER video tap
 src/plugin/params.*          Param struct + ParamList (lock-free values)
 src/render/renderer.*        ReaShaderRenderer: owns the GPU objects below, renders frames, never throws
 src/render/context.*         gpu::Context: vk-bootstrap instance/device, queue, command buffer + fence, VMA
@@ -32,7 +32,7 @@ src/render/frame_targets.*   gpu::FrameTargets: upload/readback buffers + input/
 src/render/pass.*            gpu::Pass: the fullscreen pass interface, and what passes share (fullscreen.vert, ...)
 src/render/shader_compiler.* gpu::compileShader (contract preamble, shaderc, SPIRV-Reflect, //@param), stored JSON form
 src/render/shader_pass.*     gpu::ShaderPass: fullscreen pipeline for a compiled shader
-src/render/lut.*             gpu::Lut (a LUT as a 3D image) + gpu::LutPass (the frame through a LUT, blended by LUT Mix)
+src/render/lut.*             gpu::Lut (a LUT as a 3D image) + gpu::LutPass (the frame through a LUT, blended by its Mix)
 src/render/scene.*           gpu::Scene: textured meshes (tinyobjloader, stb) + depth, drawn over the frame (the logo)
 src/render/lut_file.*        .cube LUT parser, 1D/domain baking, stored JSON form (base64 half floats)
 src/render/gpu.*             Vulkan helpers: VK_CHECK, Buffer, Image, createPipeline(), transition(); VMA implementation
@@ -50,7 +50,7 @@ doc/                         developer docs
 
 ## 2. The plugin
 
-`ReaShaderPlugin` (`src/plugin/plugin.*`) is one object per instance. There's no processor/controller split: it holds params, state, the web UI connection, the REAPER video tap and the renderer.
+`ReaShaderPlugin` (`src/plugin/plugin.*`) is one object per instance. There's no processor/controller split: it holds the chain, params, state, the web UI connection, the REAPER video tap and the renderer.
 
 ### Threads
 
@@ -61,21 +61,28 @@ Listed in `plugin/plugin.h`:
 | main    | lifecycle, state, `onMainThread()`                |
 | audio   | host param events, lock-free values only          |
 | video   | renderer, `try_lock` only                         |
-| webview | UI messages, device switch, shader and LUT upload |
+| webview | UI messages, device switch, chain edits, uploads |
 
 ### `clap.params`
 
-- **Which params the host sees:** params with `automatable = true` are exposed as CLAP params: Audio Gain (host only, not in the web UI), LUT Mix, and every shader param. Their CLAP ids are stable ids, not their index in the list (see [Parameters](#6-parameters)).
+- **Which params the host sees:** params with `automatable = true` are exposed as CLAP params: Audio Gain (host only, not in the web UI) and every chain node's params (a shader's sliders, a LUT's Mix). Their CLAP ids are stable ids, not their index in the list (see [Parameters](#6-parameters)).
 - **Host automation** arrives in `process()`/`flush()` (`handleParamEvents()`) and goes into `applyHostParamValue()`, which is lock-free. It then requests a main-thread callback, and `onMainThread()` echoes the values to the web UI.
 - **Web UI edits** are flagged with `ParamList::flagForHost()`, plus `host_params->request_flush()`. `takeParamChangeForHost()` drains them into `out_events`, lock-free.
 
 ### `clap.state`
 
-One JSON document: `{ version: 3, params: { name: value }, device, logo, shader: { name, compiled }, lut: { name, mode, data } }`.
+One JSON document, version 4:
 
-- **The compiled shader and the LUT** (their stored JSON) are embedded, so projects are self-contained and never recompile or re-parse.
-- **Unknown or old state** loads defaults.
-- **Shader param values** are restored by name, once the shader is loaded.
+```
+{ version: 4, params: { name: value }, device, logo,
+  chain: [ { uid, kind: "shader", name, bypass, data, lut: { name, data } },
+           { uid, kind: "lut", name, bypass, data } ] }
+```
+
+- **Each node's stored JSON** (`data`: the compiled shader or the LUT, and a shader node's LUT) is embedded, so projects are self-contained and never recompile or re-parse.
+- **Invalid nodes** (unknown kind, a uid out of range or repeated, data that doesn't parse) are skipped with a warning.
+- **Version 3** (from before chains: one shader, one LUT and a LUT mode) is migrated on load (`migrateV3`): the shader becomes node 0 and the LUT node 1, so their params keep their ids. Mode `before` puts the LUT node first, `after` second, and `shader` attaches the LUT to the shader node. Param names get their node's prefix (`brightness` → `0/brightness`), and `LUT Mix` becomes `1/mix`. Older or unknown state keeps the current state.
+- **Param values** are restored by name, once the nodes' params exist.
 
 ### The REAPER video tap
 
@@ -88,34 +95,43 @@ One JSON document: `{ version: 3, params: { name: value }, device, logo, shader:
 
 `deactivate()` deletes the video processor. The renderer stays initialized across activate/deactivate cycles, and a failed renderer starts over on the next `activate()`.
 
-### Shaders
+### The chain
 
-- **Compiled once, on upload (the only place):** `_uploadShader()` runs `gpu::compileShader`, writes `resources/shaders/compiled/<stem>.json`, then uses it.
-- **The shader list** is the `*.json` files in `util::paths::compiledShadersDir()`. `shaderSelect` loads one, and `""` means none.
-- **The current shader** is `shaderName` + `shaderData` (the stored JSON), saved in state. There is none at start, so video passes through.
-- **Loading:** `_useShader()` parses the stored JSON (`gpu::fromJson`), hands the renderer a new chain with it (`_setChain`), then replaces the shader's params (`paramsOf`). `_clearShader()` unloads it.
-- **Status:** every outcome goes to the UI as `shaderStatus`: `Loaded <name>` or the error. The UI itself shows `busy` (a spinner) while it waits.
+The plugin's video effect is an ordered chain of up to 16 nodes (`ReaShaderPlugin::Node`). Each node is a stored shader or a stored LUT:
+
+- **`uid`:** 0..15, the smallest free one when the node is added, and the node's for its whole life. Its params' ids (`nodeParamId(uid, slot)`) and names (`"<uid>/<member>"`) derive from it, so moving a node never moves its automation.
+- **`name` + `data`:** the stored file's name and its JSON, saved in state, and the parsed form (`shared_ptr<const CompiledShader>` or `shared_ptr<const LutData>`) that goes to the renderer. The pointer changes only when the content does, so the renderer keeps the GPU objects of nodes that didn't change.
+- **`bypass`:** the node is left out of the frame, but keeps its params.
+- **A shader node's LUT** (`lutName` + `lutData`): what the shader samples as `iChannel1` (see [the shader contract](#8-the-shader-contract)); none means an identity.
+
+**Every change goes through `_editChain(edit, paramsChange)`:**
+
+1. under `chainMutex`, it copies the chain and runs `edit` on the copy;
+2. it hands the result to the renderer (`setChain`, with each node's param indices, see [The renderer](#7-the-renderer));
+3. on success it keeps the copy, and when nodes were added, removed, moved or swapped (`paramsChange`) it replaces the nodes' params (`_setNodeParams`, below). Bypass and a shader's LUT change no params.
+
+On any error (from `edit` or the renderer), the chain stays as it was, and the error goes to the UI as `chainStatus`.
+
+**Stored shaders and LUTs:**
+
+- **Compiled or parsed once, on upload (the only place):** `_upload()` runs `gpu::compileShader` or `gpu::parseCube` (`render/lut_file.*`), writes `resources/shaders/compiled/<stem>.json` or `resources/luts/<stem>.json`, then appends a node with it. On a full chain the file is still stored.
+- **LUTs:** only `.cube` files are read. A 1D LUT is baked into a 33³ cube and a `DOMAIN` other than 0..1 is resampled onto 0..1, so the stored form is always a 0..1 cube: `{ version, title, size, data }`, where `data` is base64 of half-float RGB (`util/base64.*`).
+- **The lists** are the `*.json` files in `util::paths::compiledShadersDir()` and `util::paths::lutsDir()`. Nodes are added (`nodeAdd`) or swapped (`nodeSet`) by name, and names from the UI are reduced to a file name (no paths).
 - **Writable plugin folder:** uploading writes into the plugin folder. The per-user CLAP folder is writable; a system-wide install might not be.
 
-### Shader params are host params (restart + rescan)
+**Status:** every outcome goes to the UI as `chainStatus`: what was done (`Added tint`, `Moved invert`, ...) or the error. The UI itself shows `busy` (a spinner) while it waits for an upload.
+
+### Nodes' params are host params (restart + rescan)
 
 CLAP allows the param list to change only while the plugin is deactivated. So:
 
-1. `_setShaderParams()`, called from any thread, stores the new params as pending and requests a main-thread callback.
+1. `_setNodeParams()`, called from any thread, stores the new params as pending and requests a main-thread callback.
 2. `onMainThread()` applies them now if the plugin is inactive, or else calls `host->request_restart()`.
 3. On restart, the host's `deactivate()` applies them.
 
-Applying means `ParamList::replaceShaderParams()` + `host_params->rescan(CLAP_PARAM_RESCAN_ALL)` + a snapshot to the UI. While params are pending, frames give the shader's sliders their defaults.
+Applying means `ParamList::replaceNodeParams()` + `host_params->rescan(CLAP_PARAM_RESCAN_ALL)` + a snapshot to the UI. A loaded state's values (`savedNodeValues`) apply once, then are dropped. While params are pending, frames give every node's params their defaults.
 
-### LUTs
-
-- **Parsed once, on upload (the only place):** `_uploadLut()` runs `gpu::parseCube` (`render/lut_file.*`), writes `resources/luts/<stem>.json`, then uses it. Only `.cube` files are read. A 1D LUT is baked into a 33³ cube and a `DOMAIN` other than 0..1 is resampled onto 0..1, so the stored form is always a 0..1 cube: `{ version, title, size, data }`, where `data` is base64 of half-float RGB (`util/base64.*`).
-- **The LUT list** is the `*.json` files in `util::paths::lutsDir()`. `lutSelect` loads one, and `""` means none.
-- **The current LUT** is `lutName` + `lutData` (the stored JSON), saved in state. There is none at start.
-- **Loading:** `_useLut()` parses the stored JSON (`gpu::lutFromJson`) and hands the renderer a new chain with it (`_setChain`). `_clearLut()` unloads it.
-- **Status:** every outcome goes to the UI as `lutStatus`, like `shaderStatus`.
-- **The mode** (`lutMode`: `before` / `after` the shader, or `shader`) isn't a host param: it lives in state and the web UI, and decides the chain's order (`_setChain`). Unknown modes are ignored. In `shader` mode the shader samples the LUT itself, as `iChannel1` (see [the shader contract](#8-the-shader-contract)); with no shader, the LUT pass runs alone.
-- **LUT Mix** is a fixed host param (see [Parameters](#6-parameters)): 0 = the frame as is, 1 = fully through the LUT. It applies to the LUT pass; in `shader` mode, blending is up to the shader.
+**Params per node** (`paramsOfNodes`): a shader node gets one param per slider of its `Params` block, a LUT node one `Mix` (0 = the frame as is, 1 = fully through the LUT, default 1; in a shader node's LUT, blending is up to the shader). Names are `"<uid>/<member>"` (`"3/brightness"`, `"5/mix"`), labels `"<node name>: <label>"` (`"brightness: Brightness"`), with no position in them.
 
 ### Rendering device
 
@@ -133,9 +149,9 @@ The GPU choice isn't a host param: it lives in state and the web UI. Changing it
 
 ### Renderer access
 
-`ReaShaderRenderer` reaches plugin data only through `getRenderingDeviceIndex`, `setRenderingDeviceIndex` and `setRenderingDevicesList`. The plugin hands it a chain of nodes (`setChain`, see [The renderer](#7-the-renderer)), each naming its params by index in the param list, and the values come in with each frame (`FrameInputs`).
+`ReaShaderRenderer` reaches plugin data only through `getRenderingDeviceIndex`, `setRenderingDeviceIndex` and `setRenderingDevicesList`. The plugin hands it the chain (`setChain`, built by `rendererChain`), each node naming its params by index in the param list, and the values come in with each frame (`FrameInputs`).
 
-**Chain changes** (`_useShader`, `_clearShader`, `_useLut`, `_clearLut`, `_setLutMode`) hold `chainMutex` from reading the chain's parts (the parsed shader and LUT, under `stateMutex`) to the renderer's `setChain`, so two threads never build chains from each other's stale parts. The lock order is `chainMutex`, then the renderer's `frameMutex`, then `stateMutex`.
+**Locks:** `_editChain` holds `chainMutex` from copying the chain (under `stateMutex`) to the renderer's `setChain`, so two threads never build chains from each other's stale copies. The lock order is `chainMutex`, then the renderer's `frameMutex`, then `stateMutex`.
 
 ## 3. The per-frame video path
 
@@ -176,35 +192,38 @@ REAPER calls `ReaShaderPlugin::_processVideoFrame` (`plugin/plugin.cpp`), which 
 
 Messages are plain JSON objects with a `"type"` field. In C++ they're documented and handled in `plugin/plugin.cpp` (the web UI section), with an `if`/`else` on the type. On the JS side, `client.js` switches on the type, and `api.js` sends.
 
-| Direction | Message           | Payload / effect                                                                                                                                                                                                                                                                   |
-| --------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| to UI     | `snapshot`        | `{ version, track, params, devices, logo, shader, shaders, lut: { name, mode }, luts }`. The UI rebuilds itself from it (except the status lines), and its shader and LUT lists are rescanned each time. Sent on `ready`, activate, state load, and device, shader and LUT changes |
-| to UI     | `paramValue`      | `{ id, value }`: host automation                                                                                                                                                                                                                                                   |
-| to UI     | `shaderStatus`    | `{ status, state }`, with state = `busy`/`ok`/`error`                                                                                                                                                                                                                              |
-| to UI     | `lutStatus`       | `{ status, state }`, as `shaderStatus`                                                                                                                                                                                                                                             |
-| from UI   | `ready`           | —                                                                                                                                                                                                                                                                                  |
-| from UI   | `shaderSelect`    | `{ name }`: a compiled shader, `""` = none (passthrough)                                                                                                                                                                                                                           |
-| from UI   | `paramValue`      | `{ id, value }`                                                                                                                                                                                                                                                                    |
-| from UI   | `renderingDevice` | `{ index }`                                                                                                                                                                                                                                                                        |
-| from UI   | `logo`            | `{ enabled }`: the 3D logo, on while the about box is open                                                                                                                                                                                                                         |
-| from UI   | `openUrl`         | `{ url }`: `https://` only, opened in the system browser (`util::shell::openUrl`); the webview itself never navigates away                                                                                                                                                         |
-| from UI   | `shaderUpload`    | `{ name, source }`: GLSL sent as text                                                                                                                                                                                                                                              |
-| from UI   | `lutSelect`       | `{ name }`: a stored LUT, `""` = none                                                                                                                                                                                                                                              |
-| from UI   | `lutUpload`       | `{ name, source }`: a `.cube` file sent as text                                                                                                                                                                                                                                    |
-| from UI   | `lutMode`         | `{ mode }`: `before` / `after` the shader, or `shader`                                                                                                                                                                                                                             |
+| Direction | Message           | Payload / effect                                                                                                                                                                                                                                                                                            |
+| --------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| to UI     | `snapshot`        | `{ version, track, params, devices, logo, chain, shaders, luts }`, with `chain` = `[{ uid, kind, name, bypass, lut }]` (`lut`: a shader node's LUT name). The UI rebuilds itself from it (except the status line), and its shader and LUT lists are rescanned each time. Sent on `ready`, activate, state load, device changes and chain changes |
+| to UI     | `paramValue`      | `{ id, value }`: host automation                                                                                                                                                                                                                                                                            |
+| to UI     | `chainStatus`     | `{ status, state }`, with state = `busy`/`ok`/`error`                                                                                                                                                                                                                                                       |
+| from UI   | `ready`           | —                                                                                                                                                                                                                                                                                                           |
+| from UI   | `paramValue`      | `{ id, value }`                                                                                                                                                                                                                                                                                             |
+| from UI   | `renderingDevice` | `{ index }`                                                                                                                                                                                                                                                                                                 |
+| from UI   | `logo`            | `{ enabled }`: the 3D logo, on while the about box is open                                                                                                                                                                                                                                                  |
+| from UI   | `openUrl`         | `{ url }`: `https://` only, opened in the system browser (`util::shell::openUrl`); the webview itself never navigates away                                                                                                                                                                                  |
+| from UI   | `shaderUpload`    | `{ name, source }`: GLSL sent as text, compiled, stored, and appended as a node                                                                                                                                                                                                                             |
+| from UI   | `lutUpload`       | `{ name, source }`: a `.cube` file sent as text, parsed, stored, and appended as a node                                                                                                                                                                                                                    |
+| from UI   | `nodeAdd`         | `{ kind, name, index }`: a stored shader or LUT (`kind` = `shader` / `lut`) as a new node at `index` (none, or past the end: last)                                                                                                                                                                         |
+| from UI   | `nodeRemove`      | `{ uid }`                                                                                                                                                                                                                                                                                                   |
+| from UI   | `nodeMove`        | `{ uid, index }`: past the end is last                                                                                                                                                                                                                                                                      |
+| from UI   | `nodeBypass`      | `{ uid, bypass }`                                                                                                                                                                                                                                                                                           |
+| from UI   | `nodeSet`         | `{ uid, name }`: another stored shader or LUT, of the node's kind                                                                                                                                                                                                                                           |
+| from UI   | `nodeLut`         | `{ uid, name }`: a shader node's LUT (`iChannel1`), a stored LUT, `""` = none                                                                                                                                                                                                                              |
 
 ## 6. Parameters
 
 `src/plugin/params.*`:
 
-- **`Param`** is one plain struct: id, name (the state key), label (display), group (`Main`, `Lut` or `Shader`), units, default, min, max, automatable. Values are plain numbers within min..max. The defaults are 0..1, and shader params use their `//@param` range. CLAP param info uses the same range.
+- **`Param`** is one plain struct: id, name (the state key), label (display), group (`Main` or `Node`), units, default, min, max, automatable, and its node's uid (group `Node`). Values are plain numbers within min..max. The defaults are 0..1, and shader params use their `//@param` range. CLAP param info uses the same range.
 - **Index and id are different things:**
-  - The **index** is the param's position in the list: the CLAP param order (`params.get_info`) and REAPER's `parmlist` order. The fixed params come first (`DefaultIndex`): Audio Gain (group `Main`, not shown in the web UI) and LUT Mix (group `Lut`, shown with the LUT). Then come the shader's (group `Shader`), from `DefaultCount` on.
-  - The **id** is the CLAP param id, used by host automation, the web UI's `paramValue` and `ParamList::value()`. It stays the same when the list changes around the param. Audio Gain is id 0. The shader and the LUT are fixed nodes (`kShaderNode` = 0, `kLutNode` = 1), and a node's params get `nodeParamId(node, slot)` = `1 + node * 64 + slot`: the shader's params are ids 1..64, LUT Mix is 65.
+  - The **index** is the param's position in the list: the CLAP param order (`params.get_info`) and REAPER's `parmlist` order. The fixed param comes first (`DefaultIndex`): Audio Gain (group `Main`, not shown in the web UI). Then come the chain nodes' (group `Node`), in chain order, from `DefaultCount` on.
+  - The **id** is the CLAP param id, used by host automation, the web UI's `paramValue` and `ParamList::value()`. It stays the same when the list changes around the param. Audio Gain is id 0, and a node's params get `nodeParamId(uid, slot)` = `1 + uid * 64 + slot`: node 0's are ids 1..64, node 1's 65..128, and so on.
 - **`ParamList`:**
   - Metadata is behind a mutex.
   - Values are a fixed array of `std::atomic<double>` by id (`kMaxIds` = 1 + 16 nodes × 64), so the audio and video threads never lock. Lock-free maps go both ways: `contains(id)`, and `valueAt(index)` for the video thread.
-  - `replaceShaderParams()` swaps the `Shader` group whenever a shader is loaded. A shader keeps at most 64 params (`kNodeSlots`), and the list at most `maxCount` = 256; extra ones are dropped with a warning.
+  - `replaceNodeParams()` swaps the `Node` group whenever the chain's nodes change. Each value comes from the loaded state by name, else from the param that had the same id and name (so a moved node keeps its values, clamped to the new range), else from its default.
+  - A node keeps at most 64 params (`kNodeSlots`), and the list at most `maxCount` = 256; extra ones are dropped with a warning.
 
 ## 7. The renderer
 
@@ -243,7 +262,7 @@ Implemented in `shader_compiler.cpp` (`kShaderPreamble`). The user-facing guide 
   - `in vec2 uv` (0..1, top left = 0,0);
   - `out vec4 fragColor`;
   - `sampler2D iChannel0` (the input frame);
-  - `sampler3D iChannel1` (the LUT in `shader` mode, otherwise an identity) and `vec3 iLut(vec3 color)`, which samples it at the texel centers;
+  - `sampler3D iChannel1` (the shader node's LUT, otherwise an identity) and `vec3 iLut(vec3 color)`, which samples it at the texel centers;
   - push constants `iResolution`, `iTime`, `iFrameRate`, `iFrame`.
 
   A user `#version` is dropped, and `#extension` lines are hoisted above the preamble. `#line 1` keeps error line numbers matching the user's file.

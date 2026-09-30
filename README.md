@@ -16,15 +16,14 @@ It started as my own experiment in making a video processor for REAPER, and grew
 
 ## What it does
 
-- A [CLAP](https://cleveraudio.org/) plugin for REAPER that runs the track's video through a GLSL fragment shader on the GPU, with Vulkan.
+- A [CLAP](https://cleveraudio.org/) plugin for REAPER that runs the track's video through a chain of GLSL fragment shaders and LUTs on the GPU, with Vulkan.
 - The plugin window is a web UI embedded in REAPER's FX window. From it you:
-  - pick a shader;
-  - upload new ones;
-  - move the shader's sliders;
-  - pick or upload a LUT, choose where it applies, and blend it with LUT Mix;
+  - build the chain: add shaders and LUTs (up to 16), reorder, bypass, swap or remove them;
+  - upload new shaders and `.cube` LUTs;
+  - move each shader's sliders, and blend each LUT with its Mix;
   - choose the GPU.
-- Every shader slider, and LUT Mix, is also a host parameter, so it can be automated in REAPER.
-- With no shader and no LUT selected, the video passes through unchanged.
+- Every slider is also a host parameter, so it can be automated in REAPER. Automation stays with its shader or LUT when you reorder the chain.
+- With an empty chain, the video passes through unchanged.
 
 It's a work in progress. Only Windows is supported for now; macOS/Linux builds are planned (the code has `TODO`s where platform work is missing).
 
@@ -44,13 +43,16 @@ ReaShader needs Vulkan (from your GPU driver) and, on Windows, WebView2 (built i
 
 1. In REAPER, add "ReaShader" (CLAP) to a track with a video item. If it's not listed, rescan: Preferences → Plug-ins → CLAP → Re-scan.
 2. Open REAPER's video window (View → Video).
-3. In the plugin window, **Upload** a shader: try the examples in `resources/shaders/examples` inside the plugin folder. An uploaded shader is compiled once and added to the shader list.
-4. Optionally, under **LUT**, upload a `.cube` file (3D or 1D). It's read once and added to the LUT list. Choose where it applies:
-   - **Before the shader** (e.g. a camera Log to Rec.709 conversion, so the shader works on normal video);
-   - **After the shader** (e.g. a creative look over the result);
-   - **In the shader**: the shader decides how to use it, through `iLut()` (try `lut_split.frag`).
+3. Under **Chain**, upload a shader with the folder button next to "Add a shader": try the examples in `resources/shaders/examples` inside the plugin folder. An uploaded shader is compiled once, added to the shader list, and appended to the chain.
+4. Optionally, upload a `.cube` LUT (3D or 1D) the same way, next to "Add a LUT". It's read once, added to the LUT list, and appended to the chain.
+5. Build the chain. The video goes through it top to bottom, and each card is one step:
+   - **↑ / ↓** move it: a LUT before a shader (e.g. a camera Log to Rec.709 conversion, so the shader works on normal video), or after it (e.g. a creative look over the result);
+   - **Bypass** leaves it out, keeping its settings;
+   - **×** removes it; the drop-down in its header swaps it for another stored shader or LUT;
+   - a LUT's **Mix** blends between its input (0%) and the LUT's result (100%);
+   - a shader's **LUT (iLut)** hands a LUT to the shader itself, which decides how to use it through `iLut()` (try `lut_split.frag`).
 
-   **LUT Mix** blends between the original (0%) and the LUT's result (100%).
+   Pick a stored shader or LUT from "Add a shader" / "Add a LUT" to append it again: the same one can be in the chain more than once, each with its own settings.
 
 Writing your own shader is simple: see [the examples' README](src/shaders/examples/README.md).
 

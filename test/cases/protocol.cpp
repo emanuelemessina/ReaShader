@@ -1,6 +1,6 @@
 /**
  * @file
- * @brief Unit tests: the web UI protocol, on a plugin that is never activated (no GPU).
+ * @brief Unit tests: the web UI protocol and the state, on a plugin that is never activated (no GPU).
  * @author Emanuele Messina (https://github.com/emanuelemessina)
  * @copyright Copyright (c) Emanuele Messina. All rights reserved.
  *            Licensed under the MIT License: see https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE
@@ -12,11 +12,13 @@
 
 #include "plugin/plugin.h"
 #include "render/lut_file.h"
+#include "render/shader_compiler.h"
 #include "util/paths.h"
 
 #include <doctest/doctest.h>
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cstring>
 #include <filesystem>
 #include <string>
@@ -24,6 +26,7 @@
 
 using namespace ReaShader;
 using nlohmann::json;
+using Parameters::nodeParamId;
 
 namespace
 {
@@ -51,12 +54,42 @@ namespace
 			plugin.handleWebUIMessage(message.dump());
 		}
 
+		// receives a message, then lets the plugin apply new params (inactive: right away)
+		void edit(const json& message)
+		{
+			receive(message);
+			plugin.onMainThread();
+		}
+
 		// the last message of that type the plugin sent, null if none
 		json last(const std::string& type) const
 		{
 			for (auto it = sent.rbegin(); it != sent.rend(); ++it)
 				if ((*it)["type"] == type)
 					return *it;
+			return nullptr;
+		}
+
+		// the chain as the UI sees it, one "<uid>:<kind>:<name>" per node
+		std::vector<std::string> chain()
+		{
+			receive({ { "type", "ready" } });
+			std::vector<std::string> nodes;
+			json snapshot = last("snapshot");
+			for (const json& node : snapshot["chain"])
+				nodes.push_back(std::to_string(node["uid"].get<int>()) + ":" + node["kind"].get<std::string>() + ":" +
+								node["name"].get<std::string>());
+			return nodes;
+		}
+
+		// the snapshot's param with that label, null if none
+		json param(const std::string& label)
+		{
+			receive({ { "type", "ready" } });
+			json snapshot = last("snapshot");
+			for (const json& p : snapshot["params"])
+				if (p["label"] == label)
+					return p;
 			return nullptr;
 		}
 
@@ -74,6 +107,35 @@ namespace
 			} out;
 			REQUIRE(plugin.saveState(&out.stream));
 			return json::parse(out.data);
+		}
+
+		// loads a state, then lets the plugin apply its params
+		void loadState(const json& state)
+		{
+			struct In
+			{
+				clap_istream_t stream{ this, read };
+				std::string data;
+				size_t at = 0;
+				static int64_t read(const clap_istream_t* s, void* buffer, uint64_t size)
+				{
+					In* in = static_cast<In*>(s->ctx);
+					size_t n = std::min((size_t)size, in->data.size() - in->at);
+					std::memcpy(buffer, in->data.data() + in->at, n);
+					in->at += n;
+					return (int64_t)n;
+				}
+			} in;
+			in.data = state.dump();
+			REQUIRE(plugin.loadState(&in.stream));
+			plugin.onMainThread();
+		}
+
+		double value(clap_id id)
+		{
+			double result = -1;
+			CHECK(plugin.getParamValue(id, &result));
+			return result;
 		}
 
 		int callbacks = 0, restarts = 0, rescans = 0, flushes = 0;
@@ -116,6 +178,38 @@ namespace
 	{
 		return test::readFile(test::repoPath("test/luts") / file);
 	}
+
+	void uploadShader(UiSession& ui, const char* file)
+	{
+		ui.edit({ { "type", "shaderUpload" }, { "name", file }, { "source", example(file) } });
+	}
+
+	void uploadLut(UiSession& ui, const char* file)
+	{
+		ui.edit({ { "type", "lutUpload" }, { "name", file }, { "source", lutFixture(file) } });
+	}
+
+	std::string status(UiSession& ui)
+	{
+		return ui.last("chainStatus")["status"];
+	}
+
+	// a version 3 state: one shader (an example, compiled here), one LUT (inverting), a LUT mode
+	json stateV3(const char* shader, bool withLut, const char* mode, json params)
+	{
+		json compiled;
+		if (shader)
+			compiled = gpu::toJson(gpu::compileShader(example(shader), shader));
+		return { { "version", 3 },
+				 { "params", params },
+				 { "device", 0 },
+				 { "logo", false },
+				 { "shader", { { "name", shader ? "brightness" : "" }, { "compiled", compiled } } },
+				 { "lut",
+				   { { "name", withLut ? "invert" : "" },
+					 { "mode", mode },
+					 { "data", withLut ? gpu::toJson(test::invertLut()) : json() } } } };
+	}
 } // namespace
 
 TEST_SUITE("protocol")
@@ -131,13 +225,9 @@ TEST_SUITE("protocol")
 		REQUIRE(snapshot["params"].size() == Parameters::DefaultCount);
 		CHECK(snapshot["params"][Parameters::AudioGainIndex]["name"] == "Audio Gain");
 		CHECK(snapshot["params"][Parameters::AudioGainIndex]["id"] == Parameters::AudioGain);
-		CHECK(snapshot["params"][Parameters::LutMixIndex]["name"] == "LUT Mix");
-		CHECK(snapshot["params"][Parameters::LutMixIndex]["id"] == Parameters::LutMix);
 		CHECK(snapshot["logo"] == false);
-		CHECK(snapshot["shader"]["name"] == "");
+		CHECK(snapshot["chain"] == json::array());
 		CHECK(snapshot["shaders"] == json::array());
-		CHECK(snapshot["lut"]["name"] == "");
-		CHECK(snapshot["lut"]["mode"] == "after");
 		CHECK(snapshot["luts"] == json::array());
 		CHECK(snapshot["devices"]["selected"] == 0);
 		CHECK(snapshot.contains("track"));
@@ -148,12 +238,11 @@ TEST_SUITE("protocol")
 		UiSession ui;
 		ui.receive({ { "type", "paramValue" }, { "id", 0 }, { "value", 0.3 } });
 
-		double value = 0;
-		REQUIRE(ui.plugin.getParamValue(0, &value));
-		CHECK(value == 0.3);
+		CHECK(ui.value(0) == 0.3);
 		CHECK(ui.flushes == 1);
 
 		clap_id id = 99;
+		double value = 0;
 		REQUIRE(ui.plugin.takeParamChangeForHost(id, value));
 		CHECK(id == 0);
 		CHECK(value == 0.3);
@@ -188,15 +277,14 @@ TEST_SUITE("protocol")
 		CHECK(echo["value"] == 0.25);
 	}
 
-	TEST_CASE("shaderUpload: compiled, stored, loaded; its params reach the host on the main thread")
+	TEST_CASE("shaderUpload: compiled, stored, appended as a node; its params reach the host on the main thread")
 	{
 		UiSession ui;
-		ui.receive({ { "type", "shaderUpload" }, { "name", "brightness.frag" }, { "source", example("brightness.frag") } });
+		ui.receive(
+			{ { "type", "shaderUpload" }, { "name", "brightness.frag" }, { "source", example("brightness.frag") } });
 
-		json status = ui.last("shaderStatus");
-		REQUIRE(status.is_object());
-		CHECK(status["state"] == "ok");
-		CHECK(status["status"] == "Loaded brightness");
+		CHECK(ui.last("chainStatus")["state"] == "ok");
+		CHECK(status(ui) == "Added brightness");
 		CHECK(std::filesystem::exists(util::paths::compiledShadersDir() / "brightness.json"));
 		CHECK(ui.callbacks >= 1);
 
@@ -207,48 +295,246 @@ TEST_SUITE("protocol")
 		CHECK(ui.plugin.automatableParamCount() == Parameters::DefaultCount + 1);
 
 		json snapshot = ui.last("snapshot");
-		CHECK(snapshot["shader"]["name"] == "brightness");
+		CHECK(snapshot["chain"] == json::array({ { { "uid", 0 },
+												   { "kind", "shader" },
+												   { "name", "brightness" },
+												   { "bypass", false },
+												   { "lut", "" } } }));
 		CHECK(snapshot["shaders"] == json::array({ "brightness" }));
 		REQUIRE(snapshot["params"].size() == Parameters::DefaultCount + 1);
-		CHECK(snapshot["params"][Parameters::DefaultCount]["label"] == "Brightness");
-		CHECK(snapshot["params"][Parameters::DefaultCount]["id"] ==
-			  Parameters::nodeParamId(Parameters::kShaderNode, 0));
+		json brightness = snapshot["params"][Parameters::DefaultCount];
+		CHECK(brightness["label"] == "brightness: Brightness");
+		CHECK(brightness["name"] == "0/brightness");
+		CHECK(brightness["id"] == nodeParamId(0, 0));
+		CHECK(brightness["node"] == 0);
 	}
 
-	TEST_CASE("a broken upload reports the error and keeps the current shader")
+	TEST_CASE("a broken upload reports the error and leaves the chain as it was")
 	{
 		UiSession ui;
-		ui.receive({ { "type", "shaderUpload" }, { "name", "brightness.frag" }, { "source", example("brightness.frag") } });
-		ui.receive({ { "type", "shaderUpload" },
-					 { "name", "broken.frag" },
-					 { "source", test::readFile(test::repoPath("test/shaders/broken.frag")) } });
+		uploadShader(ui, "brightness.frag");
+		ui.edit({ { "type", "shaderUpload" },
+				  { "name", "broken.frag" },
+				  { "source", test::readFile(test::repoPath("test/shaders/broken.frag")) } });
 
-		json status = ui.last("shaderStatus");
-		CHECK(status["state"] == "error");
-		CHECK(status["status"].get<std::string>().find("broken.frag:7") != std::string::npos);
+		CHECK(ui.last("chainStatus")["state"] == "error");
+		CHECK(status(ui).find("broken.frag:7") != std::string::npos);
 		CHECK_FALSE(std::filesystem::exists(util::paths::compiledShadersDir() / "broken.json"));
-
-		ui.receive({ { "type", "ready" } });
-		CHECK(ui.last("snapshot")["shader"]["name"] == "brightness");
+		CHECK(ui.chain() == std::vector<std::string>{ "0:shader:brightness" });
 	}
 
-	TEST_CASE("shaderSelect: a stored shader by name, \"\" for none, never a path")
+	TEST_CASE("lutUpload: parsed, stored, appended as a node with a Mix param, and saved with the project")
 	{
 		UiSession ui;
-		ui.receive({ { "type", "shaderUpload" }, { "name", "tint.frag" }, { "source", example("tint.frag") } });
+		uploadShader(ui, "brightness.frag");
+		uploadLut(ui, "invert.cube");
 
-		ui.receive({ { "type", "shaderSelect" }, { "name", "" } });
-		CHECK(ui.last("shaderStatus")["status"] == "No shader: video passes through");
-		CHECK(ui.last("snapshot")["shader"]["name"] == "");
+		CHECK(status(ui) == "Added invert");
+		CHECK(std::filesystem::exists(util::paths::lutsDir() / "invert.json"));
+		CHECK(ui.chain() == std::vector<std::string>{ "0:shader:brightness", "1:lut:invert" });
+		CHECK(ui.last("snapshot")["luts"] == json::array({ "invert" }));
 
-		ui.receive({ { "type", "shaderSelect" }, { "name", "tint" } });
-		CHECK(ui.last("shaderStatus")["status"] == "Loaded tint");
-		CHECK(ui.last("snapshot")["shader"]["name"] == "tint");
+		json mix = ui.param("invert: Mix");
+		REQUIRE(mix.is_object());
+		CHECK(mix["id"] == nodeParamId(1, 0));
+		CHECK(mix["name"] == "1/mix");
+		CHECK(mix["value"] == 1.0);
 
-		// only the file name counts: "../tint" is "tint", "../../missing" is "missing"
-		ui.receive({ { "type", "shaderSelect" }, { "name", "../../missing" } });
-		CHECK(ui.last("shaderStatus")["state"] == "error");
-		CHECK(ui.last("shaderStatus")["status"] == "Can't read the compiled shader missing");
+		json state = ui.savedState();
+		CHECK(state["version"] == 4);
+		REQUIRE(state["chain"].size() == 2);
+		json node = state["chain"][1];
+		CHECK(node["uid"] == 1);
+		CHECK(node["kind"] == "lut");
+		CHECK(node["name"] == "invert");
+		CHECK_FALSE(node.contains("lut"));
+		gpu::LutData stored = gpu::lutFromJson(node["data"]);
+		CHECK(stored.size == 2);
+		CHECK(stored.title == "Invert");
+	}
+
+	TEST_CASE("a broken .cube reports the error and leaves the chain as it was")
+	{
+		UiSession ui;
+		uploadLut(ui, "invert.cube");
+		uploadLut(ui, "broken.cube");
+
+		CHECK(ui.last("chainStatus")["state"] == "error");
+		CHECK(status(ui).find("broken.cube:6") != std::string::npos);
+		CHECK_FALSE(std::filesystem::exists(util::paths::lutsDir() / "broken.json"));
+		CHECK(ui.chain() == std::vector<std::string>{ "0:lut:invert" });
+	}
+
+	TEST_CASE("nodeAdd: a stored shader or LUT by name, at an index or last, never from a path")
+	{
+		UiSession ui;
+		uploadShader(ui, "tint.frag");
+		uploadLut(ui, "invert.cube");
+		ui.edit({ { "type", "nodeRemove" }, { "uid", 0 } });
+		ui.edit({ { "type", "nodeRemove" }, { "uid", 1 } });
+		REQUIRE(ui.chain().empty());
+
+		ui.edit({ { "type", "nodeAdd" }, { "kind", "lut" }, { "name", "invert" } });
+		ui.edit({ { "type", "nodeAdd" }, { "kind", "shader" }, { "name", "tint" }, { "index", 0 } });
+		ui.edit({ { "type", "nodeAdd" }, { "kind", "shader" }, { "name", "../../tint" }, { "index", 99 } });
+		CHECK(status(ui) == "Added tint");
+		CHECK(ui.chain() == std::vector<std::string>{ "1:shader:tint", "0:lut:invert", "2:shader:tint" });
+
+		// the same shader twice: two nodes, each with its own params
+		CHECK(ui.param("tint: Amount")["id"] == nodeParamId(1, 0));
+		int amounts = 0;
+		json snapshot = ui.last("snapshot");
+		for (const json& p : snapshot["params"])
+			amounts += p["label"] == "tint: Amount";
+		CHECK(amounts == 2);
+
+		ui.edit({ { "type", "nodeAdd" }, { "kind", "shader" }, { "name", "missing" } });
+		CHECK(ui.last("chainStatus")["state"] == "error");
+		CHECK(status(ui) == "Can't read the stored shader missing");
+		ui.edit({ { "type", "nodeAdd" }, { "kind", "mesh" }, { "name", "tint" } });
+		CHECK(status(ui) == "Unknown node kind");
+		ui.edit({ { "type", "nodeAdd" }, { "kind", "lut" }, { "name", "tint" } }); // not a LUT
+		CHECK(ui.last("chainStatus")["state"] == "error");
+		CHECK(ui.chain().size() == 3);
+	}
+
+	TEST_CASE("a chain holds at most 16 nodes; an upload to a full chain is still stored")
+	{
+		UiSession ui;
+		uploadLut(ui, "invert.cube");
+		for (int i = 1; i < 16; i++)
+			ui.receive({ { "type", "nodeAdd" }, { "kind", "lut" }, { "name", "invert" } });
+		ui.plugin.onMainThread();
+		CHECK(ui.chain().size() == 16);
+
+		ui.edit({ { "type", "nodeAdd" }, { "kind", "lut" }, { "name", "invert" } });
+		CHECK(status(ui) == "The chain is full (16 nodes)");
+		uploadShader(ui, "tint.frag");
+		CHECK(status(ui) == "The chain is full (16 nodes)");
+		CHECK(std::filesystem::exists(util::paths::compiledShadersDir() / "tint.json"));
+		CHECK(ui.chain().size() == 16);
+	}
+
+	TEST_CASE("nodeRemove: the node and its params go; a new node takes the smallest free uid")
+	{
+		UiSession ui;
+		uploadShader(ui, "brightness.frag");
+		uploadLut(ui, "invert.cube");
+		int rescans = ui.rescans;
+
+		ui.edit({ { "type", "nodeRemove" }, { "uid", 0 } });
+		CHECK(status(ui) == "Removed brightness");
+		CHECK(ui.rescans == rescans + 1);
+		CHECK(ui.chain() == std::vector<std::string>{ "1:lut:invert" });
+		CHECK(ui.param("brightness: Brightness").is_null());
+
+		uploadShader(ui, "tint.frag");
+		CHECK(ui.chain() == std::vector<std::string>{ "1:lut:invert", "0:shader:tint" });
+
+		ui.edit({ { "type", "nodeRemove" }, { "uid", 7 } });
+		CHECK(status(ui) == "No such node");
+		ui.edit({ { "type", "nodeRemove" }, { "uid", "zero" } });
+		CHECK(status(ui) == "No such node");
+	}
+
+	TEST_CASE("nodeMove: the order and the params' order change, their ids and values don't")
+	{
+		UiSession ui;
+		uploadShader(ui, "brightness.frag");
+		uploadLut(ui, "invert.cube");
+		ui.receive({ { "type", "paramValue" }, { "id", nodeParamId(0, 0) }, { "value", 0.3 } });
+		ui.receive({ { "type", "paramValue" }, { "id", nodeParamId(1, 0) }, { "value", 0.6 } });
+
+		ui.edit({ { "type", "nodeMove" }, { "uid", 1 }, { "index", 0 } });
+		CHECK(status(ui) == "Moved invert");
+		CHECK(ui.chain() == std::vector<std::string>{ "1:lut:invert", "0:shader:brightness" });
+
+		json params = ui.last("snapshot")["params"];
+		REQUIRE(params.size() == Parameters::DefaultCount + 2);
+		CHECK(params[Parameters::DefaultCount]["id"] == nodeParamId(1, 0));
+		CHECK(params[Parameters::DefaultCount + 1]["id"] == nodeParamId(0, 0));
+		CHECK(ui.value(nodeParamId(0, 0)) == 0.3);
+		CHECK(ui.value(nodeParamId(1, 0)) == 0.6);
+
+		ui.edit({ { "type", "nodeMove" }, { "uid", 1 }, { "index", 5 } }); // past the end: last
+		CHECK(ui.chain() == std::vector<std::string>{ "0:shader:brightness", "1:lut:invert" });
+		ui.edit({ { "type", "nodeMove" }, { "uid", 1 } });
+		CHECK(status(ui) == "No index to move to");
+	}
+
+	TEST_CASE("nodeBypass: saved with the project, the params stay and the host isn't asked to rescan")
+	{
+		UiSession ui;
+		uploadShader(ui, "brightness.frag");
+		int rescans = ui.rescans;
+
+		ui.edit({ { "type", "nodeBypass" }, { "uid", 0 }, { "bypass", true } });
+		CHECK(status(ui) == "Bypassed brightness");
+		CHECK(ui.rescans == rescans);
+		CHECK(ui.last("snapshot")["chain"][0]["bypass"] == true);
+		CHECK(ui.savedState()["chain"][0]["bypass"] == true);
+		CHECK(ui.param("brightness: Brightness").is_object());
+
+		ui.edit({ { "type", "nodeBypass" }, { "uid", 0 }, { "bypass", false } });
+		CHECK(status(ui) == "Enabled brightness");
+		CHECK(ui.savedState()["chain"][0]["bypass"] == false);
+	}
+
+	TEST_CASE("nodeSet: another stored shader or LUT of the node's kind, with its own params")
+	{
+		UiSession ui;
+		uploadShader(ui, "tint.frag");
+		uploadShader(ui, "brightness.frag"); // uid 1
+		uploadLut(ui, "invert.cube");		 // uid 2
+		ui.edit({ { "type", "nodeRemove" }, { "uid", 1 } });
+
+		ui.edit({ { "type", "nodeSet" }, { "uid", 0 }, { "name", "brightness" } });
+		CHECK(status(ui) == "Loaded brightness");
+		CHECK(ui.chain() == std::vector<std::string>{ "0:shader:brightness", "2:lut:invert" });
+		CHECK(ui.param("brightness: Brightness")["id"] == nodeParamId(0, 0));
+		CHECK(ui.param("tint: Amount").is_null());
+
+		ui.edit({ { "type", "nodeSet" }, { "uid", 2 }, { "name", "brightness" } }); // a LUT node: LUTs only
+		CHECK(status(ui) == "Can't read the stored LUT brightness");
+		CHECK(ui.chain() == std::vector<std::string>{ "0:shader:brightness", "2:lut:invert" });
+	}
+
+	TEST_CASE("nodeLut: a shader node's LUT, saved with the project; not for LUT nodes")
+	{
+		UiSession ui;
+		uploadShader(ui, "lut_split.frag");
+		uploadLut(ui, "invert.cube");
+		int rescans = ui.rescans;
+
+		ui.edit({ { "type", "nodeLut" }, { "uid", 0 }, { "name", "invert" } });
+		CHECK(status(ui) == "lut_split: LUT invert");
+		CHECK(ui.rescans == rescans);
+		CHECK(ui.last("snapshot")["chain"][0]["lut"] == "invert");
+		json saved = ui.savedState()["chain"][0]["lut"];
+		CHECK(saved["name"] == "invert");
+		CHECK(gpu::lutFromJson(saved["data"]).size == 2);
+
+		ui.edit({ { "type", "nodeLut" }, { "uid", 0 }, { "name", "" } });
+		CHECK(status(ui) == "lut_split: no LUT");
+		CHECK(ui.savedState()["chain"][0]["lut"]["data"].is_null());
+
+		ui.edit({ { "type", "nodeLut" }, { "uid", 1 }, { "name", "invert" } });
+		CHECK(status(ui) == "Only a shader node samples a LUT");
+		ui.edit({ { "type", "nodeLut" }, { "uid", 0 }, { "name", "../../missing" } });
+		CHECK(status(ui) == "Can't read the stored LUT missing");
+	}
+
+	TEST_CASE("a LUT node's Mix edits in the UI go to the host like any param")
+	{
+		UiSession ui;
+		uploadLut(ui, "invert.cube");
+		ui.receive({ { "type", "paramValue" }, { "id", nodeParamId(0, 0) }, { "value", 0.4 } });
+
+		clap_id id = 99;
+		double value = 0;
+		REQUIRE(ui.plugin.takeParamChangeForHost(id, value));
+		CHECK(id == nodeParamId(0, 0));
+		CHECK(value == 0.4);
 	}
 
 	TEST_CASE("logo and renderingDevice are saved with the project")
@@ -266,96 +552,105 @@ TEST_SUITE("protocol")
 		CHECK(ui.savedState()["logo"] == false);
 	}
 
-	TEST_CASE("lutUpload: parsed, stored, loaded, listed, and saved with the project")
+	TEST_CASE("the state round-trips: the chain, its values, bypass and a shader's LUT")
 	{
-		UiSession ui;
-		ui.receive({ { "type", "lutUpload" }, { "name", "invert.cube" }, { "source", lutFixture("invert.cube") } });
-
-		json status = ui.last("lutStatus");
-		REQUIRE(status.is_object());
-		CHECK(status["state"] == "ok");
-		CHECK(status["status"] == "Loaded invert");
-		CHECK(std::filesystem::exists(util::paths::lutsDir() / "invert.json"));
-
-		json snapshot = ui.last("snapshot");
-		CHECK(snapshot["lut"]["name"] == "invert");
-		CHECK(snapshot["luts"] == json::array({ "invert" }));
-
-		json state = ui.savedState();
-		CHECK(state["version"] == 3);
-		CHECK(state["lut"]["name"] == "invert");
-		CHECK(state["lut"]["mode"] == "after");
-		gpu::LutData stored = gpu::lutFromJson(state["lut"]["data"]);
-		CHECK(stored.size == 2);
-		CHECK(stored.title == "Invert");
-	}
-
-	TEST_CASE("a broken .cube reports the error and keeps the current LUT")
-	{
-		UiSession ui;
-		ui.receive({ { "type", "lutUpload" }, { "name", "invert.cube" }, { "source", lutFixture("invert.cube") } });
-		ui.receive({ { "type", "lutUpload" }, { "name", "broken.cube" }, { "source", lutFixture("broken.cube") } });
-
-		json status = ui.last("lutStatus");
-		CHECK(status["state"] == "error");
-		CHECK(status["status"].get<std::string>().find("broken.cube:6") != std::string::npos);
-		CHECK_FALSE(std::filesystem::exists(util::paths::lutsDir() / "broken.json"));
-
-		ui.receive({ { "type", "ready" } });
-		CHECK(ui.last("snapshot")["lut"]["name"] == "invert");
-	}
-
-	TEST_CASE("lutSelect: a stored LUT by name, \"\" for none, never a path")
-	{
-		UiSession ui;
-		ui.receive({ { "type", "lutUpload" }, { "name", "curve_1d.cube" }, { "source", lutFixture("curve_1d.cube") } });
-
-		ui.receive({ { "type", "lutSelect" }, { "name", "" } });
-		CHECK(ui.last("lutStatus")["status"] == "No LUT");
-		CHECK(ui.last("snapshot")["lut"]["name"] == "");
-		CHECK(ui.savedState()["lut"]["data"].is_null());
-
-		ui.receive({ { "type", "lutSelect" }, { "name", "curve_1d" } });
-		CHECK(ui.last("lutStatus")["status"] == "Loaded curve_1d");
-		CHECK(ui.last("snapshot")["lut"]["name"] == "curve_1d");
-
-		ui.receive({ { "type", "lutSelect" }, { "name", "../../missing" } });
-		CHECK(ui.last("lutStatus")["state"] == "error");
-		CHECK(ui.last("lutStatus")["status"] == "Can't read the stored LUT missing");
-	}
-
-	TEST_CASE("lutMode is saved with the project; unknown modes are ignored")
-	{
-		UiSession ui;
-		for (const char* mode : { "before", "shader", "after" })
+		json saved;
 		{
-			ui.receive({ { "type", "lutMode" }, { "mode", mode } });
-			CHECK(ui.savedState()["lut"]["mode"] == mode);
+			UiSession ui;
+			uploadShader(ui, "lut_split.frag");
+			uploadLut(ui, "invert.cube");
+			uploadShader(ui, "brightness.frag");
+			ui.edit({ { "type", "nodeMove" }, { "uid", 2 }, { "index", 0 } });
+			ui.edit({ { "type", "nodeBypass" }, { "uid", 1 }, { "bypass", true } });
+			ui.edit({ { "type", "nodeLut" }, { "uid", 0 }, { "name", "invert" } });
+			ui.receive({ { "type", "paramValue" }, { "id", nodeParamId(2, 0) }, { "value", 0.7 } });
+			saved = ui.savedState();
 		}
-		ui.receive({ { "type", "lutMode" }, { "mode", "sideways" } });
-		CHECK(ui.savedState()["lut"]["mode"] == "after");
-		ui.receive({ { "type", "ready" } });
-		CHECK(ui.last("snapshot")["lut"]["mode"] == "after");
+
+		UiSession ui;
+		ui.loadState(saved);
+		CHECK(ui.chain() == std::vector<std::string>{ "2:shader:brightness", "0:shader:lut_split", "1:lut:invert" });
+		CHECK(ui.value(nodeParamId(2, 0)) == 0.7);
+		CHECK(ui.savedState() == saved);
 	}
 
-	TEST_CASE("LUT Mix edits in the UI go to the host like any param")
+	TEST_CASE("a state's invalid nodes are skipped")
+	{
+		json lut = gpu::toJson(test::invertLut());
+		UiSession ui;
+		ui.loadState(
+			{ { "version", 4 },
+			  { "params", json::object() },
+			  { "chain",
+				json::array({ { { "uid", 3 }, { "kind", "lut" }, { "name", "a" }, { "data", lut } },
+							  { { "uid", 3 }, { "kind", "lut" }, { "name", "same uid" }, { "data", lut } },
+							  { { "uid", 16 }, { "kind", "lut" }, { "name", "uid too big" }, { "data", lut } },
+							  { { "uid", 4 }, { "kind", "mesh" }, { "name", "kind" }, { "data", lut } },
+							  { { "uid", 5 }, { "kind", "shader" }, { "name", "not a shader" }, { "data", lut } },
+							  "not a node",
+							  { { "uid", 6 }, { "kind", "lut" }, { "name", "b" }, { "data", lut } } }) } });
+
+		CHECK(ui.chain() == std::vector<std::string>{ "3:lut:a", "6:lut:b" });
+	}
+
+	TEST_CASE("a version 3 state becomes a chain: the shader node 0, the LUT node 1, in the mode's order")
+	{
+		struct Case
+		{
+			const char* shader;
+			bool lut;
+			const char* mode;
+			std::vector<std::string> chain;
+			const char* shaderLut; // node 0's LUT
+		};
+		const Case cases[] = {
+			{ "brightness.frag", true, "before", { "1:lut:invert", "0:shader:brightness" }, "" },
+			{ "brightness.frag", true, "after", { "0:shader:brightness", "1:lut:invert" }, "" },
+			{ "brightness.frag", true, "shader", { "0:shader:brightness" }, "invert" },
+			{ "brightness.frag", false, "after", { "0:shader:brightness" }, "" },
+			{ nullptr, true, "shader", { "1:lut:invert" }, nullptr },
+			{ nullptr, false, "after", {}, nullptr },
+		};
+
+		for (const Case& c : cases)
+		{
+			INFO("shader ", c.shader ? c.shader : "none", ", LUT ", c.lut, ", mode ", c.mode);
+			UiSession ui;
+			ui.loadState(
+				stateV3(c.shader, c.lut, c.mode, { { "Audio Gain", 0.5 }, { "brightness", 0.3 }, { "LUT Mix", 0.6 } }));
+
+			CHECK(ui.chain() == c.chain);
+			json snapshot = ui.last("snapshot");
+			for (const json& node : snapshot["chain"])
+				if (c.shaderLut && node["uid"] == 0)
+					CHECK(node["lut"] == c.shaderLut);
+			CHECK(ui.value(Parameters::AudioGain) == 0.5);
+			// the params keep their version 3 ids
+			if (c.shader)
+				CHECK(ui.value(nodeParamId(0, 0)) == 0.3);
+			if (c.lut && std::string(c.mode) != "shader")
+				CHECK(ui.value(nodeParamId(1, 0)) == 0.6);
+			CHECK(ui.savedState()["version"] == 4);
+		}
+	}
+
+	TEST_CASE("an unrecognized state keeps the current chain")
 	{
 		UiSession ui;
-		ui.receive({ { "type", "paramValue" }, { "id", Parameters::LutMix }, { "value", 0.4 } });
-
-		clap_id id = 99;
-		double value = 0;
-		REQUIRE(ui.plugin.takeParamChangeForHost(id, value));
-		CHECK(id == Parameters::LutMix);
-		CHECK(value == 0.4);
+		uploadLut(ui, "invert.cube");
+		ui.loadState({ { "version", 2 } });
+		ui.loadState("not a state");
+		CHECK(ui.chain() == std::vector<std::string>{ "0:lut:invert" });
 	}
 
-	TEST_CASE("unknown and malformed messages are ignored")
+	TEST_CASE("unknown, old and malformed messages are ignored")
 	{
 		UiSession ui;
 		ui.plugin.handleWebUIMessage("not json");
 		ui.plugin.handleWebUIMessage("[1, 2]");
 		ui.receive({ { "type", "noSuchMessage" } });
+		ui.receive({ { "type", "shaderSelect" }, { "name", "" } });
+		ui.receive({ { "type", "lutMode" }, { "mode", "before" } });
 		ui.receive({ { "value", 1 } });
 
 		CHECK(ui.sent.empty());

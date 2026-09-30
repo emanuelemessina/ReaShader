@@ -32,7 +32,7 @@ flowchart LR
 
 - **One command buffer, one submit, one wait per frame.** Everything between the two `memcpy`s is recorded into a single list of GPU commands. It is sent to the GPU once, and the CPU waits for it to finish.
 - **Why wait?** REAPER's callback is synchronous: it wants the finished frame as the return value. There is nothing useful to overlap, so the simplest correct scheme is also the right one (see [Decisions](#7-decisions-and-why)).
-- **The passes:** the user's shader and the LUT, each a fullscreen pass, in an order set by the LUT mode (see [the chain](#the-chain)). Between passes the frame goes through two work images.
+- **The passes:** the chain's shaders and LUTs, each a fullscreen pass, in the chain's order (see [the chain](#the-chain)). Between passes the frame goes through two work images.
 - **When nothing is rendered:** `renderFrame` returns `false` if the renderer is busy (another thread holds it), has failed, or has no shader, no LUT and no logo. The plugin then returns REAPER's input frame unchanged: **passthrough**.
 
 ## 2. Vulkan in ten concepts
@@ -173,7 +173,7 @@ A **pipeline layout** ties them together: which set layouts and which push-const
   - binding 0 = the pass's input;
   - binding 1 = the LUT.
 
-  Its push constant is `amount` (LUT Mix, one float).
+  Its push constant is `amount` (the LUT node's Mix, one float).
 
 - **`Scene`** has one set per object:
   - binding 0 = the object's texture.
@@ -227,7 +227,7 @@ Vulkan doesn't take GLSL. It takes **SPIR-V**, a binary intermediate language (a
 | `frame_targets.h/.cpp`   | **`gpu::FrameTargets`**: the frame's upload/readback buffers and input/output/work images, the commands that move pixels between them, and `recordPasses`, which chains the passes. |
 | `pass.h/.cpp`            | **`gpu::Pass`**: the interface of a fullscreen pass (`bindInput`, `record`), plus what passes share: `fullscreen.vert`, `beginFullscreenRendering`, `writeImageDescriptor`.         |
 | `shader_pass.h/.cpp`     | **`gpu::ShaderPass`**: one user shader as a fullscreen pipeline, its descriptor set and params buffer.                                                                              |
-| `lut.h/.cpp`             | **`gpu::Lut`**: a LUT as a 3D image, uploaded once. **`gpu::LutPass`**: the frame through a LUT (`lut.frag`), blended by LUT Mix.                                                   |
+| `lut.h/.cpp`             | **`gpu::Lut`**: a LUT as a 3D image, uploaded once. **`gpu::LutPass`**: the frame through a LUT (`lut.frag`), blended by its Mix.                                                    |
 | `lut_file.h/.cpp`        | **`gpu::parseCube`**: `.cube` files to a `LutData` table (1D LUTs and `DOMAIN`s baked into a 0..1 cube), and the stored JSON form. No Vulkan objects.                               |
 | `shader_compiler.h/.cpp` | **`gpu::compileShader`**: the shader contract (preamble), GLSL → SPIR-V, reflection of `Params`, `//@param` annotations, and the stored JSON form. No Vulkan objects.               |
 | `scene.h/.cpp`           | **`gpu::Scene`**: textured meshes drawn over the frame with a depth buffer (today: the logo). Also `Mesh` (.obj via tinyobjloader) and `Texture` (png/jpg via stb_image).           |
@@ -268,7 +268,7 @@ The chain is a list of nodes (`ReaShaderRenderer::ChainNode`), set with `setChai
 
 **Params per node:** each node names its params in `FrameInputs::paramValues`, the plugin's values by index (`firstParam`, `paramCount`). A shader node's go to its `Params` block in order; a LUT node's one param is its Mix. Values past `FrameInputs::paramCount` (params still waiting for the host's rescan) get their defaults: the shader's, and 1 for a Mix.
 
-The plugin turns its shader, LUT and LUT mode into a chain (`ReaShaderPlugin::_setChain`): LUT then shader (`before`), shader then LUT (`after`), or the shader alone with the LUT as its `iChannel1` (`shader`).
+The plugin's own chain (see [architecture.md](architecture.md#the-chain)) maps one to one: `rendererChain` in `plugin.cpp` turns each of its nodes into a `ChainNode`, with its params' indices.
 
 `FrameTargets::recordPasses` records them in order. The first pass samples `input`, the last renders to `output`, and the ones between render to `work[0]`, `work[1]`, `work[0]`, ... Each pass's input is bound right before it's recorded, so a pass object appears at most once in a chain (it has one descriptor set).
 
@@ -383,7 +383,7 @@ Four threads touch the renderer (the full list is in `src/plugin/plugin.h`):
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | REAPER's video thread | `renderFrame`                                                                                                                          |
 | main                  | `init()` (from `activate()`), `shutdown()` (via the destructor)                                                                        |
-| webview (UI messages) | `setChain` (shader or LUT select or upload, LUT mode), `changeRenderingDevice`, `setLogoEnabled`                                        |
+| webview (UI messages) | `setChain` (chain edits and uploads), `changeRenderingDevice`, `setLogoEnabled`                                                         |
 | main (state load)     | the same setters, when a project is loaded                                                                                             |
 
 **`frameMutex`:**

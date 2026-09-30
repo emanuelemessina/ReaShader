@@ -39,10 +39,35 @@ namespace ReaShader
 	// - main:    CLAP lifecycle, state, onMainThread()
 	// - audio:   process()/flush() -> host param events, lock-free param values only
 	// - video:   REAPER's video callbacks -> renderer (try_lock, never waits)
-	// - webview: handleWebUIMessage() -> param edits, device switch, shader and LUT upload
+	// - webview: handleWebUIMessage() -> param edits, device switch, chain edits, shader and LUT upload
 	class ReaShaderPlugin
 	{
 	  public:
+		// One node of the chain: a stored shader or LUT, by name. Its stored JSON is saved in the state, and its
+		// parsed form goes to the renderer (a new pointer only when the content changes, so the renderer keeps
+		// the GPU objects of nodes that didn't change).
+		struct Node
+		{
+			enum class Kind
+			{
+				Shader,
+				Lut
+			};
+
+			uint32_t uid = 0; // 0..kMaxNodes-1, for the node's life; its params' ids and names derive from it
+			Kind kind = Kind::Shader;
+			std::string name; // the stored file's stem
+			std::string data; // the stored JSON
+			std::shared_ptr<const gpu::CompiledShader> shader;
+			std::shared_ptr<const gpu::LutData> lut;
+			bool bypass = false; // left out of the frame; its params stay
+
+			// shader nodes: the LUT the shader samples as iChannel1 (none: an identity)
+			std::string lutName;
+			std::string lutData;
+			std::shared_ptr<const gpu::LutData> shaderLut;
+		};
+
 		ReaShaderPlugin();
 		~ReaShaderPlugin();
 
@@ -99,29 +124,28 @@ namespace ReaShader
 											   int nparms, double projectTime, double frameRate, int forceFormat);
 		static bool _getVideoParam(IREAPERVideoProcessor* videoProcessor, int idx, double* valueOut);
 
-		// Replaces the params reflected from the current shader (any thread).
+		// Replaces the chain nodes' params (any thread).
 		// The host's param list may only change while deactivated: when active, the plugin asks the
 		// host to restart it and swaps the params in deactivate(), then asks the host to rescan.
-		void _setShaderParams(std::vector<Parameters::Param> shaderParams);
+		void _setNodeParams(std::vector<Parameters::NodeParams> nodeParams);
+		void _applyPendingNodeParams();
 
-		// the renderer's chain from a shader, a LUT and the LUT mode; returns the renderer's error, empty on success
-		std::string _setChain(std::shared_ptr<const gpu::CompiledShader> shader,
-							  std::shared_ptr<const gpu::LutData> lut, const std::string& mode);
+		// Runs `edit` on a copy of the chain, hands the result to the renderer, and keeps it on success.
+		// `paramsChange`: nodes were added, removed, moved or swapped, so their params are replaced.
+		// Returns the error (from `edit` or the renderer), empty on success; on error the chain stays.
+		std::string _editChain(const std::function<std::string(std::vector<Node>&)>& edit, bool paramsChange);
 
-		void _uploadShader(const std::string& fileName, const std::string& source);
-		void _useShader(const std::string& name, const std::string& data);
-		void _clearShader();
-		void _applyPendingShaderParams();
+		// reports a chain change to the UI: the error, or `done`, then a snapshot
+		void _chainEdited(const std::string& error, const std::string& done);
 
-		void _uploadLut(const std::string& fileName, const std::string& source);
-		void _useLut(const std::string& name, const std::string& data);
-		void _clearLut();
-		void _setLutMode(const std::string& mode);
+		// compiles GLSL or parses a .cube file, stores it, then appends a node with it
+		void _upload(Node::Kind kind, const std::string& fileName, const std::string& source);
+		// the chain from a v4 state's "chain" (invalid nodes are skipped)
+		void _loadChain(const Parameters::json& chainState);
 
 		void _webuiSend(const Parameters::json& msg);
 		void _webuiSendSnapshot();
-		void _webuiSendShaderStatus(const std::string& status, const char* state);
-		void _webuiSendLutStatus(const std::string& status, const char* state);
+		void _webuiSendChainStatus(const std::string& status, const char* state);
 
 		const clap_host_t* host{ nullptr };
 		std::unique_ptr<ReaShaderRenderer> reaShaderRenderer;
@@ -130,7 +154,7 @@ namespace ReaShader
 		Parameters::ParamList params;
 		std::atomic<bool> hostChangedParams{ false }; // echo to the web UI on the main thread
 		std::atomic<bool> active{ false };
-		std::atomic<bool> shaderParamsPending{ false }; // the shader's params wait for a restart
+		std::atomic<bool> nodeParamsPending{ false };	 // the nodes' params wait for a restart
 		bool restartRequested{ false };					 // main thread only
 
 		// everything below is guarded by stateMutex
@@ -138,19 +162,13 @@ namespace ReaShader
 		int renderingDevice{ 0 };
 		std::vector<std::string> renderingDeviceNames;
 		bool showLogo{ false };
-		std::string shaderName; // empty = no shader
-		std::string shaderData; // the current shader's compiled form (JSON)
-		std::shared_ptr<const gpu::CompiledShader> compiledShader; // shaderData, parsed
-		std::string lutName;			// empty = no LUT
-		std::string lutData;			// the current LUT's stored form (JSON)
-		std::shared_ptr<const gpu::LutData> lutTable; // lutData, parsed
-		std::string lutMode{ "after" }; // "before" / "after" the shader, or "shader" (sampled by it)
-		Parameters::ValueMap savedShaderValues; // restored when the shader's params appear
-		std::vector<Parameters::Param> pendingShaderParams;
+		std::vector<Node> chain;			  // in order
+		Parameters::ValueMap savedNodeValues; // from a loaded state, restored when the nodes' params appear
+		std::vector<Parameters::NodeParams> pendingNodeParams;
 		int trackNumber{ 0 };					// 1-based, 0 = not found, -1 = master
 		std::string trackName;
 
-		// serializes changes to the chain, from reading its parts to the renderer's setChain
+		// serializes changes to the chain, from copying it to the renderer's setChain
 		std::mutex chainMutex;
 
 		std::mutex webUISenderMutex;

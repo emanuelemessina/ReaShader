@@ -1,6 +1,6 @@
 /**
  * @file
- * @brief ReaShaderPlugin: params, state, the web UI protocol, shaders, and the REAPER video tap.
+ * @brief ReaShaderPlugin: params, state, the chain, the web UI protocol, and the REAPER video tap.
  * @author Emanuele Messina (https://github.com/emanuelemessina)
  * @copyright Copyright (c) Emanuele Messina. All rights reserved.
  *            Licensed under the MIT License: see https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE
@@ -28,6 +28,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <optional>
 #include <sstream>
 
 namespace ReaShader
@@ -72,28 +73,240 @@ namespace ReaShader
 				throw std::runtime_error("Can't write " + path.string());
 		}
 
-		// the LUT modes, as named in the protocol and the state
-		bool isLutMode(const std::string& mode)
+		using Node = ReaShaderPlugin::Node;
+
+		// node kinds, as named in the protocol and the state
+		const char* kindName(Node::Kind kind)
 		{
-			return mode == "before" || mode == "after" || mode == "shader";
+			return kind == Node::Kind::Shader ? "shader" : "lut";
 		}
 
-		// a shader's sliders, in the order of its Params fields
-		std::vector<Parameters::Param> paramsOf(const gpu::CompiledShader& shader)
+		std::optional<Node::Kind> kindFromName(const std::string& name)
 		{
-			std::vector<Parameters::Param> params;
-			for (const gpu::ShaderParamField& field : shader.params)
+			if (name == "shader")
+				return Node::Kind::Shader;
+			if (name == "lut")
+				return Node::Kind::Lut;
+			return std::nullopt;
+		}
+
+		// where uploads of a kind are stored
+		std::filesystem::path storedDir(Node::Kind kind)
+		{
+			return kind == Node::Kind::Shader ? util::paths::compiledShadersDir() : util::paths::lutsDir();
+		}
+
+		// a name from the UI: only the file name counts, never a path ("../../x" is "x")
+		std::string fileNameOnly(const std::string& name)
+		{
+			return std::filesystem::path(name).filename().string();
+		}
+
+		// a stored shader or LUT's JSON, by name; throws when it can't be read
+		std::string readStored(Node::Kind kind, const std::string& name)
+		{
+			std::string data = name.empty() ? "" : readFile(storedPath(storedDir(kind), name));
+			if (data.empty())
+				throw std::runtime_error(std::string("Can't read the stored ") +
+										 (kind == Node::Kind::Shader ? "shader " : "LUT ") + name);
+			return data;
+		}
+
+		// a node's content from a stored JSON: its name, data and parsed form; throws on invalid data
+		void setContent(Node& node, const std::string& name, const std::string& data)
+		{
+			try
 			{
-				Parameters::Param param;
-				param.name = field.name;
-				param.label = field.label;
-				param.defaultValue = field.defaultValue;
-				param.minValue = field.minValue;
-				param.maxValue = field.maxValue;
-				param.automatable = true;
-				params.push_back(std::move(param));
+				if (node.kind == Node::Kind::Shader)
+					node.shader = std::make_shared<const gpu::CompiledShader>(gpu::fromJson(json::parse(data)));
+				else
+					node.lut = std::make_shared<const gpu::LutData>(gpu::lutFromJson(json::parse(data)));
 			}
-			return params;
+			catch (const std::exception& e)
+			{
+				throw std::runtime_error(std::string("Invalid stored ") +
+										 (node.kind == Node::Kind::Shader ? "shader " : "LUT ") + name + ": " +
+										 e.what());
+			}
+			node.name = name;
+			node.data = data;
+		}
+
+		// a shader node's iChannel1 from a stored LUT's JSON; no name: none (an identity)
+		void setShaderLut(Node& node, const std::string& name, const std::string& data)
+		{
+			if (name.empty())
+			{
+				node.shaderLut.reset();
+				node.lutName.clear();
+				node.lutData.clear();
+				return;
+			}
+			Node table;
+			table.kind = Node::Kind::Lut;
+			setContent(table, name, data);
+			node.shaderLut = table.lut;
+			node.lutName = name;
+			node.lutData = data;
+		}
+
+		Node* findNode(std::vector<Node>& chain, uint32_t uid)
+		{
+			for (Node& node : chain)
+				if (node.uid == uid)
+					return &node;
+			return nullptr;
+		}
+
+		// a whole number >= 0 in `msg`; none for a missing or invalid one
+		std::optional<size_t> countOf(const json& msg, const char* key)
+		{
+			const json value = msg.value(key, json());
+			if (!value.is_number_integer() || value.get<int64_t>() < 0)
+				return std::nullopt;
+			return value.get<size_t>();
+		}
+
+		// the uid in a message or a saved node; none for a missing or invalid one
+		std::optional<uint32_t> uidOf(const json& msg)
+		{
+			std::optional<size_t> uid = countOf(msg, "uid");
+			if (!uid || *uid >= Parameters::kMaxNodes)
+				return std::nullopt;
+			return (uint32_t)*uid;
+		}
+
+		// a new node with a stored shader or LUT, at `index` (past the end: last); returns the error, if any
+		std::string insertNode(std::vector<Node>& chain, Node::Kind kind, const std::string& name,
+							   const std::string& data, size_t index)
+		{
+			// the smallest free uid
+			uint32_t uid = 0;
+			while (uid < Parameters::kMaxNodes && findNode(chain, uid))
+				uid++;
+			if (uid == Parameters::kMaxNodes)
+				return std::format("The chain is full ({} nodes)", Parameters::kMaxNodes);
+
+			Node node;
+			node.uid = uid;
+			node.kind = kind;
+			setContent(node, name, data);
+			chain.insert(chain.begin() + (std::ptrdiff_t)(index < chain.size() ? index : chain.size()),
+						 std::move(node));
+			return {};
+		}
+
+		// Each node's params, in chain order: a shader's sliders, a LUT's Mix.
+		// Names (state keys) are "<uid>/<member>", labels "<node name>: <label>".
+		std::vector<Parameters::NodeParams> paramsOfNodes(const std::vector<Node>& chain)
+		{
+			std::vector<Parameters::NodeParams> result;
+			for (const Node& node : chain)
+			{
+				Parameters::NodeParams nodeParams{ node.uid, {} };
+				std::string prefix = std::to_string(node.uid) + "/";
+				if (node.shader)
+				{
+					for (const gpu::ShaderParamField& field : node.shader->params)
+					{
+						Parameters::Param param;
+						param.name = prefix + field.name;
+						param.label = node.name + ": " + field.label;
+						param.defaultValue = field.defaultValue;
+						param.minValue = field.minValue;
+						param.maxValue = field.maxValue;
+						param.automatable = true;
+						nodeParams.params.push_back(std::move(param));
+					}
+				}
+				else
+				{
+					Parameters::Param mix; // 0 = the frame as is, 1 = fully through the LUT
+					mix.name = prefix + "mix";
+					mix.label = node.name + ": Mix";
+					mix.units = "%";
+					mix.defaultValue = 1.0;
+					mix.automatable = true;
+					nodeParams.params.push_back(std::move(mix));
+				}
+				result.push_back(std::move(nodeParams));
+			}
+			return result;
+		}
+
+		// The renderer's chain, each node with its params' place in the param list: after the fixed params,
+		// in chain order, at most kNodeSlots per node (as ParamList lays out paramsOfNodes())
+		std::vector<ReaShaderRenderer::ChainNode> rendererChain(const std::vector<Node>& chain)
+		{
+			std::vector<ReaShaderRenderer::ChainNode> result;
+			size_t index = Parameters::DefaultCount;
+			for (const Node& node : chain)
+			{
+				size_t count = node.shader ? node.shader->params.size() : 1;
+				if (count > Parameters::kNodeSlots)
+					count = Parameters::kNodeSlots;
+				result.push_back({ .uid = node.uid,
+								   .shader = node.shader,
+								   .lut = node.lut,
+								   .shaderLut = node.shaderLut,
+								   .bypass = node.bypass,
+								   .firstParam = index,
+								   .paramCount = count });
+				index += count;
+			}
+			return result;
+		}
+
+		// A version 3 state (one shader, one LUT and a LUT mode) as version 4: the shader is node 0 and the
+		// LUT node 1 (their params keep their ids), in the mode's order; mode "shader" attaches the LUT to the
+		// shader node. Param names get their node's prefix, and "LUT Mix" becomes the LUT node's Mix.
+		json migrateV3(const json& v3)
+		{
+			const json shader = v3.value("shader", json::object());
+			const json lut = v3.value("lut", json::object());
+			const json compiled = shader.value("compiled", json());
+			const json table = lut.value("data", json());
+			std::string mode = lut.value("mode", "after");
+			bool lutInShader = compiled.is_object() && table.is_object() && mode == "shader";
+
+			json shaderNode = { { "uid", 0 },
+								{ "kind", "shader" },
+								{ "name", shader.value("name", "") },
+								{ "bypass", false },
+								{ "data", compiled },
+								{ "lut",
+								  { { "name", lutInShader ? lut.value("name", "") : "" },
+									{ "data", lutInShader ? table : json() } } } };
+			json lutNode = { { "uid", 1 },
+							 { "kind", "lut" },
+							 { "name", lut.value("name", "") },
+							 { "bypass", false },
+							 { "data", table } };
+			json chain = json::array();
+			if (table.is_object() && !lutInShader && mode == "before")
+				chain.push_back(lutNode);
+			if (compiled.is_object())
+				chain.push_back(shaderNode);
+			if (table.is_object() && !lutInShader && mode != "before")
+				chain.push_back(lutNode);
+
+			json params = json::object();
+			const json oldParams = v3.value("params", json::object());
+			for (const auto& [name, value] : oldParams.items())
+			{
+				if (name == "Audio Gain")
+					params[name] = value;
+				else if (name == "LUT Mix")
+					params["1/mix"] = value;
+				else
+					params["0/" + name] = value;
+			}
+
+			return { { "version", 4 },
+					 { "params", params },
+					 { "device", v3.value("device", 0) },
+					 { "logo", v3.value("logo", false) },
+					 { "chain", chain } };
 		}
 	} // namespace
 
@@ -169,16 +382,16 @@ namespace ReaShader
 		delete videoProcessor;
 		videoProcessor = nullptr;
 
-		if (shaderParamsPending)
-			_applyPendingShaderParams();
+		if (nodeParamsPending)
+			_applyPendingNodeParams();
 	}
 
 	void ReaShaderPlugin::onMainThread()
 	{
-		if (shaderParamsPending)
+		if (nodeParamsPending)
 		{
 			if (!active)
-				_applyPendingShaderParams();
+				_applyPendingNodeParams();
 			else if (!restartRequested)
 			{
 				restartRequested = true;
@@ -265,25 +478,39 @@ namespace ReaShader
 	// -------- clap.state --------
 	//
 	// One JSON document:
-	// { "version": 3, "params": { "<name>": value }, "device": n, "logo": false,
-	//   "shader": { "name": "", "compiled": {...} }, "lut": { "name": "", "mode": "after", "data": {...} } }
-	// The compiled shader and the LUT are embedded, so a project doesn't depend on the plugin's folders.
+	// { "version": 4, "params": { "<name>": value }, "device": n, "logo": false,
+	//   "chain": [ { "uid": 0, "kind": "shader", "name": "", "bypass": false, "data": {...},
+	//                "lut": { "name": "", "data": null } },          <- shader nodes only: their iChannel1
+	//              { "uid": 1, "kind": "lut", "name": "", "bypass": false, "data": {...} } ] }
+	// The stored shaders and LUTs are embedded, so a project doesn't depend on the plugin's folders.
+	// Version 3 (one shader, one LUT, a LUT mode) is migrated (migrateV3); other versions change nothing.
 
-	constexpr int kStateVersion = 3;
+	constexpr int kStateVersion = 4;
 
 	bool ReaShaderPlugin::saveState(const clap_ostream_t* stream)
 	{
 		json state;
 		{
 			std::lock_guard lock(stateMutex);
-			json compiled = shaderData.empty() ? json() : json::parse(shaderData, nullptr, false);
-			json lut = lutData.empty() ? json() : json::parse(lutData, nullptr, false);
+			json nodes = json::array();
+			for (const Node& node : chain)
+			{
+				json saved = { { "uid", node.uid },
+							   { "kind", kindName(node.kind) },
+							   { "name", node.name },
+							   { "bypass", node.bypass },
+							   { "data", json::parse(node.data, nullptr, false) } };
+				if (node.kind == Node::Kind::Shader)
+					saved["lut"] = { { "name", node.lutName },
+									 { "data",
+									   node.lutName.empty() ? json() : json::parse(node.lutData, nullptr, false) } };
+				nodes.push_back(std::move(saved));
+			}
 			state = { { "version", kStateVersion },
 					  { "params", params.valuesToJson() },
 					  { "device", renderingDevice },
 					  { "logo", showLogo },
-					  { "shader", { { "name", shaderName }, { "compiled", compiled } } },
-					  { "lut", { { "name", lutName }, { "mode", lutMode }, { "data", lut } } } };
+					  { "chain", nodes } };
 		}
 
 		std::string data = state.dump();
@@ -310,7 +537,10 @@ namespace ReaShader
 			data.append(buffer, (size_t)n);
 
 		json state = json::parse(data, nullptr, /* allow_exceptions */ false);
-		if (!state.is_object() || state.value("version", 0) != kStateVersion)
+		int version = state.is_object() ? state.value("version", 0) : 0;
+		if (version == 3)
+			state = migrateV3(state);
+		else if (version != kStateVersion)
 		{
 			// unrecognized format or version: keep the defaults
 			LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "State load", "Unrecognized state, using defaults");
@@ -328,11 +558,11 @@ namespace ReaShader
 			deviceChanged = device != renderingDevice;
 			renderingDevice = device;
 			showLogo = logo;
-			savedShaderValues.clear();
+			savedNodeValues.clear();
 			for (const auto& [name, value] : savedParams.items())
 			{
 				if (value.is_number())
-					savedShaderValues[name] = value.get<double>();
+					savedNodeValues[name] = value.get<double>();
 			}
 		}
 
@@ -340,23 +570,58 @@ namespace ReaShader
 			reaShaderRenderer->changeRenderingDevice(device); // no-op when not active
 		reaShaderRenderer->setLogoEnabled(logo);
 
-		const json shader = state.value("shader", json::object());
-		const json compiled = shader.value("compiled", json());
-		if (compiled.is_object())
-			_useShader(shader.value("name", ""), compiled.dump());
-		else
-			_clearShader();
-
-		const json lut = state.value("lut", json::object());
-		_setLutMode(lut.value("mode", "after"));
-		const json lutStored = lut.value("data", json());
-		if (lutStored.is_object())
-			_useLut(lut.value("name", ""), lutStored.dump());
-		else
-			_clearLut();
-
+		_loadChain(state.value("chain", json::array()));
 		_webuiSendSnapshot();
 		return true;
+	}
+
+	void ReaShaderPlugin::_loadChain(const json& chainState)
+	{
+		std::string error = _editChain(
+			[&](std::vector<Node>& nodes) -> std::string {
+				nodes.clear();
+				if (!chainState.is_array())
+					return {};
+				for (const json& saved : chainState)
+				{
+					try
+					{
+						std::optional<Node::Kind> kind =
+							saved.is_object() ? kindFromName(saved.value("kind", "")) : std::nullopt;
+						std::optional<uint32_t> uid = saved.is_object() ? uidOf(saved) : std::nullopt;
+						if (!kind || !uid || findNode(nodes, *uid))
+							throw std::runtime_error("not a node: " + saved.dump().substr(0, 80));
+
+						Node node;
+						node.uid = *uid;
+						node.kind = *kind;
+						node.bypass = saved.value("bypass", false);
+						setContent(node, saved.value("name", ""), saved.value("data", json()).dump());
+						const json lut = saved.value("lut", json::object());
+						const json table = lut.is_object() ? lut.value("data", json()) : json();
+						if (node.kind == Node::Kind::Shader && table.is_object())
+							setShaderLut(node, lut.value("name", ""), table.dump());
+						nodes.push_back(std::move(node));
+					}
+					catch (const std::exception& e)
+					{
+						LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "State load: node skipped", e.what());
+					}
+				}
+				return {};
+			},
+			true);
+
+		if (!error.empty())
+		{
+			// the current chain stays, so the loaded values must not reach its params
+			{
+				std::lock_guard lock(stateMutex);
+				savedNodeValues.clear();
+			}
+			LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "State load: chain failed", error);
+			_webuiSendChainStatus(error, "error");
+		}
 	}
 
 	// -------- REAPER video tap --------
@@ -382,8 +647,8 @@ namespace ReaShader
 		// param values at video time, by index in the param list: parmlist[0] is wet/dry, then the param at
 		// index i is at parmlist[i + 1] (params REAPER doesn't know yet fall back to the current value)
 		double paramValues[Parameters::ParamList::maxCount];
-		// while the shader's params wait for a restart, its sliders use their defaults
-		size_t paramCount = plugin->shaderParamsPending ? Parameters::DefaultCount : plugin->params.count();
+		// while the nodes' params wait for a restart, they use their defaults
+		size_t paramCount = plugin->nodeParamsPending ? Parameters::DefaultCount : plugin->params.count();
 		for (size_t i = 0; i < paramCount; i++)
 			paramValues[i] = (int)i + 1 < nparms ? parmlist[i + 1] : plugin->params.valueAt(i);
 
@@ -391,7 +656,7 @@ namespace ReaShader
 		FrameView outputFrame{ w, h, output->get_rowspan(), reinterpret_cast<uint8_t*>(output->get_bits()) };
 		ReaShaderRenderer::FrameInputs inputs{ projectTime, frameRate, paramValues, paramCount };
 
-		// false: inactive, busy, failed, or no shader, LUT or logo -> pass the input through
+		// false: inactive, busy, failed, or no pass and no logo -> pass the input through
 		if (!plugin->reaShaderRenderer->renderFrame(inputFrame, outputFrame, inputs))
 		{
 			output->Release();
@@ -431,28 +696,30 @@ namespace ReaShader
 		renderingDeviceNames = deviceNames;
 	}
 
-	void ReaShaderPlugin::_setShaderParams(std::vector<Parameters::Param> shaderParams)
+	void ReaShaderPlugin::_setNodeParams(std::vector<Parameters::NodeParams> nodeParams)
 	{
 		{
 			std::lock_guard lock(stateMutex);
-			pendingShaderParams = std::move(shaderParams);
+			pendingNodeParams = std::move(nodeParams);
 		}
-		shaderParamsPending = true;
+		nodeParamsPending = true;
 		host->request_callback(host); // -> onMainThread()
 	}
 
 	// main thread, plugin deactivated
-	void ReaShaderPlugin::_applyPendingShaderParams()
+	void ReaShaderPlugin::_applyPendingNodeParams()
 	{
-		std::vector<Parameters::Param> shaderParams;
+		std::vector<Parameters::NodeParams> nodeParams;
 		Parameters::ValueMap savedValues;
 		{
 			std::lock_guard lock(stateMutex);
-			shaderParams = std::move(pendingShaderParams);
-			savedValues = savedShaderValues;
+			nodeParams = std::move(pendingNodeParams);
+			savedValues = std::move(savedNodeValues); // a loaded state's values apply once
+			pendingNodeParams.clear();
+			savedNodeValues.clear();
 		}
-		params.replaceShaderParams(std::move(shaderParams), savedValues);
-		shaderParamsPending = false;
+		params.replaceNodeParams(std::move(nodeParams), savedValues);
+		nodeParamsPending = false;
 		restartRequested = false;
 
 		auto* hostParams = static_cast<const clap_host_params_t*>(host->get_extension(host, CLAP_EXT_PARAMS));
@@ -462,269 +729,108 @@ namespace ReaShader
 		_webuiSendSnapshot();
 	}
 
-	// -------- shaders --------
+	// -------- the chain --------
 	//
-	// A shader is compiled once, when uploaded, and stored in the compiled shaders folder as <name>.json.
-	// Selecting one loads the stored form; the current one is also embedded in the project state.
+	// An ordered list of nodes, each a stored shader or LUT. Shaders are compiled and LUTs parsed once, when
+	// uploaded, and stored in their folder as <name>.json; nodes load the stored form, and the chain is also
+	// embedded in the project state. Every change goes through _editChain.
 
-	// compiles GLSL, stores it, then uses it
-	void ReaShaderPlugin::_uploadShader(const std::string& fileName, const std::string& source)
+	std::string ReaShaderPlugin::_editChain(const std::function<std::string(std::vector<Node>&)>& edit,
+											bool paramsChange)
+	{
+		std::lock_guard chainLock(chainMutex);
+		std::vector<Node> edited;
+		{
+			std::lock_guard lock(stateMutex);
+			edited = chain;
+		}
+
+		std::string error;
+		try
+		{
+			error = edit(edited);
+		}
+		catch (const std::exception& e)
+		{
+			error = e.what();
+		}
+		if (error.empty())
+			error = reaShaderRenderer->setChain(rendererChain(edited));
+		if (!error.empty())
+			return error;
+
+		std::vector<Parameters::NodeParams> nodeParams;
+		if (paramsChange)
+			nodeParams = paramsOfNodes(edited);
+		{
+			std::lock_guard lock(stateMutex);
+			chain = std::move(edited);
+		}
+		if (paramsChange)
+			_setNodeParams(std::move(nodeParams));
+		return {};
+	}
+
+	void ReaShaderPlugin::_upload(Node::Kind kind, const std::string& fileName, const std::string& source)
 	{
 		std::string name = std::filesystem::path(fileName).stem().string();
 		if (name.empty())
-			name = "shader";
+			name = kindName(kind);
 
 		std::string data;
 		try
 		{
-			data = gpu::toJson(gpu::compileShader(source, fileName)).dump();
-			writeFile(storedPath(util::paths::compiledShadersDir(), name), data);
+			data = kind == Node::Kind::Shader ? gpu::toJson(gpu::compileShader(source, fileName)).dump()
+											  : gpu::toJson(gpu::parseCube(source, fileName)).dump();
+			writeFile(storedPath(storedDir(kind), name), data);
 		}
 		catch (const std::exception& e)
 		{
-			LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "Shader upload failed", e.what());
-			_webuiSendShaderStatus(e.what(), "error");
+			LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "Upload failed", e.what());
+			_webuiSendChainStatus(e.what(), "error");
 			return;
 		}
-		_useShader(name, data);
+
+		std::string error = _editChain(
+			[&](std::vector<Node>& nodes) { return insertNode(nodes, kind, name, data, nodes.size()); }, true);
+		_chainEdited(error, "Added " + name);
 	}
 
-	// makes a compiled shader (its stored JSON) the current one; on error the current one stays
-	void ReaShaderPlugin::_useShader(const std::string& name, const std::string& data)
+	void ReaShaderPlugin::_chainEdited(const std::string& error, const std::string& done)
 	{
-		std::lock_guard chainLock(chainMutex);
-		std::shared_ptr<const gpu::CompiledShader> compiled;
-		std::string error;
-		try
-		{
-			compiled = std::make_shared<const gpu::CompiledShader>(gpu::fromJson(json::parse(data)));
-		}
-		catch (const std::exception& e)
-		{
-			error = std::string("Invalid compiled shader: ") + e.what();
-		}
-		if (compiled)
-		{
-			std::shared_ptr<const gpu::LutData> currentLut;
-			std::string mode;
-			{
-				std::lock_guard lock(stateMutex);
-				currentLut = lutTable;
-				mode = lutMode;
-			}
-			error = _setChain(compiled, currentLut, mode);
-		}
-
 		if (!error.empty())
 		{
-			LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "Shader load failed", error);
-			_webuiSendShaderStatus(error, "error");
-			return;
+			LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "Chain change failed", error);
+			_webuiSendChainStatus(error, "error");
 		}
-
-		{
-			std::lock_guard lock(stateMutex);
-			shaderName = name;
-			shaderData = data;
-			compiledShader = compiled;
-		}
-		_setShaderParams(paramsOf(*compiled));
-		_webuiSendShaderStatus("Loaded " + name, "ok");
-		_webuiSendSnapshot();
-	}
-
-	// no shader: video passes through
-	void ReaShaderPlugin::_clearShader()
-	{
-		{
-			std::lock_guard chainLock(chainMutex);
-			std::shared_ptr<const gpu::LutData> currentLut;
-			std::string mode;
-			{
-				std::lock_guard lock(stateMutex);
-				currentLut = lutTable;
-				mode = lutMode;
-			}
-			// only the LUT's node is left, which the renderer already has: nothing to build, nothing can fail
-			_setChain(nullptr, currentLut, mode);
-			std::lock_guard lock(stateMutex);
-			shaderName.clear();
-			shaderData.clear();
-			compiledShader.reset();
-		}
-		_setShaderParams({});
-		_webuiSendSnapshot();
-	}
-
-	// -------- LUT --------
-	//
-	// A .cube file is parsed once, when uploaded, and stored in the LUTs folder as <name>.json.
-	// Selecting one loads the stored form; the current one is also embedded in the project state.
-
-	// parses a .cube file, stores it, then uses it
-	void ReaShaderPlugin::_uploadLut(const std::string& fileName, const std::string& source)
-	{
-		std::string name = std::filesystem::path(fileName).stem().string();
-		if (name.empty())
-			name = "lut";
-
-		std::string data;
-		try
-		{
-			data = gpu::toJson(gpu::parseCube(source, fileName)).dump();
-			writeFile(storedPath(util::paths::lutsDir(), name), data);
-		}
-		catch (const std::exception& e)
-		{
-			LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "LUT upload failed", e.what());
-			_webuiSendLutStatus(e.what(), "error");
-			return;
-		}
-		_useLut(name, data);
-	}
-
-	// makes a stored LUT (its JSON) the current one; on error the current one stays
-	void ReaShaderPlugin::_useLut(const std::string& name, const std::string& data)
-	{
-		std::lock_guard chainLock(chainMutex);
-		std::shared_ptr<const gpu::LutData> parsed;
-		std::string error;
-		try
-		{
-			parsed = std::make_shared<const gpu::LutData>(gpu::lutFromJson(json::parse(data)));
-		}
-		catch (const std::exception& e)
-		{
-			error = std::string("Invalid stored LUT: ") + e.what();
-		}
-		if (parsed)
-		{
-			std::shared_ptr<const gpu::CompiledShader> currentShader;
-			std::string mode;
-			{
-				std::lock_guard lock(stateMutex);
-				currentShader = compiledShader;
-				mode = lutMode;
-			}
-			error = _setChain(currentShader, parsed, mode);
-		}
-
-		if (!error.empty())
-		{
-			LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "LUT load failed", error);
-			_webuiSendLutStatus(error, "error");
-			return;
-		}
-
-		{
-			std::lock_guard lock(stateMutex);
-			lutName = name;
-			lutData = data;
-			lutTable = parsed;
-		}
-		_webuiSendLutStatus("Loaded " + name, "ok");
-		_webuiSendSnapshot();
-	}
-
-	void ReaShaderPlugin::_clearLut()
-	{
-		{
-			std::lock_guard chainLock(chainMutex);
-			std::shared_ptr<const gpu::CompiledShader> currentShader;
-			std::string mode;
-			{
-				std::lock_guard lock(stateMutex);
-				currentShader = compiledShader;
-				mode = lutMode;
-			}
-			std::string error = _setChain(currentShader, nullptr, mode);
-			if (!error.empty())
-			{
-				// the shader's iChannel1 goes back to the identity: its pass is kept, so this can't fail in practice
-				LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "LUT unload failed", error);
-				return;
-			}
-			std::lock_guard lock(stateMutex);
-			lutName.clear();
-			lutData.clear();
-			lutTable.reset();
-		}
-		_webuiSendSnapshot();
-	}
-
-	// unknown modes are ignored; on error (the shader's own LUT couldn't be built) the mode stays
-	void ReaShaderPlugin::_setLutMode(const std::string& mode)
-	{
-		if (!isLutMode(mode))
-			return;
-		std::lock_guard chainLock(chainMutex);
-		std::shared_ptr<const gpu::CompiledShader> currentShader;
-		std::shared_ptr<const gpu::LutData> currentLut;
-		{
-			std::lock_guard lock(stateMutex);
-			currentShader = compiledShader;
-			currentLut = lutTable;
-		}
-		std::string error = _setChain(currentShader, currentLut, mode);
-		if (!error.empty())
-		{
-			LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "LUT mode change failed", error);
-			_webuiSendLutStatus(error, "error");
-			return;
-		}
-		std::lock_guard lock(stateMutex);
-		lutMode = mode;
-	}
-
-	// The chain for one shader and one LUT, as fixed nodes:
-	// - "before": LUT -> shader
-	// - "after": shader -> LUT
-	// - "shader": the shader alone, sampling the LUT as iChannel1 (with no shader: the LUT alone)
-	std::string ReaShaderPlugin::_setChain(std::shared_ptr<const gpu::CompiledShader> chainShader,
-										   std::shared_ptr<const gpu::LutData> chainLut, const std::string& mode)
-	{
-		using Node = ReaShaderRenderer::ChainNode;
-		std::vector<Node> chain;
-		Node lutNode{ .uid = Parameters::kLutNode, .lut = chainLut, .firstParam = Parameters::LutMixIndex, .paramCount = 1 };
-		bool lutInShader = chainShader && mode == "shader";
-
-		if (chainLut && !lutInShader && mode == "before")
-			chain.push_back(lutNode);
-		if (chainShader)
-		{
-			size_t paramCount = chainShader->params.size();
-			chain.push_back({ .uid = Parameters::kShaderNode,
-							  .shader = chainShader,
-							  .shaderLut = lutInShader ? chainLut : nullptr,
-							  .firstParam = Parameters::DefaultCount,
-							  .paramCount = paramCount < Parameters::kNodeSlots ? paramCount : Parameters::kNodeSlots });
-		}
-		if (chainLut && !lutInShader && mode != "before")
-			chain.push_back(lutNode);
-
-		return reaShaderRenderer->setChain(std::move(chain));
+		else
+			_webuiSendChainStatus(done, "ok");
+		_webuiSendSnapshot(); // also after an error: an upload's file may be new in the lists
 	}
 
 	// -------- web UI --------
 	//
 	// Messages to the UI:
-	// - snapshot    { version, track, params, devices, logo, shader, shaders, lut, luts }: everything, the UI
-	//                rebuilds itself from it
+	// - snapshot    { version, track, params, devices, logo, chain, shaders, luts }: everything, the UI rebuilds
+	//                itself from it; chain = [{ uid, kind, name, bypass, lut (shader nodes: its LUT's name) }]
 	// - paramValue  { id, value }: a host automation change
-	// - shaderStatus{ status, state }: state is "busy", "ok" or "error"
-	// - lutStatus   { status, state }: the same, for the LUT
+	// - chainStatus { status, state }: state is "busy", "ok" or "error"
 	//
-	// Messages from the UI:
+	// Messages from the UI (names are stored files' names, never paths):
 	// - ready       {}: the page loaded, send a snapshot
 	// - paramValue  { id, value }
 	// - renderingDevice { index }
 	// - logo        { enabled }: the spinning logo over the video (shown with the about box)
 	// - openUrl     { url }: opens an https:// link in the system browser
-	// - shaderSelect{ name }: a compiled shader, "" = none
-	// - shaderUpload{ name, source }: GLSL to compile and store
-	// - lutSelect   { name }: a stored LUT, "" = none
-	// - lutUpload   { name, source }: a .cube file's text, to parse and store
-	// - lutMode     { mode }: "before" / "after" the shader, or "shader" (the shader samples it as iChannel1)
+	// - shaderUpload{ name, source }: GLSL to compile and store, then append as a node
+	// - lutUpload   { name, source }: a .cube file's text to parse and store, then append as a node
+	// - nodeAdd     { kind, name, index }: a stored shader or LUT ("shader" / "lut") as a new node at index
+	//                (none, or past the end: last)
+	// - nodeRemove  { uid }
+	// - nodeMove    { uid, index }
+	// - nodeBypass  { uid, bypass }
+	// - nodeSet     { uid, name }: another stored shader or LUT of the node's kind
+	// - nodeLut     { uid, name }: a shader node's iChannel1, a stored LUT, "" = none
 
 	void ReaShaderPlugin::setWebUISender(WebUISender sender)
 	{
@@ -756,13 +862,24 @@ namespace ReaShader
 								: trackNumber == 0 ? "Track Not Found"
 												   : trackName;
 
+			json nodes = json::array();
+			for (const Node& node : chain)
+			{
+				json shown = { { "uid", node.uid },
+							   { "kind", kindName(node.kind) },
+							   { "name", node.name },
+							   { "bypass", node.bypass } };
+				if (node.kind == Node::Kind::Shader)
+					shown["lut"] = node.lutName;
+				nodes.push_back(std::move(shown));
+			}
+
 			msg = { { "type", "snapshot" },
 					{ "version", REASHADER_VERSION },
 					{ "track", { { "number", trackNumber }, { "name", track } } },
 					{ "devices", { { "names", renderingDeviceNames }, { "selected", renderingDevice } } },
 					{ "logo", showLogo },
-					{ "shader", { { "name", shaderName } } },
-					{ "lut", { { "name", lutName }, { "mode", lutMode } } } };
+					{ "chain", nodes } };
 		}
 		msg["params"] = params.toJson();
 		msg["shaders"] = storedNames(util::paths::compiledShadersDir());
@@ -771,14 +888,9 @@ namespace ReaShader
 		_webuiSend(msg);
 	}
 
-	void ReaShaderPlugin::_webuiSendShaderStatus(const std::string& status, const char* state)
+	void ReaShaderPlugin::_webuiSendChainStatus(const std::string& status, const char* state)
 	{
-		_webuiSend({ { "type", "shaderStatus" }, { "status", status }, { "state", state } });
-	}
-
-	void ReaShaderPlugin::_webuiSendLutStatus(const std::string& status, const char* state)
-	{
-		_webuiSend({ { "type", "lutStatus" }, { "status", status }, { "state", state } });
+		_webuiSend({ { "type", "chainStatus" }, { "status", status }, { "state", state } });
 	}
 
 	void ReaShaderPlugin::handleWebUIMessage(const std::string& text)
@@ -825,47 +937,79 @@ namespace ReaShader
 		{
 			util::shell::openUrl(msg.value("url", ""));
 		}
-		else if (type == "shaderSelect")
+		else if (type == "shaderUpload" || type == "lutUpload")
 		{
-			std::string name = std::filesystem::path(msg.value("name", "")).filename().string(); // no paths from the UI
-			if (name.empty())
-			{
-				_clearShader();
-				_webuiSendShaderStatus("No shader: video passes through", "ok");
-				return;
-			}
-			std::string data = readFile(storedPath(util::paths::compiledShadersDir(), name));
-			if (data.empty())
-				_webuiSendShaderStatus("Can't read the compiled shader " + name, "error");
-			else
-				_useShader(name, data);
+			_upload(type == "shaderUpload" ? Node::Kind::Shader : Node::Kind::Lut, msg.value("name", ""),
+					msg.value("source", ""));
 		}
-		else if (type == "shaderUpload")
+		else if (type == "nodeAdd")
 		{
-			_uploadShader(msg.value("name", ""), msg.value("source", ""));
+			std::optional<Node::Kind> kind = kindFromName(msg.value("kind", ""));
+			std::string name = fileNameOnly(msg.value("name", ""));
+			size_t at = countOf(msg, "index").value_or(Parameters::kMaxNodes);
+			std::string error = _editChain(
+				[&](std::vector<Node>& nodes) -> std::string {
+					if (!kind)
+						return "Unknown node kind";
+					return insertNode(nodes, *kind, name, readStored(*kind, name), at);
+				},
+				true);
+			_chainEdited(error, "Added " + name);
 		}
-		else if (type == "lutSelect")
+		else if (type == "nodeRemove" || type == "nodeMove" || type == "nodeBypass" || type == "nodeSet" ||
+				 type == "nodeLut")
 		{
-			std::string name = std::filesystem::path(msg.value("name", "")).filename().string(); // no paths from the UI
-			if (name.empty())
-			{
-				_clearLut();
-				_webuiSendLutStatus("No LUT", "ok");
-				return;
-			}
-			std::string data = readFile(storedPath(util::paths::lutsDir(), name));
-			if (data.empty())
-				_webuiSendLutStatus("Can't read the stored LUT " + name, "error");
-			else
-				_useLut(name, data);
-		}
-		else if (type == "lutUpload")
-		{
-			_uploadLut(msg.value("name", ""), msg.value("source", ""));
-		}
-		else if (type == "lutMode")
-		{
-			_setLutMode(msg.value("mode", ""));
+			std::optional<uint32_t> uid = uidOf(msg);
+			std::string done;
+			// bypass and a shader's LUT leave the params as they are
+			bool paramsChange = type != "nodeBypass" && type != "nodeLut";
+			std::string error = _editChain(
+				[&](std::vector<Node>& nodes) -> std::string {
+					Node* node = uid ? findNode(nodes, *uid) : nullptr;
+					if (!node)
+						return "No such node";
+					done = node->name;
+
+					if (type == "nodeRemove")
+					{
+						nodes.erase(nodes.begin() + (node - nodes.data()));
+						done = "Removed " + done;
+					}
+					else if (type == "nodeMove")
+					{
+						std::optional<size_t> index = countOf(msg, "index");
+						if (!index)
+							return "No index to move to";
+						Node moved = std::move(*node);
+						nodes.erase(nodes.begin() + (node - nodes.data()));
+						size_t at = *index;
+						nodes.insert(nodes.begin() + (std::ptrdiff_t)(at < nodes.size() ? at : nodes.size()),
+									 std::move(moved));
+						done = "Moved " + done;
+					}
+					else if (type == "nodeBypass")
+					{
+						node->bypass = msg.value("bypass", false);
+						done = (node->bypass ? "Bypassed " : "Enabled ") + done;
+					}
+					else if (type == "nodeSet")
+					{
+						std::string name = fileNameOnly(msg.value("name", ""));
+						setContent(*node, name, readStored(node->kind, name));
+						done = "Loaded " + name;
+					}
+					else // nodeLut
+					{
+						if (node->kind != Node::Kind::Shader)
+							return "Only a shader node samples a LUT";
+						std::string name = fileNameOnly(msg.value("name", ""));
+						setShaderLut(*node, name, name.empty() ? "" : readStored(Node::Kind::Lut, name));
+						done = name.empty() ? done + ": no LUT" : done + ": LUT " + name;
+					}
+					return {};
+				},
+				paramsChange);
+			_chainEdited(error, done);
 		}
 		else
 		{
