@@ -1,6 +1,6 @@
 /**
  * @file
- * @brief Unit tests: the parameter list (the fixed param, nodes' params, ids vs indices, values by name, host flags).
+ * @brief Unit tests: the parameter list (a fixed list: Audio Gain and every node slot, values by name, host flags).
  * @author Emanuele Messina (https://github.com/emanuelemessina)
  * @copyright Copyright (c) Emanuele Messina. All rights reserved.
  *            Licensed under the MIT License: see https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE
@@ -25,7 +25,6 @@ namespace
 		p.defaultValue = defaultValue;
 		p.minValue = minValue;
 		p.maxValue = maxValue;
-		p.automatable = true;
 		return p;
 	}
 
@@ -41,71 +40,75 @@ namespace
 
 TEST_SUITE("params")
 {
-	TEST_CASE("a new list holds only Audio Gain, at 1 and automatable")
-	{
-		ParamList params;
-
-		REQUIRE(params.count() == DefaultCount);
-		CHECK(params.value(AudioGain) == 1.0);
-		CHECK(params.automatableCount() == 1);
-		auto gain = params.automatableAt(AudioGainIndex);
-		REQUIRE(gain);
-		CHECK(gain->id == AudioGain);
-		CHECK(gain->name == "Audio Gain");
-		CHECK(gain->group == Group::Main);
-		CHECK_FALSE(gain->node);
-		CHECK_FALSE(params.automatableAt(DefaultCount));
-	}
-
-	TEST_CASE("ids are node + slot: the plugin's first, then 64 per node")
+	TEST_CASE("ids are node + slot: Audio Gain first, then 40 per node, 641 in all")
 	{
 		CHECK(AudioGain == 0);
 		CHECK(nodeParamId(0, 0) == 1);
-		CHECK(nodeParamId(0, 63) == 64);
-		CHECK(nodeParamId(1, 0) == 65);
-		CHECK(kMaxIds == 1 + kMaxNodes * kNodeSlots);
+		CHECK(nodeParamId(0, 39) == 40);
+		CHECK(nodeParamId(1, 0) == 41);
+		CHECK(kParamCount == 1 + kMaxNodes * kNodeSlots);
 	}
 
-	TEST_CASE("nodes' params follow the fixed one, in chain order, at their node's ids")
+	TEST_CASE("a new list has every id: Audio Gain at 1, every node slot unused (no name, no node)")
 	{
 		ParamList params;
-		params.replaceNodeParams({ node(3, { { "a", 0.1 }, { "b", 0.2 } }), node(1, { { "mix", 1.0 } }) },
-								 { { "3/b", 0.9 } });
 
-		std::vector<Param> list = params.list();
-		REQUIRE(list.size() == DefaultCount + 3);
-		CHECK(list[DefaultCount].id == nodeParamId(3, 0));
-		CHECK(list[DefaultCount + 1].id == nodeParamId(3, 1));
-		CHECK(list[DefaultCount + 2].id == nodeParamId(1, 0));
-		for (size_t i = DefaultCount; i < list.size(); i++)
+		CHECK(params.value(AudioGain) == 1.0);
+		Param gain = params.at(AudioGain);
+		CHECK(gain.name == "Audio Gain");
+		CHECK(gain.group == Group::Main);
+		CHECK(gain.used());
+		CHECK(params.used(AudioGain));
+
+		for (Id id : { nodeParamId(0, 0), nodeParamId(7, 13), kParamCount - 1 })
 		{
-			INFO(i);
-			CHECK(list[i].group == Group::Node);
+			INFO(id);
+			Param slot = params.at(id);
+			CHECK(slot.id == id);
+			CHECK(slot.name.empty());
+			CHECK(slot.label.empty());
+			CHECK(slot.group == Group::Node);
+			CHECK_FALSE(slot.used());
+			CHECK_FALSE(params.used(id));
+			CHECK_FALSE(params.find(id));
 		}
-		CHECK(list[DefaultCount].node == 3u);
-		CHECK(list[DefaultCount + 2].node == 1u);
-		CHECK(params.value(nodeParamId(3, 0)) == 0.1); // default
-		CHECK(params.value(nodeParamId(3, 1)) == 0.9); // saved
-		CHECK(params.automatableCount() == DefaultCount + 3);
+		REQUIRE(params.list().size() == 1);
+		CHECK(params.list()[0].id == AudioGain);
 	}
 
-	TEST_CASE("nodes moved around keep their ids and their values; only the indices change")
+	TEST_CASE("nodes' params go to their node's slots, with values saved by name or their defaults")
+	{
+		ParamList params;
+		std::vector<Id> gone = params.replaceNodeParams(
+			{ node(3, { { "a", 0.1 }, { "b", 0.2 } }), node(1, { { "mix", 1.0 } }) }, { { "3/b", 0.9 } });
+		CHECK(gone.empty());
+
+		std::vector<Param> list = params.list(); // in id order, not chain order
+		REQUIRE(list.size() == 4);
+		CHECK(list[1].id == nodeParamId(1, 0));
+		CHECK(list[2].id == nodeParamId(3, 0));
+		CHECK(list[3].id == nodeParamId(3, 1));
+		CHECK(list[1].node == 1u);
+		CHECK(list[2].node == 3u);
+		CHECK(list[2].group == Group::Node);
+		CHECK(params.used(nodeParamId(3, 1)));
+		CHECK_FALSE(params.used(nodeParamId(3, 2)));
+		CHECK(params.value(nodeParamId(3, 0)) == 0.1); // default
+		CHECK(params.value(nodeParamId(3, 1)) == 0.9); // saved
+	}
+
+	TEST_CASE("nodes moved around keep their ids and values, and nothing is gone")
 	{
 		ParamList params;
 		params.replaceNodeParams({ node(3, { { "a", 0.1 } }), node(1, { { "mix", 1.0 } }) }, {});
 		params.setValue(nodeParamId(3, 0), 0.4);
 		params.setValue(nodeParamId(1, 0), 0.6);
 
-		params.replaceNodeParams({ node(1, { { "mix", 1.0 } }), node(3, { { "a", 0.1 } }) }, {});
+		std::vector<Id> gone = params.replaceNodeParams({ node(1, { { "mix", 1.0 } }), node(3, { { "a", 0.1 } }) }, {});
 
-		std::vector<Param> list = params.list();
-		REQUIRE(list.size() == DefaultCount + 2);
-		CHECK(list[DefaultCount].id == nodeParamId(1, 0));
-		CHECK(list[DefaultCount + 1].id == nodeParamId(3, 0));
+		CHECK(gone.empty());
 		CHECK(params.value(nodeParamId(3, 0)) == 0.4);
 		CHECK(params.value(nodeParamId(1, 0)) == 0.6);
-		CHECK(params.valueAt(DefaultCount) == 0.6);
-		CHECK(params.valueAt(DefaultCount + 1) == 0.4);
 	}
 
 	TEST_CASE("a value is kept only for the same id and name, within the new range; saved values come first")
@@ -117,53 +120,32 @@ TEST_SUITE("params")
 
 		NodeParams next{ 0, { param("0/a", 0.1), param("0/other", 0.2), param("0/c", 0.3) } };
 		next.params[0].maxValue = 0.5;
-		params.replaceNodeParams({ next }, { { "0/c", 0.25 } });
+		std::vector<Id> gone = params.replaceNodeParams({ next }, { { "0/c", 0.25 } });
 
-		CHECK(params.value(nodeParamId(0, 0)) == 0.5);	// kept, clamped to the new range
-		CHECK(params.value(nodeParamId(0, 1)) == 0.2);	// another name at that id: its default
-		CHECK(params.value(nodeParamId(0, 2)) == 0.25); // saved
+		CHECK(params.realValue(nodeParamId(0, 0)) == 0.5);	 // kept, clamped to the new range
+		CHECK(params.realValue(nodeParamId(0, 1)) == 0.2);	 // another name at that id: its default
+		CHECK(params.realValue(nodeParamId(0, 2)) == 0.25);	 // saved
+		CHECK(gone == std::vector<Id>{ nodeParamId(0, 1) }); // "0/b" became "0/other"
 	}
 
-	TEST_CASE("ids and indices map both ways")
+	TEST_CASE("params that go away leave their slots unused, and are reported gone")
 	{
 		ParamList params;
-		params.replaceNodeParams({ node(5, { { "a", 0.1 }, { "b", 0.2 } }), node(2, { { "mix", 0.3 } }) }, {});
+		params.replaceNodeParams({ node(0, { { "a", 0.1 }, { "b", 0.2 } }), node(2, { { "mix", 1.0 } }) }, {});
 
-		std::vector<Param> list = params.list();
-		for (size_t i = 0; i < list.size(); i++)
-		{
-			INFO(i);
-			CHECK(params.contains(list[i].id));
-			CHECK(params.valueAt(i) == params.value(list[i].id));
-			CHECK(params.automatableAt((uint32_t)i)->id == list[i].id);
-			CHECK(params.find(list[i].id)->name == list[i].name);
-		}
-		CHECK(params.valueAt(list.size()) == 0.0); // past the end
+		std::vector<Id> gone = params.replaceNodeParams({ node(2, { { "mix", 1.0 } }) }, {});
+
+		CHECK(gone == std::vector<Id>{ nodeParamId(0, 0), nodeParamId(0, 1) });
+		CHECK_FALSE(params.used(nodeParamId(0, 0)));
+		CHECK(params.at(nodeParamId(0, 0)).name.empty());
+		CHECK(params.list().size() == 2);
 	}
 
-	TEST_CASE("ids that aren't params are unknown")
-	{
-		ParamList params;
-		params.replaceNodeParams({ node(0, { { "a", 0.1 } }) }, {});
-
-		for (Id id : { nodeParamId(0, 1), nodeParamId(1, 0), Id(42), kMaxIds, Id(-1) })
-		{
-			INFO(id);
-			CHECK_FALSE(params.contains(id));
-			CHECK_FALSE(params.find(id));
-		}
-		CHECK(params.contains(nodeParamId(0, 0)));
-
-		params.replaceNodeParams({}, {});
-		CHECK(params.count() == DefaultCount);
-		CHECK_FALSE(params.contains(nodeParamId(0, 0)));
-	}
-
-	TEST_CASE("at most 64 params per node, and 256 in all")
+	TEST_CASE("at most 40 params per node; every node fits")
 	{
 		ParamList params;
 		std::vector<NodeParams> nodes;
-		for (uint32_t uid = 0; uid < 5; uid++)
+		for (uint32_t uid = 0; uid < kMaxNodes; uid++)
 		{
 			std::vector<std::pair<std::string, double>> members;
 			for (size_t i = 0; i < kNodeSlots + 10; i++)
@@ -172,15 +154,39 @@ TEST_SUITE("params")
 		}
 		params.replaceNodeParams(nodes, {});
 
-		CHECK(params.count() == ParamList::maxCount);
-		CHECK(params.find(nodeParamId(0, kNodeSlots - 1))->name == "0/p63");
-		CHECK(params.find(nodeParamId(1, 0))->name == "1/p0"); // node 0's extra params were dropped
-		// 1 + 3 * 64 = 193 params before node 3, which gets the remaining 63
-		CHECK(params.list().back().id == nodeParamId(3, 62));
-		CHECK_FALSE(params.contains(nodeParamId(4, 0)));
+		CHECK(params.list().size() == kParamCount);
+		CHECK(params.at(nodeParamId(0, kNodeSlots - 1)).name == "0/p39");
+		CHECK(params.at(nodeParamId(1, 0)).name == "1/p0"); // node 0's extra params were dropped
+		CHECK(params.at(kParamCount - 1).name == "15/p39");
 	}
 
-	TEST_CASE("values go to and from JSON by name; unknown names and non-numbers are ignored")
+	TEST_CASE("values are the host's, 0..1 over each param's range; real values in and out by name")
+	{
+		ParamList params;
+		NodeParams pixelate{ 0, { param("0/blockSize", 16, 1, 128) } };
+		params.replaceNodeParams({ pixelate }, {});
+		const Id blockSize = nodeParamId(0, 0);
+
+		CHECK(params.value(blockSize) == doctest::Approx(15.0 / 127)); // the default, as a host value
+		CHECK(params.realValue(blockSize) == doctest::Approx(16));
+
+		params.setValue(blockSize, 0.5); // the host
+		CHECK(params.realValue(blockSize) == doctest::Approx(64.5));
+		CHECK(params.valuesToJson()["0/blockSize"] == doctest::Approx(64.5));
+		CHECK(params.toJson()[1]["value"] == doctest::Approx(64.5));
+
+		params.setRealValue(blockSize, 1000); // the web UI: clamped
+		CHECK(params.value(blockSize) == 1.0);
+		params.valuesFromJson({ { "0/blockSize", 1 } });
+		CHECK(params.value(blockSize) == 0.0);
+
+		// replaced with another range: the real value is kept, within the new range
+		params.setRealValue(blockSize, 100);
+		params.replaceNodeParams({ { 0, { param("0/blockSize", 16, 1, 64) } } }, {});
+		CHECK(params.realValue(blockSize) == doctest::Approx(64));
+	}
+
+	TEST_CASE("values go to and from JSON by name, used params only; unknown names and non-numbers are ignored")
 	{
 		ParamList params;
 		params.replaceNodeParams({ node(0, { { "amount", 0.5 } }) }, {});
@@ -189,35 +195,35 @@ TEST_SUITE("params")
 		nlohmann::json saved = params.valuesToJson();
 		CHECK(saved == nlohmann::json{ { "Audio Gain", 0.25 }, { "0/amount", 0.5 } });
 
-		params.valuesFromJson({ { "0/amount", 0.75 }, { "Audio Gain", "loud" }, { "missing", 1 } });
+		params.valuesFromJson({ { "0/amount", 0.75 }, { "Audio Gain", "loud" }, { "missing", 1 }, { "", 0.1 } });
 		CHECK(params.value(nodeParamId(0, 0)) == 0.75);
 		CHECK(params.value(AudioGain) == 0.25);
-		CHECK(params.count() == DefaultCount + 1);
+		CHECK(params.value(nodeParamId(0, 1)) == 0.5); // an unused slot isn't touched by the "" name
 	}
 
-	TEST_CASE("toJson describes every param for the web UI, in list order, with their ids and nodes")
+	TEST_CASE("toJson describes the used params for the web UI, in id order, with their nodes")
 	{
 		ParamList params;
 		params.replaceNodeParams({ node(2, { { "amount", 0.5 } }) }, {});
 
 		nlohmann::json list = params.toJson();
-		REQUIRE(list.size() == DefaultCount + 1);
-		CHECK(list[AudioGainIndex]["id"] == AudioGain);
-		CHECK(list[AudioGainIndex]["name"] == "Audio Gain");
-		CHECK(list[AudioGainIndex]["group"] == "main");
-		CHECK(list[AudioGainIndex]["node"].is_null());
-		CHECK(list[DefaultCount]["id"] == nodeParamId(2, 0));
-		CHECK(list[DefaultCount]["group"] == "node");
-		CHECK(list[DefaultCount]["node"] == 2);
-		CHECK(list[DefaultCount]["value"] == 0.5);
+		REQUIRE(list.size() == 2);
+		CHECK(list[0]["id"] == AudioGain);
+		CHECK(list[0]["name"] == "Audio Gain");
+		CHECK(list[0]["group"] == "main");
+		CHECK(list[0]["node"].is_null());
+		CHECK(list[1]["id"] == nodeParamId(2, 0));
+		CHECK(list[1]["group"] == "node");
+		CHECK(list[1]["node"] == 2);
+		CHECK(list[1]["value"] == 0.5);
 		for (const char* key : { "label", "units", "defaultValue", "minValue", "maxValue" })
 		{
 			INFO(key);
-			CHECK(list[DefaultCount].contains(key));
+			CHECK(list[1].contains(key));
 		}
 	}
 
-	TEST_CASE("each flagged param is taken once for the host, by id, with its latest value")
+	TEST_CASE("each flagged param is taken once for the host, by id, with its latest value; unused ones never")
 	{
 		ParamList params;
 		params.replaceNodeParams({ node(0, { { "amount", 0.5 } }), node(1, { { "mix", 1.0 } }) }, {});
@@ -232,7 +238,8 @@ TEST_SUITE("params")
 		params.setValue(mix, 0.7);
 		params.flagForHost(mix); // twice before the host takes it: one change
 		params.flagForHost(amount);
-		params.flagForHost(42); // not a param: ignored
+		params.flagForHost(nodeParamId(5, 0)); // an unused slot: ignored
+		params.flagForHost(kParamCount);	   // past the end: ignored
 
 		std::vector<std::pair<Id, double>> taken;
 		while (params.takeFlaggedForHost(id, value))

@@ -1,6 +1,6 @@
 /**
  * @file
- * @brief The parameter list: the plugin's own params and the chain nodes', lock-free values.
+ * @brief The parameter list: the plugin's own params and the chain nodes' slots, lock-free values.
  * @author Emanuele Messina (https://github.com/emanuelemessina)
  * @copyright Copyright (c) Emanuele Messina. All rights reserved.
  *            Licensed under the MIT License: see https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE
@@ -23,50 +23,52 @@ namespace ReaShader::Parameters
 		{
 			return group == Group::Main ? "main" : "node";
 		}
+
+		Param unusedSlot(Id id)
+		{
+			Param slot;
+			slot.id = id;
+			slot.group = Group::Node;
+			return slot;
+		}
 	} // namespace
 
 	ParamList::ParamList()
 	{
-		params = {
-			// 1.0 = unchanged audio
-			{ AudioGain, "Audio Gain", "Audio Gain", Group::Main, "%", 1.0, 0.0, 1.0, true, {} },
-		};
+		params.reserve(kParamCount);
+		// 1.0 = unchanged audio
+		params.push_back({ AudioGain, "Audio Gain", "Audio Gain", Group::Main, "%", 1.0, 0.0, 1.0, {} });
+		for (Id id = nodeParamId(0, 0); id < kParamCount; id++)
+			params.push_back(unusedSlot(id));
+
 		for (const Param& p : params)
-			values[p.id] = p.defaultValue;
-		_index();
+		{
+			values[p.id] = p.toHost(p.defaultValue);
+			inUse[p.id] = p.used();
+		}
 	}
 
 	// -------- any thread, lock-free --------
 
 	double ParamList::value(Id id) const
 	{
-		return id < kMaxIds ? values[id].load() : 0.0;
+		return id < kParamCount ? values[id].load() : 0.0;
 	}
 
 	void ParamList::setValue(Id id, double value)
 	{
-		if (id < kMaxIds)
+		if (id < kParamCount)
 			values[id] = value;
 	}
 
-	bool ParamList::contains(Id id) const
+	bool ParamList::used(Id id) const
 	{
-		return id < kMaxIds && indexOfId[id] >= 0;
-	}
-
-	size_t ParamList::count() const
-	{
-		return paramCount;
-	}
-
-	double ParamList::valueAt(size_t index) const
-	{
-		return index < paramCount ? values[idAt[index]].load() : 0.0;
+		return id < kParamCount && inUse[id];
 	}
 
 	void ParamList::flagForHost(Id id)
 	{
-		if (!contains(id))
+		if (!used(id))
 			return;
 		flaggedForHost[id] = true;
 		anyFlaggedForHost = true;
@@ -78,9 +80,8 @@ namespace ReaShader::Parameters
 		if (!anyFlaggedForHost.exchange(false))
 			return false;
 
-		for (size_t i = 0; i < paramCount; i++)
+		for (Id flagged = 0; flagged < kParamCount; flagged++)
 		{
-			Id flagged = idAt[i];
 			if (flaggedForHost[flagged].exchange(false))
 			{
 				anyFlaggedForHost = true; // there may be more
@@ -94,101 +95,94 @@ namespace ReaShader::Parameters
 
 	// -------- non-realtime threads --------
 
-	std::vector<Param> ParamList::list() const
+	double ParamList::realValue(Id id) const
 	{
 		std::lock_guard lock(mutex);
-		return params;
+		return id < kParamCount ? params[id].toReal(values[id]) : 0.0;
+	}
+
+	void ParamList::setRealValue(Id id, double value)
+	{
+		std::lock_guard lock(mutex);
+		if (id < kParamCount)
+			values[id] = params[id].toHost(value);
+	}
+
+	Param ParamList::at(Id id) const
+	{
+		std::lock_guard lock(mutex);
+		return id < kParamCount ? params[id] : unusedSlot(id);
 	}
 
 	std::optional<Param> ParamList::find(Id id) const
 	{
 		std::lock_guard lock(mutex);
-		if (!contains(id))
+		if (id >= kParamCount || !params[id].used())
 			return std::nullopt;
-		return params[(size_t)indexOfId[id]];
+		return params[id];
 	}
 
-	std::optional<Param> ParamList::automatableAt(uint32_t index) const
+	std::vector<Param> ParamList::list() const
 	{
 		std::lock_guard lock(mutex);
+		std::vector<Param> result;
 		for (const Param& p : params)
-		{
-			if (!p.automatable)
-				continue;
-			if (index == 0)
-				return p;
-			index--;
-		}
-		return std::nullopt;
+			if (p.used())
+				result.push_back(p);
+		return result;
 	}
 
-	uint32_t ParamList::automatableCount() const
-	{
-		std::lock_guard lock(mutex);
-		uint32_t count = 0;
-		for (const Param& p : params)
-			count += p.automatable ? 1 : 0;
-		return count;
-	}
-
-	void ParamList::replaceNodeParams(std::vector<NodeParams> nodes, const ValueMap& savedValues)
+	std::vector<Id> ParamList::replaceNodeParams(std::vector<NodeParams> nodes, const ValueMap& savedValues)
 	{
 		std::lock_guard lock(mutex);
 
-		std::vector<Param> previous(params.begin() + DefaultCount, params.end());
-		params.resize(DefaultCount);
+		std::vector<Param> previous = params;
+		for (Id id = nodeParamId(0, 0); id < kParamCount; id++)
+			params[id] = unusedSlot(id);
 
 		bool dropped = false;
 		for (NodeParams& node : nodes)
 		{
-			uint32_t slot = 0;
-			for (Param& p : node.params)
+			if (node.node >= kMaxNodes)
+				continue;
+			if (node.params.size() > kNodeSlots)
 			{
-				if (slot >= kNodeSlots || params.size() >= maxCount)
-				{
-					dropped = true;
-					break;
-				}
-				p.id = nodeParamId(node.node, slot++);
+				dropped = true;
+				node.params.resize(kNodeSlots);
+			}
+			for (uint32_t slot = 0; slot < node.params.size(); slot++)
+			{
+				Param p = std::move(node.params[slot]);
+				p.id = nodeParamId(node.node, slot);
 				p.group = Group::Node;
 				p.node = node.node;
 
+				// in the param's own range: saved, else kept, else the default
 				double value = p.defaultValue;
 				auto saved = savedValues.find(p.name);
-				auto same = std::find_if(previous.begin(), previous.end(),
-										 [&](const Param& old) { return old.id == p.id && old.name == p.name; });
 				if (saved != savedValues.end())
 					value = saved->second;
-				else if (same != previous.end())
-					value = std::clamp(values[p.id].load(), p.minValue, p.maxValue);
-				values[p.id] = value;
-				params.push_back(std::move(p));
+				else if (previous[p.id].used() && previous[p.id].name == p.name)
+					value = previous[p.id].toReal(values[p.id]);
+				values[p.id] = p.toHost(value);
+				params[p.id] = std::move(p);
 			}
 		}
 		if (dropped)
 			LOG(WARNING, toConsole | toFile, "Params", "Too many params",
-				std::format("At most {} per node and {} in all are kept", kNodeSlots, maxCount));
+				std::format("At most {} per node are kept", kNodeSlots));
 
-		// ids that stop being params drop their pending flags
-		for (const Param& old : previous)
+		std::vector<Id> gone;
+		for (Id id = nodeParamId(0, 0); id < kParamCount; id++)
 		{
-			bool kept = std::any_of(params.begin(), params.end(), [&](const Param& p) { return p.id == old.id; });
-			if (!kept)
-				flaggedForHost[old.id] = false;
+			inUse[id] = params[id].used();
+			if (previous[id].used() && previous[id].name != params[id].name)
+			{
+				gone.push_back(id);
+				flaggedForHost[id] = false;
+			}
 		}
-		_index();
-	}
-
-	void ParamList::_index()
-	{
-		for (auto& index : indexOfId)
-			index = -1;
-		for (size_t i = 0; i < params.size(); i++)
-		{
-			idAt[i] = params[i].id;
-			indexOfId[params[i].id] = (int32_t)i;
-		}
-		paramCount = params.size();
+		return gone;
 	}
 
 	json ParamList::toJson() const
@@ -197,13 +191,15 @@ namespace ReaShader::Parameters
 		json list = json::array();
 		for (const Param& p : params)
 		{
+			if (!p.used())
+				continue;
 			list.push_back({ { "id", p.id },
 							 { "name", p.name },
 							 { "label", p.label },
 							 { "group", groupName(p.group) },
 							 { "node", p.node ? json(*p.node) : json() },
 							 { "units", p.units },
-							 { "value", values[p.id].load() },
+							 { "value", p.toReal(values[p.id]) },
 							 { "defaultValue", p.defaultValue },
 							 { "minValue", p.minValue },
 							 { "maxValue", p.maxValue } });
@@ -216,7 +212,8 @@ namespace ReaShader::Parameters
 		std::lock_guard lock(mutex);
 		json result = json::object();
 		for (const Param& p : params)
-			result[p.name] = values[p.id].load();
+			if (p.used())
+				result[p.name] = p.toReal(values[p.id]);
 		return result;
 	}
 
@@ -225,8 +222,8 @@ namespace ReaShader::Parameters
 		std::lock_guard lock(mutex);
 		for (const Param& p : params)
 		{
-			if (savedValues.contains(p.name) && savedValues[p.name].is_number())
-				values[p.id] = savedValues[p.name].get<double>();
+			if (p.used() && savedValues.contains(p.name) && savedValues[p.name].is_number())
+				values[p.id] = p.toHost(savedValues[p.name].get<double>());
 		}
 	}
 } // namespace ReaShader::Parameters

@@ -266,7 +266,7 @@ The chain is a list of nodes (`ReaShaderRenderer::ChainNode`), set with `setChai
 
 `renderFrame` lists the passes every frame: the nodes in order, bypassed ones left out. With no passes at all (the logo alone), the input is copied to the output; with no passes and no logo, the frame passes through.
 
-**Params per node:** each node names its params in `FrameInputs::paramValues`, the plugin's values by index (`firstParam`, `paramCount`). A shader node's go to its `Params` block in order; a LUT node's one param is its Mix. Values past `FrameInputs::paramCount` (params still waiting for the host's rescan) get their defaults: the shader's, and 1 for a Mix.
+**Params per node:** each node names its params in `FrameInputs::paramValues`, the plugin's values by id (`firstParam`, its node's first slot, and `paramCount`). A shader node's go to its `Params` block in order; a LUT node's one param is its Mix. Values past `FrameInputs::paramCount` get their defaults: the shader's, and 1 for a Mix.
 
 The plugin's own chain (see [architecture.md](architecture.md#the-chain)) maps one to one: `rendererChain` in `plugin.cpp` turns each of its nodes into a `ChainNode`, with its params' indices.
 
@@ -280,7 +280,7 @@ The plugin's own chain (see [architecture.md](architecture.md#the-chain)) maps o
 
 1. If needed, recreate `FrameTargets`. `scene->prepare()` makes the depth image the right size.
 2. `FrameTargets::writeInput`: `memcpy` REAPER's pixels into the mapped upload buffer, then `flush`.
-3. `ShaderPass::writeParams`: write each slider's value at its reflected byte offset in the mapped params buffer, then `flush`. Sliders without a value (the plugin's params are still pending) get their default.
+3. `ShaderPass::writeParams`: write each slider's value at its reflected byte offset in the mapped params buffer, then `flush`. Sliders without a value get their default.
 4. Bind the LUTs: the shader's `iChannel1` (its node's LUT, otherwise the identity) and the LUT pass's table. Set the LUT pass's amount (its node's Mix).
 
 **GPU commands** (`Context::beginCommands` → ... → `submitAndWait`):
@@ -406,7 +406,7 @@ Four threads touch the renderer (the full list is in `src/plugin/plugin.h`):
 **Why the GPU stays up across deactivate:**
 
 - The plugin's `deactivate()` removes REAPER's video processor, so frames stop arriving, but it doesn't shut the renderer down.
-- CLAP needs a deactivate/activate cycle whenever the param list changes, which happens on every shader change (a host "restart").
+- CLAP hosts may deactivate and reactivate a plugin at any time (REAPER does it when an FX is toggled offline, for example).
 - Recreating the Vulkan instance and device each time would take noticeable time.
 
 **Swapping the chain is safe without waiting:** frames render one at a time and each waits on its fence. So whenever `setChain` holds the mutex, the GPU isn't using the old passes or LUTs, and it can destroy them immediately. The same holds for descriptor sets, which is why passes can rebind their inputs every frame.

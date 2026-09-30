@@ -23,7 +23,7 @@ function renderSnapshot(snapshot) {
 
 // -------- params --------
 
-// `label` is shown without the node's name, which its card already shows
+// `label` is shown without the node's tag and name, which its card already shows
 function createSlider(param, label) {
     const container = document.createElement('div');
     container.classList.add('slider-container');
@@ -116,13 +116,15 @@ function createNodeCard(node, index, count, params, names, luts) {
     card.classList.add('node');
     card.classList.toggle('bypassed', node.bypass);
 
-    // header: position, kind, the stored shader or LUT (swappable), move, bypass, remove
+    // header: tag, kind, the stored shader or LUT (swappable), move, bypass, remove
     const header = document.createElement('div');
     header.classList.add('node-header');
 
-    const position = document.createElement('span');
-    position.classList.add('position');
-    position.textContent = index + 1;
+    // the node's letter, fixed for its life: its params are named "[tag] name: ..." in REAPER
+    const tag = document.createElement('span');
+    tag.classList.add('tag');
+    tag.textContent = node.tag;
+    tag.title = `Node ${node.tag}: its params show as "[${node.tag}] ${node.name}: ..." in REAPER`;
 
     const kind = document.createElement('span');
     kind.classList.add('kind');
@@ -155,13 +157,14 @@ function createNodeCard(node, index, count, params, names, luts) {
     const remove = createIconButton('×', 'Remove from the chain', () => native.nodeRemove(node.uid));
     remove.classList.add('remove');
 
-    header.append(position, kind, content, up, down, bypass, remove);
+    header.append(tag, kind, content, up, down, bypass, remove);
 
     // body: a shader's LUT, then the sliders
     const body = document.createElement('div');
     body.classList.add('node-body');
 
-    if (node.kind === 'shader') {
+    // only for a shader that samples a LUT (iLut or iChannel1), or one that has a LUT to remove
+    if (node.kind === 'shader' && (node.samplesLut || node.lut)) {
         const row = document.createElement('div');
         row.classList.add('node-lut');
         const label = document.createElement('label');
@@ -175,7 +178,7 @@ function createNodeCard(node, index, count, params, names, luts) {
 
     const sliders = document.createElement('div');
     sliders.classList.add('params');
-    const prefix = `${node.name}: `;
+    const prefix = `[${node.tag}] ${node.name}: `;
     for (const param of params)
         sliders.appendChild(createSlider(param, param.label.startsWith(prefix) ? param.label.slice(prefix.length) : param.label));
     body.appendChild(sliders);

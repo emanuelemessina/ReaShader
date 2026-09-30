@@ -15,7 +15,26 @@ using nlohmann::json;
 
 TEST_SUITE("host")
 {
-	TEST_CASE("a shader loaded with a project while active: restart, rescan, then its params and frames")
+	TEST_CASE("the param list: every id from the start, unused node slots hidden with no name")
+	{
+		host::Reaper reaper(host::builtPlugin());
+		reaper.createPlugin();
+
+		REQUIRE(reaper.params().size() == 1 + 16 * 40);
+		for (size_t i = 0; i < reaper.params().size(); i++)
+		{
+			INFO(i);
+			CHECK(reaper.params()[i].id == i); // index = id
+		}
+		CHECK_FALSE(reaper.params()[0].hidden);
+		CHECK(reaper.params()[1].hidden);
+		CHECK(reaper.params()[1].name.empty());
+
+		reaper.destroyPlugin();
+		test::checkNoProblems(reaper);
+	}
+
+	TEST_CASE("a project opened as REAPER opens it: activate, then the state; its params at once, no restart")
 	{
 		host::Reaper reaper(host::builtPlugin());
 		reaper.createPlugin();
@@ -24,23 +43,14 @@ TEST_SUITE("host")
 
 		reaper.loadState(test::projectState({ test::shaderNode(0, "brightness.frag") }));
 
-		// before the restart, frames already go through the shader, its params at their defaults (0)
-		host::Reaper::VideoResult pending = reaper.renderVideo(input, 0);
-		CHECK_FALSE(pending.passthrough);
-		CHECK(test::brightnessMismatches(input, pending.frame, 0) == 0);
-
-		reaper.idle(); // on_main_thread -> request_restart -> deactivate (rescan) -> activate
-		CHECK(reaper.restarts() == 1);
+		// observed: REAPER binds the project's envelopes right after the state: the params must be there now
+		CHECK(reaper.restarts() == 0);
 		CHECK(reaper.rescans() == 1);
-		CHECK(reaper.isActive());
-
-		REQUIRE(reaper.params().size() == 2);
-		CHECK(reaper.params()[0].name == "Audio Gain");
-		const host::Param* brightness = reaper.param("brightness: Brightness");
+		REQUIRE(reaper.visibleParams().size() == 2);
+		CHECK(reaper.visibleParams()[0].name == "Audio Gain");
+		const host::Param* brightness = reaper.param("[A] brightness: Brightness");
 		REQUIRE(brightness != nullptr);
-		// ids are stable, not indices: node 0's first param is 1
-		CHECK(reaper.params()[0].id == 0);
-		CHECK(brightness->id == 1);
+		CHECK(brightness->id == 1); // node 0's first slot
 		CHECK(brightness->defaultValue == 0);
 		CHECK(brightness->minValue == 0);
 		CHECK(brightness->maxValue == 1);
@@ -54,16 +64,40 @@ TEST_SUITE("host")
 		test::checkNoProblems(reaper);
 	}
 
+	TEST_CASE("an envelope on a node's param, bound before the project's state loads, drives it at once")
+	{
+		host::Reaper reaper(host::builtPlugin());
+		reaper.createPlugin();
+		reaper.activate();
+
+		// REAPER binds the project's envelope to its id as it loads: the id exists, still unused (hidden)
+		const clap_id brightness = 1 + 40; // node B's first slot
+		REQUIRE(reaper.params()[brightness].hidden);
+		reaper.automate(brightness, 0.3);
+
+		reaper.loadState(test::projectState({ test::shaderNode(1, "brightness.frag") }));
+		CHECK(reaper.param("[B] brightness: Brightness")->id == brightness);
+		CHECK(reaper.param("[B] brightness: Brightness")->value == 0.3);
+
+		host::Frame input = test::gradientFrame(64, 8);
+		CHECK(test::brightnessMismatches(input, reaper.renderVideo(input, 0).frame, 0.3) == 0);
+		CHECK(reaper.restarts() == 0);
+
+		reaper.destroyPlugin();
+		test::checkNoProblems(reaper);
+	}
+
 	TEST_CASE("a shader loaded before activation needs no restart")
 	{
 		host::Reaper reaper(host::builtPlugin());
 		reaper.createPlugin();
 
 		reaper.loadState(test::projectState({ test::shaderNode(0, "brightness.frag") }));
-		reaper.idle(); // inactive: the params are applied right away
+		REQUIRE(reaper.visibleParams().size() == 2); // there as soon as the state is loaded
+		reaper.idle();
 		CHECK(reaper.restarts() == 0);
 		CHECK(reaper.rescans() == 1);
-		const host::Param* brightness = reaper.param("brightness: Brightness");
+		const host::Param* brightness = reaper.param("[A] brightness: Brightness");
 		REQUIRE(brightness != nullptr);
 
 		reaper.activate(); // the renderer installs the kept chain in init()
@@ -83,7 +117,7 @@ TEST_SUITE("host")
 		reaper.loadState(test::projectState({ test::shaderNode(0, "brightness.frag") }));
 		reaper.idle();
 		reaper.activate();
-		const host::Param* brightness = reaper.param("brightness: Brightness");
+		const host::Param* brightness = reaper.param("[A] brightness: Brightness");
 		REQUIRE(brightness != nullptr);
 		clap_id id = brightness->id;
 		host::Frame input = test::gradientFrame(64, 8);
@@ -116,12 +150,13 @@ TEST_SUITE("host")
 		reaper.idle();
 		reaper.activate();
 
-		// in chain order, after Audio Gain; the bypassed node's param is there too
-		REQUIRE(reaper.params().size() == 5);
-		CHECK(reaper.params()[1].id == 1 + 2 * 64);
-		CHECK(reaper.params()[2].id == 1);
-		CHECK(reaper.params()[3].id == 1 + 5 * 64);
-		CHECK(reaper.params()[4].id == 1 + 64);
+		// in id order (node uid order), after Audio Gain; the bypassed node's param is there too
+		std::vector<host::Param> visible = reaper.visibleParams();
+		REQUIRE(visible.size() == 5);
+		CHECK(visible[1].id == 1);
+		CHECK(visible[2].id == 1 + 40);
+		CHECK(visible[3].id == 1 + 2 * 40);
+		CHECK(visible[4].id == 1 + 5 * 40);
 
 		host::Frame input = test::gradientFrame(64, 8);
 		host::Reaper::VideoResult result = reaper.renderVideo(input, 0);
@@ -145,16 +180,17 @@ TEST_SUITE("host")
 			test::projectState({ test::shaderNode(0, "brightness.frag"), test::lutNode(1, "invert", inverted) }));
 		reaper.idle();
 		reaper.activate();
-		const clap_id brightness = reaper.param("brightness: Brightness")->id;
-		const clap_id mix = reaper.param("invert: Mix")->id;
+		const clap_id brightness = reaper.param("[A] brightness: Brightness")->id;
+		const clap_id mix = reaper.param("[B] invert: Mix")->id;
 
 		// the same nodes, the other way round
 		reaper.loadState(
 			test::projectState({ test::lutNode(1, "invert", inverted), test::shaderNode(0, "brightness.frag") }));
 		reaper.idle();
-		CHECK(reaper.param("brightness: Brightness")->id == brightness);
-		CHECK(reaper.param("invert: Mix")->id == mix);
-		CHECK(reaper.params()[1].id == mix); // the indices changed
+		// the labels and the ids stay
+		CHECK(reaper.param("[A] brightness: Brightness")->id == brightness);
+		CHECK(reaper.param("[B] invert: Mix")->id == mix);
+		CHECK(reaper.restarts() == 0);
 
 		reaper.automate(brightness, 0.2);
 		reaper.automate(mix, 1.0);
@@ -178,7 +214,7 @@ TEST_SUITE("host")
 				true));
 			reaper.idle();
 
-			const host::Param* brightness = reaper.param("brightness: Brightness");
+			const host::Param* brightness = reaper.param("[A] brightness: Brightness");
 			const host::Param* gain = reaper.param("Audio Gain");
 			REQUIRE(brightness != nullptr);
 			REQUIRE(gain != nullptr);
@@ -198,7 +234,7 @@ TEST_SUITE("host")
 		reaper.loadState(saved);
 		reaper.idle();
 
-		const host::Param* brightness = reaper.param("brightness: Brightness");
+		const host::Param* brightness = reaper.param("[A] brightness: Brightness");
 		const host::Param* gain = reaper.param("Audio Gain");
 		REQUIRE(brightness != nullptr);
 		REQUIRE(gain != nullptr);
@@ -284,9 +320,9 @@ TEST_SUITE("host")
 			// the LUT node's Mix at 0: the frame as if there were no LUT; 0.5: halfway
 			if (std::string(c.mode) == "after")
 			{
-				const host::Param* mix = reaper.param("invert: Mix");
+				const host::Param* mix = reaper.param("[B] invert: Mix");
 				REQUIRE(mix != nullptr);
-				CHECK(mix->id == 65); // LUT Mix's id before chains
+				CHECK(mix->id == 1 + 40); // node 1's first slot
 				reaper.automate(mix->id, 0.0);
 				CHECK(test::brightnessMismatches(input, reaper.renderVideo(input, 0).frame, 0.2) == 0);
 				reaper.automate(mix->id, 0.5);
@@ -301,6 +337,31 @@ TEST_SUITE("host")
 		}
 	}
 
+	TEST_CASE("the host sees every param as 0..1 over its range, and its real value as text")
+	{
+		host::Reaper reaper(host::builtPlugin());
+		reaper.createPlugin();
+		reaper.loadState(test::projectState({ test::shaderNode(0, "pixelate.frag") }, { { "0/blockSize", 64.5 } }));
+		reaper.activate();
+
+		// pixelate.frag: //@param blockSize 'Block size (px)' 16 1 128
+		const host::Param* blockSize = reaper.param("[A] pixelate: Block size (px)");
+		REQUIRE(blockSize != nullptr);
+		CHECK(blockSize->minValue == 0);
+		CHECK(blockSize->maxValue == 1);
+		CHECK(blockSize->value == doctest::Approx(0.5)); // (64.5 - 1) / 127
+		CHECK(reaper.paramText(blockSize->id, 0.5) == "64.500");
+		CHECK(reaper.paramFromText(blockSize->id, "128") == doctest::Approx(1.0));
+
+		// automation at 1.0 is the top of the range
+		reaper.automate(blockSize->id, 1.0);
+		reaper.processAudio(1, 0.0f);
+		CHECK(nlohmann::json::parse(reaper.saveState())["params"]["0/blockSize"] == doctest::Approx(128.0));
+
+		reaper.destroyPlugin();
+		test::checkNoProblems(reaper);
+	}
+
 	TEST_CASE("an unrecognized state keeps the defaults")
 	{
 		host::Reaper reaper(host::builtPlugin());
@@ -308,8 +369,8 @@ TEST_SUITE("host")
 		reaper.loadState("not a ReaShader state");
 		reaper.idle();
 
-		REQUIRE(reaper.params().size() == 1);
-		CHECK(reaper.params()[0].name == "Audio Gain");
+		REQUIRE(reaper.visibleParams().size() == 1);
+		CHECK(reaper.visibleParams()[0].name == "Audio Gain");
 
 		reaper.activate();
 		host::Frame input = test::gradientFrame(32, 4);

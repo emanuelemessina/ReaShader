@@ -376,6 +376,7 @@ namespace host
 
 	void Reaper::automate(clap_id id, double value)
 	{
+		envelopes[id] = value;
 		for (Param& param : paramList)
 			if (param.id == id)
 				param.value = value;
@@ -446,12 +447,44 @@ namespace host
 		return paramList;
 	}
 
+	std::vector<Param> Reaper::visibleParams() const
+	{
+		// observed (2026-09-30): REAPER leaves a hidden param with an empty name out of its menus; a hidden
+		// one with a name is listed greyed. Both are left out of the generic UI.
+		std::vector<Param> visible;
+		for (const Param& p : paramList)
+			if (!p.hidden)
+				visible.push_back(p);
+		return visible;
+	}
+
 	const Param* Reaper::param(const std::string& name) const
 	{
 		for (const Param& p : paramList)
-			if (p.name == name)
+			if (!p.hidden && p.name == name)
 				return &p;
 		return nullptr;
+	}
+
+	std::vector<clap_id> Reaper::cleared() const
+	{
+		return clearedIds;
+	}
+
+	std::string Reaper::paramText(clap_id id, double value) const
+	{
+		char text[256] = {};
+		if (!pluginParams->value_to_text(plugin, id, value, text, sizeof(text)))
+			problem(std::format("params.value_to_text({}) failed", id));
+		return text;
+	}
+
+	double Reaper::paramFromText(clap_id id, const std::string& text) const
+	{
+		double value = 0;
+		if (!pluginParams->text_to_value(plugin, id, text.c_str(), &value))
+			problem(std::format("params.text_to_value({}) failed", id));
+		return value;
 	}
 
 	double Reaper::pluginValue(clap_id id) const
@@ -519,7 +552,12 @@ namespace host
 			double value = info.default_value;
 			if (!pluginParams->get_value(plugin, info.id, &value))
 				problem(std::format("params.get_value({}) failed", info.id));
-			scanned.push_back({ info.id, info.name, info.min_value, info.max_value, info.default_value, value });
+			// observed (2026-09-30): an envelope stays bound to its id across rescans, hidden or not
+			auto envelope = envelopes.find(info.id);
+			if (envelope != envelopes.end())
+				value = envelope->second;
+			scanned.push_back({ info.id, info.name, info.min_value, info.max_value, info.default_value, value,
+								(info.flags & CLAP_PARAM_IS_HIDDEN) != 0 });
 		}
 		paramList = std::move(scanned);
 	}
@@ -579,13 +617,21 @@ namespace host
 		auto* reaper = static_cast<Reaper*>(clapHost->host_data);
 		if (std::this_thread::get_id() != reaper->mainThread)
 			reaper->problem("params.rescan called off the main thread");
+		// RESCAN_INFO and RESCAN_VALUES may come while active (observed: REAPER shows, hides and renames params)
 		if ((flags & CLAP_PARAM_RESCAN_ALL) && reaper->active)
 			reaper->problem("params.rescan(ALL) called while active");
 		reaper->rescanCount++;
 		reaper->scanParams();
 	}
 
-	void Reaper::paramsClear(const clap_host_t*, clap_id, clap_param_clear_flags) {}
+	// observed (2026-09-30): REAPER keeps an id's envelope and modulation after params.clear(ALL)
+	void Reaper::paramsClear(const clap_host_t* clapHost, clap_id id, clap_param_clear_flags)
+	{
+		auto* reaper = static_cast<Reaper*>(clapHost->host_data);
+		if (std::this_thread::get_id() != reaper->mainThread)
+			reaper->problem("params.clear called off the main thread");
+		reaper->clearedIds.push_back(id);
+	}
 
 	void Reaper::paramsRequestFlush(const clap_host_t* clapHost)
 	{

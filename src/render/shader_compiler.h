@@ -48,6 +48,7 @@ namespace ReaShader::gpu
 		std::vector<uint32_t> spirv;
 		std::vector<ShaderParamField> params;
 		uint32_t paramsSize = 0; // bytes
+		bool samplesLut = false; // main() reaches iChannel1 (directly or through iLut); from the SPIR-V, not stored
 	};
 
 	// Throws std::runtime_error with the compiler's messages (line numbers match `source`)

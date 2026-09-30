@@ -17,6 +17,27 @@ using namespace ReaShader;
 
 TEST_SUITE("shader_compiler")
 {
+	TEST_CASE("a shader samples a LUT only if main() reaches iChannel1, directly or through iLut; kept by fromJson")
+	{
+		auto samples = [](const char* source) {
+			gpu::CompiledShader shader = gpu::compileShader(source, "lut.glsl");
+			CHECK(gpu::fromJson(gpu::toJson(shader)).samplesLut == shader.samplesLut);
+			return shader.samplesLut;
+		};
+		CHECK(samples("void main() { fragColor = vec4(iLut(texture(iChannel0, uv).rgb), 1); }\n"));
+		CHECK(samples("void main() { fragColor = texture(iChannel1, vec3(uv, 0)); }\n"));
+		CHECK_FALSE(samples("void main() { fragColor = texture(iChannel0, uv); }\n"));
+		// a helper that uses it, never called from main()
+		CHECK_FALSE(
+			samples("vec3 unused(vec3 c) { return iLut(c); }\nvoid main() { fragColor = texture(iChannel0, uv); }\n"));
+		CHECK(
+			gpu::compileShader(test::readFile(test::repoPath("src/shaders/examples/lut_split.frag")), "lut_split.frag")
+				.samplesLut);
+		CHECK_FALSE(gpu::compileShader(test::readFile(test::repoPath("src/shaders/examples/brightness.frag")),
+									   "brightness.frag")
+						.samplesLut);
+	}
+
 	TEST_CASE("the shipped examples compile")
 	{
 		for (const char* example :

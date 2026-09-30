@@ -175,13 +175,13 @@ namespace ReaShader
 		uint32_t params_count(const clap_plugin_t* plugin)
 		{
 			auto* state = static_cast<ClapPluginState*>(plugin->plugin_data);
-			return state->plugin->automatableParamCount();
+			return state->plugin->paramCount();
 		}
 
 		bool params_get_info(const clap_plugin_t* plugin, uint32_t index, clap_param_info_t* info)
 		{
 			auto* state = static_cast<ClapPluginState*>(plugin->plugin_data);
-			return state->plugin->getAutomatableParamInfo(index, info);
+			return state->plugin->getParamInfo(index, info);
 		}
 
 		bool params_get_value(const clap_plugin_t* plugin, clap_id id, double* value)

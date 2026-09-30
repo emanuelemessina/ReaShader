@@ -213,6 +213,26 @@ vec3 iLut(vec3 color)
 				throw std::runtime_error(error);
 		}
 
+		// Whether the entry point statically uses iChannel1. SPIRV-Reflect lists an entry point's bindings by
+		// walking its call graph, so the preamble's iLut() counts only when main() calls it.
+		bool samplesLut(const std::vector<uint32_t>& spirv)
+		{
+			SpvReflectShaderModule module{};
+			if (spvReflectCreateShaderModule(spirv.size() * sizeof(uint32_t), spirv.data(), &module) !=
+				SPV_REFLECT_RESULT_SUCCESS)
+				throw std::runtime_error("Shader reflection failed");
+
+			uint32_t count = 0;
+			spvReflectEnumerateEntryPointDescriptorBindings(&module, "main", &count, nullptr);
+			std::vector<SpvReflectDescriptorBinding*> bindings(count);
+			spvReflectEnumerateEntryPointDescriptorBindings(&module, "main", &count, bindings.data());
+
+			bool used = false;
+			for (const SpvReflectDescriptorBinding* binding : bindings)
+				used = used || (binding->set == 0 && binding->binding == kLutBinding);
+			spvReflectDestroyShaderModule(&module);
+			return used;
+		}
 	} // namespace
 
 	CompiledShader compileShader(const std::string& source, const std::string& name)
@@ -220,6 +240,7 @@ vec3 iLut(vec3 color)
 		CompiledShader shader;
 		shader.spirv = compileGlsl(withPreamble(source), shaderc_fragment_shader, name);
 		reflect(shader, parseAnnotations(source));
+		shader.samplesLut = samplesLut(shader.spirv);
 		return shader;
 	}
 
@@ -266,6 +287,7 @@ vec3 iLut(vec3 color)
 		}
 		if (shader.spirv.empty())
 			throw std::runtime_error("Compiled shader has no code");
+		shader.samplesLut = samplesLut(shader.spirv);
 		return shader;
 	}
 } // namespace ReaShader::gpu

@@ -65,7 +65,7 @@ Listed in `plugin/plugin.h`:
 
 ### `clap.params`
 
-- **Which params the host sees:** params with `automatable = true` are exposed as CLAP params: Audio Gain (host only, not in the web UI) and every chain node's params (a shader's sliders, a LUT's Mix). Their CLAP ids are stable ids, not their index in the list (see [Parameters](#6-parameters)).
+- **Which params the host sees:** a fixed list of 641 CLAP params, index = id (see [Parameters](#6-parameters)): Audio Gain (host only, not in the web UI), then 40 slots per chain node uid (a shader's sliders, a LUT's Mix). Every id exists from the moment the plugin is created. A slot no node uses is `CLAP_PARAM_IS_HIDDEN` with an empty name, which REAPER leaves out of its menus and generic UI (see [gotchas.md](gotchas.md#reaper)).
 - **Host automation** arrives in `process()`/`flush()` (`handleParamEvents()`) and goes into `applyHostParamValue()`, which is lock-free. It then requests a main-thread callback, and `onMainThread()` echoes the values to the web UI.
 - **Web UI edits** are flagged with `ParamList::flagForHost()`, plus `host_params->request_flush()`. `takeParamChangeForHost()` drains them into `out_events`, lock-free.
 
@@ -99,7 +99,7 @@ One JSON document, version 4:
 
 The plugin's video effect is an ordered chain of up to 16 nodes (`ReaShaderPlugin::Node`). Each node is a stored shader or a stored LUT:
 
-- **`uid`:** 0..15, the smallest free one when the node is added, and the node's for its whole life. Its params' ids (`nodeParamId(uid, slot)`) and names (`"<uid>/<member>"`) derive from it, so moving a node never moves its automation.
+- **`uid`:** 0..15, the node's for its whole life, shown as a letter tag (`A`..`P`, `tagOf`). Its params' ids (`nodeParamId(uid, slot)`), names (`"<uid>/<member>"`) and labels derive from it, so moving a node never moves its automation. A new node takes the smallest free uid, so a removed node's uid (and its param ids and letter) comes back with the next node, on purpose: REAPER keeps a removed node's envelopes and modulation on its ids (see below), and it's better to see that at once than after 16 nodes.
 - **`name` + `data`:** the stored file's name and its JSON, saved in state, and the parsed form (`shared_ptr<const CompiledShader>` or `shared_ptr<const LutData>`) that goes to the renderer. The pointer changes only when the content does, so the renderer keeps the GPU objects of nodes that didn't change.
 - **`bypass`:** the node is left out of the frame, but keeps its params.
 - **A shader node's LUT** (`lutName` + `lutData`): what the shader samples as `iChannel1` (see [the shader contract](#8-the-shader-contract)); none means an identity.
@@ -108,12 +108,13 @@ The plugin's video effect is an ordered chain of up to 16 nodes (`ReaShaderPlugi
 
 1. under `chainMutex`, it copies the chain and runs `edit` on the copy;
 2. it hands the result to the renderer (`setChain`, with each node's param indices, see [The renderer](#7-the-renderer));
-3. on success it keeps the copy, and when nodes were added, removed, moved or swapped (`paramsChange`) it replaces the nodes' params (`_setNodeParams`, below). Bypass and a shader's LUT change no params.
+3. on success it keeps the copy, and when nodes were added, removed, moved or swapped (`paramsChange`) it replaces the nodes' params right away (`ParamList::replaceNodeParams`), then tells the host (below). Bypass and a shader's LUT change no params.
 
 On any error (from `edit` or the renderer), the chain stays as it was, and the error goes to the UI as `chainStatus`.
 
 **Stored shaders and LUTs:**
 
+- **At most 40 sliders per shader** (`Parameters::kNodeSlots`): an upload with more is rejected and not stored, and a stored or saved one with more (e.g. from an older version) is never added, swapped in or loaded; the error goes to the UI.
 - **Compiled or parsed once, on upload (the only place):** `_upload()` runs `gpu::compileShader` or `gpu::parseCube` (`render/lut_file.*`), writes `resources/shaders/compiled/<stem>.json` or `resources/luts/<stem>.json`, then appends a node with it. On a full chain the file is still stored.
 - **LUTs:** only `.cube` files are read. A 1D LUT is baked into a 33³ cube and a `DOMAIN` other than 0..1 is resampled onto 0..1, so the stored form is always a 0..1 cube: `{ version, title, size, data }`, where `data` is base64 of half-float RGB (`util/base64.*`).
 - **The lists** are the `*.json` files in `util::paths::compiledShadersDir()` and `util::paths::lutsDir()`. Nodes are added (`nodeAdd`) or swapped (`nodeSet`) by name, and names from the UI are reduced to a file name (no paths).
@@ -121,17 +122,17 @@ On any error (from `edit` or the renderer), the chain stays as it was, and the e
 
 **Status:** every outcome goes to the UI as `chainStatus`: what was done (`Added tint`, `Moved invert`, ...) or the error. The UI itself shows `busy` (a spinner) while it waits for an upload.
 
-### Nodes' params are host params (restart + rescan)
+### Nodes' params are host params (a fixed list, no restarts)
 
-CLAP allows the param list to change only while the plugin is deactivated. So:
+CLAP allows the param list to change size (`CLAP_PARAM_RESCAN_ALL`) only while the plugin is deactivated, and REAPER opens a project by activating the plugin, then loading its state, then binding the project's envelopes by id. So the list never changes size: every node slot exists from the start, and a chain change only renames, shows, hides and sets slots, which the host takes while active:
 
-1. `_setNodeParams()`, called from any thread, stores the new params as pending and requests a main-thread callback.
-2. `onMainThread()` applies them now if the plugin is inactive, or else calls `host->request_restart()`.
-3. On restart, the host's `deactivate()` applies them.
+1. `_editChain` replaces the nodes' params right away (`ParamList::replaceNodeParams`), from any thread, and requests a main-thread callback.
+2. `_notifyHostParams()` (from `onMainThread()`, or directly in `loadState()`, which runs on the main thread) calls `host_params->rescan(CLAP_PARAM_RESCAN_INFO | CLAP_PARAM_RESCAN_VALUES)`: new names and visibility, and new values.
 
-Applying means `ParamList::replaceNodeParams()` + `host_params->rescan(CLAP_PARAM_RESCAN_ALL)` + a snapshot to the UI. A loaded state's values (`savedNodeValues`) apply once, then are dropped. While params are pending, frames give every node's params their defaults.
+- **A loaded state's values** apply with its params, in the same call (`ParamsChange::Load`), so a project's envelopes find their ids and values as soon as `loadState()` returns, whether the plugin is active or not.
+- **Params that go away** after an edit from the UI (a node removed, or swapped for content whose param at that id has another name) are cleared in the host with `host_params->clear(id, CLAP_PARAM_CLEAR_ALL | _AUTOMATIONS | _MODULATIONS)`, before the rescan, so its automation doesn't drive whatever takes the id later (`ParamsChange::Edit`). REAPER keeps them anyway (see [gotchas.md](gotchas.md#reaper)). A loaded state clears nothing (`ParamsChange::Load`): the project's envelopes come with it.
 
-**Params per node** (`paramsOfNodes`): a shader node gets one param per slider of its `Params` block, a LUT node one `Mix` (0 = the frame as is, 1 = fully through the LUT, default 1; in a shader node's LUT, blending is up to the shader). Names are `"<uid>/<member>"` (`"3/brightness"`, `"5/mix"`), labels `"<node name>: <label>"` (`"brightness: Brightness"`), with no position in them.
+**Params per node** (`paramsOfNodes`): a shader node gets one param per slider of its `Params` block, a LUT node one `Mix` (0 = the frame as is, 1 = fully through the LUT, default 1; in a shader node's LUT, blending is up to the shader). Names are `"<uid>/<member>"` (`"3/brightness"`, `"5/mix"`), labels `"[<tag>] <node name>: <label>"` (`"[B] brightness: Brightness"`): the tag tells the same shader twice apart in REAPER's windows, and never changes, because REAPER keeps the name an envelope had when it was created. The web UI shows labels without the prefix, which the card already shows.
 
 ### Rendering device
 
@@ -158,7 +159,7 @@ The GPU choice isn't a host param: it lives in state and the web UI. Changing it
 REAPER calls `ReaShaderPlugin::_processVideoFrame` (`plugin/plugin.cpp`), which `activate()` installs:
 
 1. `vproc->renderInputVideoFrame(0, 'RGBA')` gets the upstream frame. It is immutable, and is `Release()`d before returning.
-2. Param values at video time come from `parmlist` (`[0]` = wet/dry, the param at index `i` at `[i + 1]`), falling back to `ParamList::valueAt()` for params REAPER doesn't know yet.
+2. Param values at video time come from `parmlist` (`[0]` = wet/dry, then param `i` at `[i + 1]`, index = id), falling back to `ParamList::value()` for any REAPER doesn't pass.
 3. `ReaShaderRenderer::renderFrame()`, under `try_lock(frameMutex)`:
    1. (re)creates `FrameTargets` if the size or row stride changed;
    2. `memcpy`s into the mapped upload buffer, and writes the shader's `Params` into its mapped UBO;
@@ -194,7 +195,7 @@ Messages are plain JSON objects with a `"type"` field. In C++ they're documented
 
 | Direction | Message           | Payload / effect                                                                                                                                                                                                                                                                                            |
 | --------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| to UI     | `snapshot`        | `{ version, track, params, devices, logo, chain, shaders, luts }`, with `chain` = `[{ uid, kind, name, bypass, lut }]` (`lut`: a shader node's LUT name). The UI rebuilds itself from it (except the status line), and its shader and LUT lists are rescanned each time. Sent on `ready`, activate, state load, device changes and chain changes |
+| to UI     | `snapshot`        | `{ version, track, params, devices, logo, chain, shaders, luts }`, with `chain` = `[{ uid, tag, kind, name, bypass, lut, samplesLut }]` (shader nodes only: `lut`, its LUT's name, and `samplesLut`, whether the shader uses a LUT at all; the UI shows a shader's LUT selector only when it does, or while it has one). The UI rebuilds itself from it (except the status line), and its shader and LUT lists are rescanned each time. Sent on `ready`, activate, state load, device changes and chain changes |
 | to UI     | `paramValue`      | `{ id, value }`: host automation                                                                                                                                                                                                                                                                            |
 | to UI     | `chainStatus`     | `{ status, state }`, with state = `busy`/`ok`/`error`                                                                                                                                                                                                                                                       |
 | from UI   | `ready`           | —                                                                                                                                                                                                                                                                                                           |
@@ -215,15 +216,14 @@ Messages are plain JSON objects with a `"type"` field. In C++ they're documented
 
 `src/plugin/params.*`:
 
-- **`Param`** is one plain struct: id, name (the state key), label (display), group (`Main` or `Node`), units, default, min, max, automatable, and its node's uid (group `Node`). Values are plain numbers within min..max. The defaults are 0..1, and shader params use their `//@param` range. CLAP param info uses the same range.
-- **Index and id are different things:**
-  - The **index** is the param's position in the list: the CLAP param order (`params.get_info`) and REAPER's `parmlist` order. The fixed param comes first (`DefaultIndex`): Audio Gain (group `Main`, not shown in the web UI). Then come the chain nodes' (group `Node`), in chain order, from `DefaultCount` on.
-  - The **id** is the CLAP param id, used by host automation, the web UI's `paramValue` and `ParamList::value()`. It stays the same when the list changes around the param. Audio Gain is id 0, and a node's params get `nodeParamId(uid, slot)` = `1 + uid * 64 + slot`: node 0's are ids 1..64, node 1's 65..128, and so on.
+- **`Param`** is one plain struct: id, name (the state key), label (display), group (`Main` or `Node`), units, default, min, max, and its node's uid (a used `Node` slot). An unused slot has no node, name or label (`Param::used()`). A param's range is min..max: 0..1 by default, a shader param's `//@param` range.
+- **The host sees every param as 0..1** over its range (`Param::toHost` / `toReal`): CLAP lets a param's range and default change only with `rescan(ALL)`, which isn't allowed while active, so the host keeps the range it first scanned. `ParamList` stores host values; the plugin converts at the edges: the web UI, the state and `realValue()` use real values, `value_to_text` shows the real value in the host (`64.500`, or `50.0 %` for `%` params) and `text_to_value` reads one, and the renderer maps a shader's slots onto its fields' ranges.
+- **A fixed list, index = id** (`kParamCount` = 641): Audio Gain is id 0 (group `Main`, not shown in the web UI), then 16 node uids × 40 slots (group `Node`): a node's params get `nodeParamId(uid, slot)` = `1 + uid * 40 + slot` (node 0's are ids 1..40, node 1's 41..80, and so on). 40 matches REAPER's own video processor, and fits about 99% of shaders in public collections (ISF, OBS shaderfilter, DCTL). The id is the CLAP param id, used by host automation, the web UI's `paramValue`, `ParamList::value()` and REAPER's `parmlist`, and it never changes for a node's param. REAPER lists the used params in id order, i.e. by node tag, not chain order.
 - **`ParamList`:**
-  - Metadata is behind a mutex.
-  - Values are a fixed array of `std::atomic<double>` by id (`kMaxIds` = 1 + 16 nodes × 64), so the audio and video threads never lock. Lock-free maps go both ways: `contains(id)`, and `valueAt(index)` for the video thread.
-  - `replaceNodeParams()` swaps the `Node` group whenever the chain's nodes change. Each value comes from the loaded state by name, else from the param that had the same id and name (so a moved node keeps its values, clamped to the new range), else from its default.
-  - A node keeps at most 64 params (`kNodeSlots`), and the list at most `maxCount` = 256; extra ones are dropped with a warning.
+  - Metadata is behind a mutex. `at(id)` gives any slot, `find(id)` and `list()` the used ones.
+  - Values are a fixed array of `std::atomic<double>` by id (host values), and so is `used(id)`, so the audio and video threads never lock.
+  - `replaceNodeParams()` sets every node slot whenever the chain's nodes change, and returns the ids that went away (or now hold another param). Each value comes from the loaded state by name, else from the param that had the same id and name (so a moved node keeps its values, clamped to the new range), else from its default.
+  - A node keeps at most 40 params (`kNodeSlots`). The plugin never gets that far: a shader with more sliders is rejected wherever it would enter the chain (`checkSliders`: on upload, where it isn't stored; `nodeAdd`; `nodeSet`; a loaded state, where the node is left out and the UI told), never loaded in part.
 
 ## 7. The renderer
 
@@ -262,7 +262,7 @@ Implemented in `shader_compiler.cpp` (`kShaderPreamble`). The user-facing guide 
   - `in vec2 uv` (0..1, top left = 0,0);
   - `out vec4 fragColor`;
   - `sampler2D iChannel0` (the input frame);
-  - `sampler3D iChannel1` (the shader node's LUT, otherwise an identity) and `vec3 iLut(vec3 color)`, which samples it at the texel centers;
+  - `sampler3D iChannel1` (the shader node's LUT, otherwise an identity) and `vec3 iLut(vec3 color)`, which samples it at the texel centers. `CompiledShader::samplesLut` says whether `main()` reaches `iChannel1` (directly or through `iLut`): SPIRV-Reflect's entry-point bindings, computed on compile and on `fromJson`, never stored;
   - push constants `iResolution`, `iTime`, `iFrameRate`, `iFrame`.
 
   A user `#version` is dropped, and `#extension` lines are hoisted above the preamble. `#line 1` keeps error line numbers matching the user's file.
