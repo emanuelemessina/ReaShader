@@ -3,6 +3,7 @@
     "git.ignoredRepositories": [
         "external/boxer",
         "external/clap",
+        "external/doctest",
         "external/glm",
         "external/json",
         "external/reaper-sdk",
