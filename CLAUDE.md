@@ -33,15 +33,9 @@ How the code got here (the VST3 → CLAP migration, rejected alternatives, past 
 
 ## Open items
 
-**LUT support (`.cube`) is done** (2026-09-30; how it was built is in `.claude/history.md`). Planned next stage, when the user asks for it: **arbitrary chains of shaders and LUTs in one instance**. The renderer already runs any list of passes (`FrameTargets::recordPasses`). What's left:
-- a list of nodes in the plugin and in state;
-- param namespacing per node (e.g. `2: Brightness`), with the restart + rescan on every structural change and the `ParamList::maxCount` = 256 limit;
-- a list editor in the UI (add, remove, reorder, bypass);
-- a node index in protocol messages.
+**LUT support (`.cube`) is done** (2026-09-30; how it was built is in `.claude/history.md`). Next feature: **arbitrary chains of shaders and LUTs in one instance**. The detailed plan, with design, batches, tests and open questions, is in [.claude/plan-chains.md](.claude/plan-chains.md): read it first and follow it batch by batch. Other LUT formats are not planned (`.cube` only). **Batch 1 (stable param ids) is done** (2026-09-30); next is batch 2 (renderer chain).
 
-Other LUT formats (`.3dl`, HaldCLUT PNG) were deferred.
-
-**The test application is complete** (56 tests). What's left is keeping the fake host faithful to REAPER.
+**The test application is complete** (60 tests). What's left is keeping the fake host faithful to REAPER.
 
 **Host test rules:** host tests talk to the plugin only through CLAP and the REAPER extension, with no test hooks in the plugin. A shader arrives through state (`test::projectState`, which compiles with the linked `gpu::compileShader` as tooling).
 
@@ -61,7 +55,7 @@ When one is verified, change the host, mark it *observed*, and update `doc/testi
 - the debug build with sync validation on (performance and `rs.log` in REAPER);
 - the rebuilt installer: uninstall asking about uploaded shaders and LUTs, and no tasks page;
 - all of LUT support (the manual test in `doc/testing.md` §5, steps 6–8), including the `SHADER_READ` barrier change (`gpu.h`) on an Intel GPU;
-- the webview window-class patch (CMakeLists.txt, WebView): ReaShader and ReaShader (Debug) windows open in one REAPER session, with both rebuilt (the release through a new installer).
+- stable param ids (chains batch 1): host automation of LUT Mix and shader sliders, web UI slider edits reaching REAPER, and whether a project saved before it (LUT Mix was id 1, now 65; shader params were 2.., now 1..) keeps its automation envelopes.
 
 **Repo notes:**
 - `.claude/` is in `.gitignore`, but `.claude/history.md` is tracked (moved with `git mv`), so it's still committed. Whether it should stay tracked is the user's call.

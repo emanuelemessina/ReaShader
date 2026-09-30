@@ -75,7 +75,7 @@ namespace ReaShader
 		{
 			double time;
 			double frameRate;
-			const double* paramValues; // all the plugin's params, by id (at least the fixed ones)
+			const double* paramValues; // all the plugin's params, by index in the param list (at least the fixed ones)
 			size_t paramCount;
 		};
 		// false: nothing rendered (inactive, busy, failed, or no shader, LUT or logo): the caller passes the input through

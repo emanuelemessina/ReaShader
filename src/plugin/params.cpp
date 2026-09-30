@@ -32,20 +32,25 @@ namespace ReaShader::Parameters
 		};
 		for (const Param& p : params)
 			values[p.id] = p.defaultValue;
-		paramCount = params.size();
+		_index();
 	}
 
 	// -------- any thread, lock-free --------
 
 	double ParamList::value(Id id) const
 	{
-		return id < maxCount ? values[id].load() : 0.0;
+		return id < kMaxIds ? values[id].load() : 0.0;
 	}
 
 	void ParamList::setValue(Id id, double value)
 	{
-		if (id < maxCount)
+		if (id < kMaxIds)
 			values[id] = value;
+	}
+
+	bool ParamList::contains(Id id) const
+	{
+		return id < kMaxIds && indexOfId[id] >= 0;
 	}
 
 	size_t ParamList::count() const
@@ -53,9 +58,14 @@ namespace ReaShader::Parameters
 		return paramCount;
 	}
 
+	double ParamList::valueAt(size_t index) const
+	{
+		return index < paramCount ? values[idAt[index]].load() : 0.0;
+	}
+
 	void ParamList::flagForHost(Id id)
 	{
-		if (id >= maxCount)
+		if (!contains(id))
 			return;
 		flaggedForHost[id] = true;
 		anyFlaggedForHost = true;
@@ -67,13 +77,14 @@ namespace ReaShader::Parameters
 		if (!anyFlaggedForHost.exchange(false))
 			return false;
 
-		for (Id i = 0; i < paramCount; i++)
+		for (size_t i = 0; i < paramCount; i++)
 		{
-			if (flaggedForHost[i].exchange(false))
+			Id flagged = idAt[i];
+			if (flaggedForHost[flagged].exchange(false))
 			{
 				anyFlaggedForHost = true; // there may be more
-				id = i;
-				value = values[i];
+				id = flagged;
+				value = values[flagged];
 				return true;
 			}
 		}
@@ -91,9 +102,9 @@ namespace ReaShader::Parameters
 	std::optional<Param> ParamList::find(Id id) const
 	{
 		std::lock_guard lock(mutex);
-		if (id >= params.size())
+		if (!contains(id))
 			return std::nullopt;
-		return params[id];
+		return params[(size_t)indexOfId[id]];
 	}
 
 	std::optional<Param> ParamList::automatableAt(uint32_t index) const
@@ -123,20 +134,37 @@ namespace ReaShader::Parameters
 	{
 		std::lock_guard lock(mutex);
 
+		// the old shader's ids stop being params: drop their pending flags
+		for (size_t i = DefaultCount; i < params.size(); i++)
+			flaggedForHost[params[i].id] = false;
 		params.resize(DefaultCount);
+
+		uint32_t slot = 0;
 		for (Param& p : shaderParams)
 		{
-			if (params.size() >= maxCount)
+			if (slot >= kNodeSlots || params.size() >= maxCount)
 			{
 				LOG(WARNING, toConsole | toFile, "Params", "Too many shader params",
-					std::format("Only the first {} are kept", maxCount - DefaultCount));
+					std::format("Only the first {} are kept", slot));
 				break;
 			}
-			p.id = (Id)params.size();
+			p.id = nodeParamId(kShaderNode, slot++);
 			p.group = Group::Shader;
 			auto saved = savedValues.find(p.name);
 			values[p.id] = saved != savedValues.end() ? saved->second : p.defaultValue;
 			params.push_back(std::move(p));
+		}
+		_index();
+	}
+
+	void ParamList::_index()
+	{
+		for (auto& index : indexOfId)
+			index = -1;
+		for (size_t i = 0; i < params.size(); i++)
+		{
+			idAt[i] = params[i].id;
+			indexOfId[params[i].id] = (int32_t)i;
 		}
 		paramCount = params.size();
 	}

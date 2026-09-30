@@ -129,8 +129,10 @@ TEST_SUITE("protocol")
 		REQUIRE(snapshot.is_object());
 		CHECK_FALSE(snapshot["version"].get<std::string>().empty());
 		REQUIRE(snapshot["params"].size() == Parameters::DefaultCount);
-		CHECK(snapshot["params"][Parameters::AudioGain]["name"] == "Audio Gain");
-		CHECK(snapshot["params"][Parameters::LutMix]["name"] == "LUT Mix");
+		CHECK(snapshot["params"][Parameters::AudioGainIndex]["name"] == "Audio Gain");
+		CHECK(snapshot["params"][Parameters::AudioGainIndex]["id"] == Parameters::AudioGain);
+		CHECK(snapshot["params"][Parameters::LutMixIndex]["name"] == "LUT Mix");
+		CHECK(snapshot["params"][Parameters::LutMixIndex]["id"] == Parameters::LutMix);
 		CHECK(snapshot["logo"] == false);
 		CHECK(snapshot["shader"]["name"] == "");
 		CHECK(snapshot["shaders"] == json::array());
@@ -209,6 +211,8 @@ TEST_SUITE("protocol")
 		CHECK(snapshot["shaders"] == json::array({ "brightness" }));
 		REQUIRE(snapshot["params"].size() == Parameters::DefaultCount + 1);
 		CHECK(snapshot["params"][Parameters::DefaultCount]["label"] == "Brightness");
+		CHECK(snapshot["params"][Parameters::DefaultCount]["id"] ==
+			  Parameters::nodeParamId(Parameters::kShaderNode, 0));
 	}
 
 	TEST_CASE("a broken upload reports the error and keeps the current shader")
