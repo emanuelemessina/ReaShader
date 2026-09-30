@@ -32,8 +32,9 @@ TEST_SUITE("host")
 		CHECK(reaper.rescans() == 1);
 		CHECK(reaper.isActive());
 
-		REQUIRE(reaper.params().size() == 2);
+		REQUIRE(reaper.params().size() == 3);
 		CHECK(reaper.params()[0].name == "Audio Gain");
+		CHECK(reaper.params()[1].name == "LUT Mix");
 		const host::Param* brightness = reaper.param("Brightness");
 		REQUIRE(brightness != nullptr);
 		CHECK(brightness->defaultValue == 0);
@@ -97,14 +98,15 @@ TEST_SUITE("host")
 		test::checkNoProblems(reaper);
 	}
 
-	TEST_CASE("the state round-trips: shader, param values, logo")
+	TEST_CASE("the state round-trips: shader, LUT, param values, logo")
 	{
 		std::string saved;
 		{
 			host::Reaper reaper(host::builtPlugin());
 			reaper.createPlugin();
 			reaper.activate();
-			reaper.loadState(test::projectState("brightness.frag", true));
+			reaper.loadState(test::projectState("brightness.frag", true, nlohmann::json::object(),
+												test::projectLut("invert", test::invertLut(), "before")));
 			reaper.idle();
 
 			const host::Param* brightness = reaper.param("Brightness");
@@ -139,6 +141,8 @@ TEST_SUITE("host")
 		CHECK(second == first);
 		CHECK(first["logo"] == true);
 		CHECK(first["shader"]["name"] == "brightness");
+		CHECK(first["lut"]["name"] == "invert");
+		CHECK(first["lut"]["mode"] == "before");
 
 		reaper.destroyPlugin();
 		test::checkNoProblems(reaper);
@@ -174,6 +178,57 @@ TEST_SUITE("host")
 		test::checkNoProblems(reaper);
 	}
 
+	TEST_CASE("a LUT from a project: before or after the shader, or left to it; LUT Mix blends")
+	{
+		auto invert = [](double v) { return 255 - v; };
+		auto brighten = [](double v) { return test::brighten(v, 0.2); };
+		struct Case
+		{
+			const char* shader;
+			const char* mode;
+			std::function<double(double)> expected;
+		};
+		const Case cases[] = {
+			{ "brightness.frag", "before", [&](double v) { return brighten(invert(v)); } },
+			{ "brightness.frag", "after", [&](double v) { return invert(std::min(255.0, brighten(v))); } },
+			{ "brightness.frag", "shader", brighten }, // brightness.frag doesn't sample iChannel1
+			{ "", "shader", invert },				   // no shader: the LUT pass runs alone
+		};
+
+		host::Frame input = test::gradientFrame(64, 8);
+		for (const Case& c : cases)
+		{
+			INFO("shader '", c.shader, "', mode ", c.mode);
+			host::Reaper reaper(host::builtPlugin());
+			reaper.createPlugin();
+			reaper.loadState(test::projectState(c.shader, false, { { "brightness", 0.2 } },
+												test::projectLut("invert", test::invertLut(), c.mode)));
+			reaper.idle();
+			reaper.activate();
+
+			host::Reaper::VideoResult result = reaper.renderVideo(input, 0);
+			CHECK_FALSE(result.passthrough);
+			CHECK(test::mismatches(input, result.frame, c.expected) == 0);
+
+			// LUT Mix 0: the frame as if there were no LUT; 0.5: halfway
+			const host::Param* mix = reaper.param("LUT Mix");
+			REQUIRE(mix != nullptr);
+			if (std::string(c.mode) == "after")
+			{
+				reaper.automate(mix->id, 0.0);
+				CHECK(test::brightnessMismatches(input, reaper.renderVideo(input, 0).frame, 0.2) == 0);
+				reaper.automate(mix->id, 0.5);
+				CHECK(test::mismatches(input, reaper.renderVideo(input, 0).frame, [&](double v) {
+						  double brightened = std::min(255.0, brighten(v));
+						  return (brightened + invert(brightened)) / 2;
+					  }) == 0);
+			}
+
+			reaper.destroyPlugin();
+			test::checkNoProblems(reaper);
+		}
+	}
+
 	TEST_CASE("an unrecognized state keeps the defaults")
 	{
 		host::Reaper reaper(host::builtPlugin());
@@ -181,8 +236,9 @@ TEST_SUITE("host")
 		reaper.loadState("not a ReaShader state");
 		reaper.idle();
 
-		REQUIRE(reaper.params().size() == 1);
+		REQUIRE(reaper.params().size() == 2);
 		CHECK(reaper.params()[0].name == "Audio Gain");
+		CHECK(reaper.params()[1].name == "LUT Mix");
 
 		reaper.activate();
 		host::Frame input = test::gradientFrame(32, 4);

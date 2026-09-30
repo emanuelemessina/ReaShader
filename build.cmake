@@ -164,7 +164,7 @@ endif()
 
 # Resources:
 # - replaced folder by folder
-# - resources/shaders/compiled (uploaded shaders) is kept
+# - resources/shaders/compiled and resources/luts (uploaded shaders and LUTs) are kept
 
 foreach(RESOURCE_DIR resources/images resources/meshes resources/shaders/examples ui)
     file(REMOVE_RECURSE "${DEPLOY_DIR}/${RESOURCE_DIR}")

@@ -12,12 +12,15 @@
 #include "host/video.h"
 #include "support/support.h"
 
+#include "render/lut_file.h"
 #include "render/shader_compiler.h"
 
 #include <doctest/doctest.h>
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <filesystem>
+#include <functional>
 #include <string>
 
 namespace test
@@ -55,27 +58,46 @@ namespace test
 		return frame;
 	}
 
-	// pixels of `out` that differ from brightness.frag applied to `in` (more than 1 per channel)
-	inline int brightnessMismatches(const host::Frame& in, const host::Frame& out, double brightness)
+	// color channels of `out` further than 1 from expected(the same channel of `in`, 0..255); alpha must be unchanged
+	inline int mismatches(const host::Frame& in, const host::Frame& out, const std::function<double(double)>& expected)
 	{
 		if (out.width != in.width || out.height != in.height)
 			return in.width * in.height;
-		int mismatches = 0;
+		int count = 0;
 		for (int y = 0; y < in.height; y++)
 			for (int x = 0; x < in.width; x++)
 				for (int c = 0; c < 4; c++)
 				{
 					int source = in.at(x, y)[c];
-					int expected = c == 3 ? source : std::min(255, (int)(source + brightness * 0.5 * 255 + 0.5));
-					mismatches += std::abs(out.at(x, y)[c] - expected) > 1;
+					double want = c == 3 ? source : std::clamp(expected(source), 0.0, 255.0);
+					count += std::abs(out.at(x, y)[c] - want) > 1.0;
 				}
-		return mismatches;
+		return count;
+	}
+
+	// brightness.frag at `brightness`: out = in + brightness * 0.5
+	inline double brighten(double value, double brightness)
+	{
+		return value + brightness * 0.5 * 255;
+	}
+
+	// channels of `out` that differ from brightness.frag applied to `in`
+	inline int brightnessMismatches(const host::Frame& in, const host::Frame& out, double brightness)
+	{
+		return mismatches(in, out, [&](double v) { return brighten(v, brightness); });
+	}
+
+	// The LUT part of a project state: `lut` stored as the plugin stores it (it would have parsed it on upload)
+	inline nlohmann::json projectLut(const std::string& name, const ReaShader::gpu::LutData& lut, const std::string& mode)
+	{
+		return { { "name", name }, { "mode", mode }, { "data", ReaShader::gpu::toJson(lut) } };
 	}
 
 	// A project state as the plugin saves it: optionally with an example shader, compiled here (the plugin
-	// would have compiled it on upload), and the logo on or off
+	// would have compiled it on upload), the logo on or off, param values by name, and a LUT (projectLut)
 	inline std::string projectState(const std::string& exampleShader, bool logo,
-									nlohmann::json params = nlohmann::json::object())
+									nlohmann::json params = nlohmann::json::object(),
+									nlohmann::json lut = { { "name", "" }, { "mode", "after" }, { "data", nullptr } })
 	{
 		nlohmann::json compiled;
 		std::string name;
@@ -85,11 +107,12 @@ namespace test
 				readFile(repoPath("src/shaders/examples") / exampleShader), exampleShader));
 			name = std::filesystem::path(exampleShader).stem().string();
 		}
-		return nlohmann::json{ { "version", 2 },
+		return nlohmann::json{ { "version", 3 },
 							   { "params", params },
 							   { "device", 0 },
 							   { "logo", logo },
-							   { "shader", { { "name", name }, { "compiled", compiled } } } }
+							   { "shader", { { "name", name }, { "compiled", compiled } } },
+							   { "lut", lut } }
 			.dump();
 	}
 } // namespace test

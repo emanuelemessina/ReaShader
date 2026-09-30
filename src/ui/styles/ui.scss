@@ -128,7 +128,7 @@ fieldset{
     margin-bottom: 10px;
 }
 
-#shader .picker{
+.picker{
     display: flex;
     flex-wrap: wrap;
     align-items: stretch;
@@ -155,7 +155,7 @@ fieldset{
     }
 }
 
-#shaderStatus{
+.status{
     display: none;
     align-items: flex-start;
     gap: 8px;
@@ -287,6 +287,13 @@ fieldset{
         line-height: 1.6;
         cursor: pointer;
     }
+}
+
+#lut .modes{
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: 1.25rem;
+    margin-bottom: 4px;
 }
 
 @keyframes spin{

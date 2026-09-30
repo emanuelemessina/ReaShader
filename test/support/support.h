@@ -66,4 +66,8 @@ namespace test
 	};
 	void render(ReaShader::gpu::Context& context, ReaShader::gpu::FrameTargets& targets, TestFrame& input,
 				TestFrame& output, const RenderInputs& inputs);
+
+	// A LUT that inverts every channel. 33 points per side: the hardware's interpolation weights (8-bit on some
+	// GPUs) stay far below one 8-bit step, which a 2-point LUT like test/luts/invert.cube would not guarantee.
+	ReaShader::gpu::LutData invertLut();
 } // namespace test

@@ -99,3 +99,24 @@ The user's proposals from the cleanup's handoff (`doc/proposals.md`, now deleted
 - **A race in `ParamList::takeFlaggedForHost`, found while writing the `params` tests and fixed.**
   - **The bug:** the "anything flagged" marker was cleared *after* scanning, so a web UI edit flagged mid-scan could stay unsent until the next edit.
   - **The fix:** the marker is now cleared before the scan and set again when a flag is found.
+
+## LUT support (September 2026)
+
+`.cube` LUTs, built in 4 batches, each approved by the user: the parser and stored form, the renderer, the plugin (params, state, protocol), then the UI, installer and docs.
+- **Decisions made with the user:**
+  - `.cube` only for now. `.3dl`, HaldCLUT PNGs and OCIO-backed formats were considered and left for later.
+  - The LUT has a tri-state mode (before the shader, after it, or sampled by the shader through `iChannel1`/`iLut()`), rather than choosing between a built-in pass and a shader input.
+  - The work was staged: one LUT per instance first, but the renderer was built as a generic chain of passes with ping-pong images, so arbitrary shader/LUT chains later are mostly plugin, state and UI work. A chain inside one instance was chosen over stacking instances, because each instance pays a full CPU↔GPU round trip per frame.
+  - LUT Mix became host param id 1, which shifts shader param ids. Breaking old projects was accepted (state version 3; older states load defaults).
+- **An Intel driver bug, found by the 4-pass chain test.** On the UHD 620 (Windows driver) the last pass sampled `work[0]` as the first pass had left it, not as the third pass rewrote it. There were no validation messages, and NVIDIA was fine.
+  - Tried first: keeping the real old layout (`SHADER_READ_ONLY`) instead of `UNDEFINED` on reused work images. No change.
+  - Cause: the driver doesn't invalidate its texture cache for `VK_ACCESS_2_SHADER_SAMPLED_READ_BIT`. With `VK_ACCESS_2_SHADER_READ_BIT` the test passes. A consecutive-frames test showed that a submit boundary does flush, so only chains within one command buffer were affected.
+- **Sampling precision:** a 2-point LUT (like `test/luts/invert.cube`) can be off by one 8-bit step on GPUs with 8-bit interpolation weights. So render tests use a 33-point inverting LUT, and the shader's identity `iChannel1` is 17 points.
+
+## REAPER crash with both builds loaded (September 2026)
+
+- **Symptom:** loading ReaShader (Debug) crashed REAPER. WER blamed the *release* `ReaShader.clap` (an older installed build), with the same fault offset every time.
+- **The dump:** `CreateWindowExW` was called from the debug plugin's webview thread, and the fault was in a window procedure inside the release `.clap`.
+- **Cause:** webview (0.12.0, and upstream master too) registers `webview_widget`/`webview_message` under `GetModuleHandle(nullptr)`, i.e. reaper.exe. The release plugin, loaded first, owned the classes. The debug plugin's windows then ran the release plugin's window procedure, which read the debug build's `win32_edge_engine` with a different layout.
+- **Fix:** CMake writes a patched copy of the header (`generated/webview-include`), which registers the classes under the plugin's own module (`GetModuleHandleExW` on a static in the header). The submodule stays untouched, and configure fails if the patched line disappears.
+- **Not covered by tests:** the fake host has no GUI or WebView2. The user's check is two plugin windows (release and debug) open in one REAPER session.

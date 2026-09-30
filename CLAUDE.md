@@ -33,18 +33,15 @@ How the code got here (the VST3 → CLAP migration, rejected alternatives, past 
 
 ## Open items
 
-**In progress: LUT support (`.cube` only), 4 batches, each approved by the user before it starts.** Decided with the user:
-- **Staged:** one LUT per instance now, arbitrary shader/LUT chains later. So the renderer becomes an ordered pass list with ping-pong work images now.
-- **LUT mode** (UI + state, not a host param): `before` (LUT pass → shader), `after` (shader → LUT pass, default), `shader` (no LUT pass; the user shader samples `iChannel1` via `iLut()`; with no shader, it falls back to a LUT pass).
-- **"LUT Mix"** host param at id 1 (shader ids shift; breaking old projects is OK), with state going to version 3.
+**LUT support (`.cube`) is done** (2026-09-30; how it was built is in `.claude/history.md`). Planned next stage, when the user asks for it: **arbitrary chains of shaders and LUTs in one instance**. The renderer already runs any list of passes (`FrameTargets::recordPasses`). What's left:
+- a list of nodes in the plugin and in state;
+- param namespacing per node (e.g. `2: Brightness`), with the restart + rescan on every structural change and the `ParamList::maxCount` = 256 limit;
+- a list editor in the UI (add, remove, reorder, bypass);
+- a node index in protocol messages.
 
-Batches:
-1. **Done:** `render/lut_file.*` (parser, 1D/domain baking, stored form = base64 half floats), `util/base64.*`, `cases/lut.cpp`, `test/luts/`.
-2. **Done:** renderer: `Image::create3D`, `render/lut.*` (`gpu::Lut` 3D RGBA16F image, `gpu::LutPass` + `internal/lut.frag`), a `gpu::Pass` interface, `FrameTargets::recordPasses` (ping-pong `work[2]`, used by `test::render` too), `iChannel1` at binding 2 (texture base → 3, identity dummy unless mode `shader`), renderer `setLut`/`clearLut`/`setLutMode`, render tests, `doc/rendering.md`. Found on the way: Intel's driver ignores `VK_ACCESS_2_SHADER_SAMPLED_READ_BIT` for texture-cache invalidation, so every barrier before sampling uses `SHADER_READ_BIT` (comment in `gpu.h`, decision in `doc/rendering.md` §7).
-3. **Done:** plugin: `LutMix` param (`Group::Lut`), `paths::lutsDir()` (`resources/luts`), `_uploadLut`/`_useLut`/`_clearLut`, protocol `lutUpload`/`lutSelect`/`lutMode` → `lutStatus` and snapshot `lut {name, mode}` + `luts`, state v3 `lut {name, mode, data}`, test updates (param counts, `projectState`), a host scenario. Docs: `doc/architecture.md` (params, state, protocol, shaders → LUTs, renderer access), `doc/testing.md` (suites, host scenario).
-4. UI (`fieldset#lut`, generic picker/status), installer (uninstall asks about shaders and LUTs), `lut_split.frag` example + README. Docs: `README.md` (what it does, using it, plugin folder `resources/luts`), `doc/building.md` (packaging: uninstall, upgrades keep `resources/luts`; deploy keeps it), `doc/testing.md` §5 (a LUT step; "Audio Gain" then "LUT Mix" before the shader's params).
+Other LUT formats (`.3dl`, HaldCLUT PNG) were deferred.
 
-**The test application is complete** (all 4 phases, 37 tests). What's left is keeping the fake host faithful to REAPER.
+**The test application is complete** (56 tests). What's left is keeping the fake host faithful to REAPER.
 
 **Host test rules:** host tests talk to the plugin only through CLAP and the REAPER extension, with no test hooks in the plugin. A shader arrives through state (`test::projectState`, which compiles with the linked `gpu::compileShader` as tooling).
 
@@ -62,7 +59,9 @@ When one is verified, change the host, mark it *observed*, and update `doc/testi
 - the `ParamList::takeFlaggedForHost` race fix (web UI slider edits reaching REAPER);
 - the reflection check that rejects descriptor sets other than 0 (a user shader with `layout(set = 1)` should show an error in the UI);
 - the debug build with sync validation on (performance and `rs.log` in REAPER);
-- the rebuilt installer: uninstall asking about uploaded shaders, and no tasks page.
+- the rebuilt installer: uninstall asking about uploaded shaders and LUTs, and no tasks page;
+- all of LUT support (the manual test in `doc/testing.md` §5, steps 6–8), including the `SHADER_READ` barrier change (`gpu.h`) on an Intel GPU;
+- the webview window-class patch (CMakeLists.txt, WebView): ReaShader and ReaShader (Debug) windows open in one REAPER session, with both rebuilt (the release through a new installer).
 
 **Repo notes:**
 - `.claude/` is in `.gitignore`, but `.claude/history.md` is tracked (moved with `git mv`), so it's still committed. Whether it should stay tracked is the user's call.

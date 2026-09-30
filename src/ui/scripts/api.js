@@ -45,4 +45,20 @@ const native = {
         const source = await file.text();
         this.send({ type: "shaderUpload", name: file.name, source: source });
     },
+
+    // a stored LUT by name, "" = none
+    lutSelect(name) {
+        this.send({ type: "lutSelect", name: name });
+    },
+
+    // a .cube file to parse and store, sent whole as text (a few MB at most)
+    async lutUpload(file) {
+        const source = await file.text();
+        this.send({ type: "lutUpload", name: file.name, source: source });
+    },
+
+    // "before" / "after" the shader, or "shader" (the shader samples the LUT itself)
+    lutMode(mode) {
+        this.send({ type: "lutMode", mode: mode });
+    },
 };

@@ -376,7 +376,7 @@ namespace ReaShader
 			if (lutImage)
 			{
 				lutPass->bindLut(*context, lutImage->image.view);
-				lutPass->setAmount(1.0f);
+				lutPass->setAmount((float)inputs.paramValues[Parameters::LutMix]);
 			}
 
 			// upload -> passes (or a plain copy) -> logo -> download

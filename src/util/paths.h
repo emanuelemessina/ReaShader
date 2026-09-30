@@ -34,4 +34,10 @@ namespace util::paths
 	{
 		return resourcesDir() / "shaders" / "compiled";
 	}
+
+	// LUTs parsed on upload, as <name>.json
+	inline std::filesystem::path lutsDir()
+	{
+		return resourcesDir() / "luts";
+	}
 } // namespace util::paths

@@ -33,7 +33,7 @@ namespace ReaShader
 	// - main:    CLAP lifecycle, state, onMainThread()
 	// - audio:   process()/flush() -> host param events, lock-free param values only
 	// - video:   REAPER's video callbacks -> renderer (try_lock, never waits)
-	// - webview: handleWebUIMessage() -> param edits, device switch, shader upload
+	// - webview: handleWebUIMessage() -> param edits, device switch, shader and LUT upload
 	class ReaShaderPlugin
 	{
 	  public:
@@ -103,9 +103,15 @@ namespace ReaShader
 		void _clearShader();
 		void _applyPendingShaderParams();
 
+		void _uploadLut(const std::string& fileName, const std::string& source);
+		void _useLut(const std::string& name, const std::string& data);
+		void _clearLut();
+		void _setLutMode(const std::string& mode);
+
 		void _webuiSend(const Parameters::json& msg);
 		void _webuiSendSnapshot();
 		void _webuiSendShaderStatus(const std::string& status, const char* state);
+		void _webuiSendLutStatus(const std::string& status, const char* state);
 
 		const clap_host_t* host{ nullptr };
 		std::unique_ptr<ReaShaderRenderer> reaShaderRenderer;
@@ -124,6 +130,9 @@ namespace ReaShader
 		bool showLogo{ false };
 		std::string shaderName; // empty = no shader
 		std::string shaderData; // the current shader's compiled form (JSON)
+		std::string lutName;			// empty = no LUT
+		std::string lutData;			// the current LUT's stored form (JSON)
+		std::string lutMode{ "after" }; // "before" / "after" the shader, or "shader" (sampled by it)
 		Parameters::ValueMap savedShaderValues; // restored when the shader's params appear
 		std::vector<Parameters::Param> pendingShaderParams;
 		int trackNumber{ 0 };					// 1-based, 0 = not found, -1 = master

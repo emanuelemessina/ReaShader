@@ -16,8 +16,6 @@ Contents:
 8. [How to extend](#8-how-to-extend)
 9. [Debugging](#9-debugging)
 
----
-
 ## 1. The big picture
 
 REAPER calls the plugin once per video frame, on its video thread, and waits for the result (`ReaShaderPlugin::_processVideoFrame` in `src/plugin/plugin.cpp`). The plugin hands the frame to `ReaShaderRenderer::renderFrame`, which sends it through the GPU and back:
@@ -37,8 +35,6 @@ flowchart LR
 - **The passes:** the user's shader and the LUT, each a fullscreen pass, in an order set by the LUT mode (see [the chain](#the-chain)). Between passes the frame goes through two work images.
 - **When nothing is rendered:** `renderFrame` returns `false` if the renderer is busy (another thread holds it), has failed, or has no shader, no LUT and no logo. The plugin then returns REAPER's input frame unchanged: **passthrough**.
 
----
-
 ## 2. Vulkan in ten concepts
 
 Vulkan is explicit: nothing happens unless you ask for it, including memory allocation, the order of GPU operations, and telling the GPU how an image will be used next. That's why even a simple renderer needs a lot of code. These ten concepts cover everything `src/render/` does.
@@ -49,8 +45,9 @@ Vulkan is explicit: nothing happens unless you ask for it, including memory allo
 - A **physical device** is a GPU as the system reports it: its name, its features, the Vulkan version it supports.
 
 **In our code:** `Context::createInstance` (`context.cpp`) uses [vk-bootstrap](https://github.com/charles-lunarg/vk-bootstrap) to create the instance and list the usable GPUs:
+
 - "usable" means Vulkan 1.3 with the `dynamicRendering` and `synchronization2` features (both explained below);
-- the instance is *headless*: we never show anything in a window, so there's no surface or swapchain.
+- the instance is _headless_: we never show anything in a window, so there's no surface or swapchain.
 
 The UI's GPU list is `Context::deviceNames()`, in the same order.
 
@@ -75,12 +72,14 @@ The GPU doesn't execute calls one at a time. You **record** commands (copies, ba
 A **fence** is a flag the GPU sets when a submitted batch has finished. The CPU can wait on it.
 
 **In our code:** `submitAndWait()` resets the fence, submits (`vkQueueSubmit2`), then waits on the fence for up to **2 seconds** (`kFrameTimeoutNs`).
+
 - **A timeout counts as a GPU hang:** the wait returns `VK_TIMEOUT`, `VK_CHECK` throws, and the renderer goes to `failed` (see [Threads and safety](#6-threads-and-safety)).
-- **What it guarantees:** after the wait, the GPU has finished with every buffer and image of that frame. That's why the next frame can safely overwrite them, and why nothing needs to be synchronized *between* frames.
+- **What it guarantees:** after the wait, the GPU has finished with every buffer and image of that frame. That's why the next frame can safely overwrite them, and why nothing needs to be synchronized _between_ frames.
 
 ### 2.5 Memory and VMA
 
 In Vulkan you allocate GPU memory yourself, then bind buffers and images to it. Memory comes in types with different properties:
+
 - **device-local:** fast for the GPU, usually not reachable by the CPU;
 - **host-visible:** the CPU can **map** it (get a pointer) and read or write it directly;
 - **host-coherent or not:** on non-coherent memory, CPU writes must be **flushed** before the GPU sees them, and GPU writes must be **invalidated** before the CPU sees them.
@@ -88,6 +87,7 @@ In Vulkan you allocate GPU memory yourself, then bind buffers and images to it. 
 [VMA](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) (Vulkan Memory Allocator) picks memory types and suballocates them for us. It is compiled in `gpu.cpp` (`VMA_IMPLEMENTATION`).
 
 **In our code:**
+
 - **`gpu::Buffer`** (`gpu.h`) is always host-visible and stays mapped for its whole life (`mapped`). Its `hostAccess` flag tells VMA how the CPU uses it:
   - `HOST_ACCESS_SEQUENTIAL_WRITE`: the CPU only writes, front to back. VMA may pick write-combined memory, which is fast to write and very slow to read. Used by the upload buffer, the shader's params, and mesh data.
   - `HOST_ACCESS_RANDOM`: the CPU reads it back. VMA picks cached memory. Used by the readback buffer.
@@ -102,16 +102,17 @@ In Vulkan you allocate GPU memory yourself, then bind buffers and images to it. 
 - Shaders and rendering don't use an image directly but an **image view**: which part of it, and read as what.
 
 **In our code:**
+
 - `gpu::Image` is an image plus its view: 2D (`create`), or a 3D cube (`create3D`, for a LUT). Every image we make has one mip level and one layer.
 - `FrameTargets` (`frame_targets.*`) owns the frame's buffers and images:
 
-| Object | Kind | Usage | Role |
-|---|---|---|---|
-| `upload` | buffer, host write | transfer source | REAPER's pixels are copied in here |
-| `input` | image, `B8G8R8A8_UNORM` | transfer destination and source, sampled | the frame as the shader's `iChannel0` |
-| `output` | image, `B8G8R8A8_UNORM` | color attachment, transfer source and destination | what the last pass (and the logo) renders into |
-| `work[2]` | images, `B8G8R8A8_UNORM` | color attachment, sampled | between passes: one pass renders to it, the next samples it. Created the first time a chain needs it |
-| `readback` | buffer, host read | transfer destination | the result, copied back for REAPER |
+| Object     | Kind                     | Usage                                             | Role                                                                                                 |
+| ---------- | ------------------------ | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `upload`   | buffer, host write       | transfer source                                   | REAPER's pixels are copied in here                                                                   |
+| `input`    | image, `B8G8R8A8_UNORM`  | transfer destination and source, sampled          | the frame as the shader's `iChannel0`                                                                |
+| `output`   | image, `B8G8R8A8_UNORM`  | color attachment, transfer source and destination | what the last pass (and the logo) renders into                                                       |
+| `work[2]`  | images, `B8G8R8A8_UNORM` | color attachment, sampled                         | between passes: one pass renders to it, the next samples it. Created the first time a chain needs it |
+| `readback` | buffer, host read        | transfer destination                              | the result, copied back for REAPER                                                                   |
 
 - A **LUT** (`gpu::Lut`, `lut.*`) is a `size`³ 3D image in `R16G16B16A16_SFLOAT` (half floats; alpha unused), sampled with the shared linear sampler, so the hardware interpolates between the table's entries (trilinear).
 
@@ -120,6 +121,7 @@ In Vulkan you allocate GPU memory yourself, then bind buffers and images to it. 
 This is the concept most bugs come from.
 
 **Layouts.** An image is always in a **layout** that suits one kind of use:
+
 - `TRANSFER_DST_OPTIMAL` to be copied into;
 - `SHADER_READ_ONLY_OPTIMAL` to be sampled;
 - `COLOR_ATTACHMENT_OPTIMAL` to be rendered to;
@@ -127,9 +129,10 @@ This is the concept most bugs come from.
 
 You change layouts explicitly. `UNDEFINED` as the old layout means "I don't care about the current contents": the driver may discard them, which is cheap.
 
-**Barriers.** The GPU runs commands in parallel and out of order, unless told otherwise. A **pipeline barrier** tells it: "work of *these* stages, with *these* memory accesses, must finish and be visible before work of *those* stages with *those* accesses starts". An **image barrier** can also change the image's layout on the way.
+**Barriers.** The GPU runs commands in parallel and out of order, unless told otherwise. A **pipeline barrier** tells it: "work of _these_ stages, with _these_ memory accesses, must finish and be visible before work of _those_ stages with _those_ accesses starts". An **image barrier** can also change the image's layout on the way.
 
 A barrier has two halves:
+
 - **source** (`srcStage` + `srcAccess`): what must be finished, e.g. `COPY` stage + `TRANSFER_WRITE`;
 - **destination** (`dstStage` + `dstAccess`): what must wait for it, e.g. `FRAGMENT_SHADER` stage + `SHADER_READ`.
 
@@ -146,6 +149,7 @@ Two barriers chain only if the first one's destination stages overlap the second
 A shader reads two kinds of external data. Vulkan offers several ways to provide them, and we use two.
 
 **Descriptors** are handles to resources (an image plus a sampler, a uniform buffer, ...), organized as follows:
+
 - A **descriptor set layout** declares the slots: "binding 0 is a sampled image, binding 1 is a uniform buffer".
 - A **descriptor set** is one filled instance of a layout, allocated from a **descriptor pool** and written with `vkUpdateDescriptorSets`.
 - A **sampler** is the "how to read" part of a sampled image: filtering (linear) and what happens outside 0..1 (clamp to edge).
@@ -156,6 +160,7 @@ A shader reads two kinds of external data. Vulkan offers several ways to provide
 A **pipeline layout** ties them together: which set layouts and which push-constant ranges a pipeline uses.
 
 **In our code:**
+
 - `Context::createDevice` creates one descriptor pool (16 sets, 32 image samplers, 16 uniform buffers, with individually freeable sets) and one sampler (linear, clamp to edge on all three axes), shared by everything.
 - **`ShaderPass`** has one set:
   - binding 0 = `iChannel0` (the pass's input);
@@ -163,11 +168,13 @@ A **pipeline layout** ties them together: which set layouts and which push-const
   - binding 2 = `iChannel1` (a LUT: the current one in `Shader` mode, otherwise an identity).
 
   Its push constants are `ShaderInputs` (resolution, time, frame rate, frame: 20 bytes).
+
 - **`LutPass`** has one set:
   - binding 0 = the pass's input;
   - binding 1 = the LUT.
 
   Its push constant is `amount` (LUT Mix, one float).
+
 - **`Scene`** has one set per object:
   - binding 0 = the object's texture.
 
@@ -176,6 +183,7 @@ A **pipeline layout** ties them together: which set layouts and which push-const
 ### 2.9 Pipelines and dynamic rendering
 
 A **graphics pipeline** is one baked, immutable object that holds everything about how to draw:
+
 - the shaders;
 - how vertices are read (**vertex input**);
 - primitives (triangle list);
@@ -187,10 +195,12 @@ A **graphics pipeline** is one baked, immutable object that holds everything abo
 Baking it once lets the driver optimize. The few things we want to change per draw are declared **dynamic state**: we set the viewport and scissor at record time, so one pipeline works for any frame size.
 
 **Rendering.** Drawing happens between `vkCmdBeginRendering` and `vkCmdEndRendering`. **Dynamic rendering** (Vulkan 1.3) names the target images (**attachments**) right there. Older Vulkan needed separate render pass and framebuffer objects, which we don't have. Each attachment says:
+
 - **load op:** what to do with the existing contents first: `LOAD` (keep), `CLEAR`, or `DONT_CARE` (garbage is fine, since we'll overwrite everything);
 - **store op:** whether to keep the result: `STORE`, or `DONT_CARE` (e.g. a depth buffer nobody reads afterwards).
 
 **In our code:** `gpu::createPipeline(device, PipelineDesc)` builds every pipeline we have:
+
 - triangle list;
 - no culling, no blending;
 - dynamic viewport and scissor;
@@ -204,48 +214,45 @@ There are three pipelines: one per `ShaderPass` (the user's shader), one in `Lut
 Vulkan doesn't take GLSL. It takes **SPIR-V**, a binary intermediate language (an array of 32-bit words). A **shader module** wraps SPIR-V for pipeline creation. We destroy modules right after `createPipeline`, since the pipeline keeps what it needs.
 
 **In our code**, GLSL becomes SPIR-V in two places:
+
 - **Built-in (internal) shaders** (`src/shaders/internal/`: `fullscreen.vert`, `lut.frag`, `scene.vert`, `scene.frag`) are compiled **at build time** by `glslc` into C arrays (`build/<preset>/generated/*.inc`). They are `#include`d into `pass.cpp`, `lut.cpp` and `scene.cpp`, so they are never read from disk.
 - **User shaders** are compiled **at runtime, once, when uploaded**, by [shaderc](https://github.com/google/shaderc) (`gpu::compileShader` in `shader_compiler.cpp`). [SPIRV-Reflect](https://github.com/KhronosGroup/SPIRV-Reflect) then reads the result to find the `Params` block. See [The shader contract](#5-the-shader-contract).
 
----
-
 ## 3. File by file
 
-| File | What it is |
-|---|---|
-| `renderer.h/.cpp` | **`ReaShaderRenderer`**: the only class the plugin talks to. Owns everything below, holds `frameMutex`, picks the passes (the LUT mode), records a frame, never throws. |
-| `context.h/.cpp` | **`gpu::Context`**: instance, GPU list, device, queue, the one command buffer + fence, VMA allocator, descriptor pool, sampler. |
-| `frame_targets.h/.cpp` | **`gpu::FrameTargets`**: the frame's upload/readback buffers and input/output/work images, the commands that move pixels between them, and `recordPasses`, which chains the passes. |
-| `pass.h/.cpp` | **`gpu::Pass`**: the interface of a fullscreen pass (`bindInput`, `record`), plus what passes share: `fullscreen.vert`, `beginFullscreenRendering`, `writeImageDescriptor`. |
-| `shader_pass.h/.cpp` | **`gpu::ShaderPass`**: one user shader as a fullscreen pipeline, its descriptor set and params buffer. |
-| `lut.h/.cpp` | **`gpu::Lut`**: a LUT as a 3D image, uploaded once. **`gpu::LutPass`**: the frame through a LUT (`lut.frag`), blended by LUT Mix. |
-| `lut_file.h/.cpp` | **`gpu::parseCube`**: `.cube` files to a `LutData` table (1D LUTs and `DOMAIN`s baked into a 0..1 cube), and the stored JSON form. No Vulkan objects. |
-| `shader_compiler.h/.cpp` | **`gpu::compileShader`**: the shader contract (preamble), GLSL → SPIR-V, reflection of `Params`, `//@param` annotations, and the stored JSON form. No Vulkan objects. |
-| `scene.h/.cpp` | **`gpu::Scene`**: textured meshes drawn over the frame with a depth buffer (today: the logo). Also `Mesh` (.obj via tinyobjloader) and `Texture` (png/jpg via stb_image). |
-| `gpu.h/.cpp` | Shared helpers: `VK_CHECK`, `Buffer`, `Image`, `createPipeline`, `transition`, `kFrameFormat`. The VMA implementation. |
-| `frame_view.h` | **`FrameView`**: a CPU frame (width, height, `rowBytes`, BGRA pixels). The boundary between REAPER and the renderer. |
+| File                     | What it is                                                                                                                                                                          |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `renderer.h/.cpp`        | **`ReaShaderRenderer`**: the only class the plugin talks to. Owns everything below, holds `frameMutex`, picks the passes (the LUT mode), records a frame, never throws.             |
+| `context.h/.cpp`         | **`gpu::Context`**: instance, GPU list, device, queue, the one command buffer + fence, VMA allocator, descriptor pool, sampler.                                                     |
+| `frame_targets.h/.cpp`   | **`gpu::FrameTargets`**: the frame's upload/readback buffers and input/output/work images, the commands that move pixels between them, and `recordPasses`, which chains the passes. |
+| `pass.h/.cpp`            | **`gpu::Pass`**: the interface of a fullscreen pass (`bindInput`, `record`), plus what passes share: `fullscreen.vert`, `beginFullscreenRendering`, `writeImageDescriptor`.         |
+| `shader_pass.h/.cpp`     | **`gpu::ShaderPass`**: one user shader as a fullscreen pipeline, its descriptor set and params buffer.                                                                              |
+| `lut.h/.cpp`             | **`gpu::Lut`**: a LUT as a 3D image, uploaded once. **`gpu::LutPass`**: the frame through a LUT (`lut.frag`), blended by LUT Mix.                                                   |
+| `lut_file.h/.cpp`        | **`gpu::parseCube`**: `.cube` files to a `LutData` table (1D LUTs and `DOMAIN`s baked into a 0..1 cube), and the stored JSON form. No Vulkan objects.                               |
+| `shader_compiler.h/.cpp` | **`gpu::compileShader`**: the shader contract (preamble), GLSL → SPIR-V, reflection of `Params`, `//@param` annotations, and the stored JSON form. No Vulkan objects.               |
+| `scene.h/.cpp`           | **`gpu::Scene`**: textured meshes drawn over the frame with a depth buffer (today: the logo). Also `Mesh` (.obj via tinyobjloader) and `Texture` (png/jpg via stb_image).           |
+| `gpu.h/.cpp`             | Shared helpers: `VK_CHECK`, `Buffer`, `Image`, `createPipeline`, `transition`, `kFrameFormat`. The VMA implementation.                                                              |
+| `frame_view.h`           | **`FrameView`**: a CPU frame (width, height, `rowBytes`, BGRA pixels). The boundary between REAPER and the renderer.                                                                |
 
 ### Lifetimes
 
 There are no deletion queues or reference counting. Each object is a plain struct with `create()`/`destroy()` that list its handles, owned by `ReaShaderRenderer` through a `unique_ptr`, and grouped by what it depends on:
 
-| Object | Created | Destroyed |
-|---|---|---|
-| `Context` instance | `init()` (the plugin's first `activate()`, or after a failure) | `shutdown()` / the renderer's destructor (plugin destroyed), or `init()` starting over |
-| `Context` device (+ queue, command buffer, fence, allocator, pool, sampler) | with the instance; `changeRenderingDevice()` | before the instance; `changeRenderingDevice()` |
-| `ShaderPass` | `setShader()`, or with the device if a shader is kept | replaced by the next `setShader()`; `clearShader()`; with the device |
-| `LutPass` and the identity `Lut` | with the device | with the device |
-| the current `Lut` | `setLut()`, or with the device if a LUT is kept | replaced by the next `setLut()`; `clearLut()`; with the device |
-| `Scene` | the first `setLogoEnabled(true)`, or with the device if the logo is on | with the device (turning the logo off only stops drawing it) |
-| `FrameTargets` | the first frame, or a frame whose size or row stride changed | the next size/stride change; with the device |
-| `FrameTargets`' work images | the first chain of two or more passes (the second work image: three or more) | with the targets |
-| `Scene`'s depth image | `Scene::prepare()` when the frame size changes | the next size change; with the scene |
+| Object                                                                      | Created                                                                      | Destroyed                                                                              |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `Context` instance                                                          | `init()` (the plugin's first `activate()`, or after a failure)               | `shutdown()` / the renderer's destructor (plugin destroyed), or `init()` starting over |
+| `Context` device (+ queue, command buffer, fence, allocator, pool, sampler) | with the instance; `changeRenderingDevice()`                                 | before the instance; `changeRenderingDevice()`                                         |
+| `ShaderPass`                                                                | `setShader()`, or with the device if a shader is kept                        | replaced by the next `setShader()`; `clearShader()`; with the device                   |
+| `LutPass` and the identity `Lut`                                            | with the device                                                              | with the device                                                                        |
+| the current `Lut`                                                           | `setLut()`, or with the device if a LUT is kept                              | replaced by the next `setLut()`; `clearLut()`; with the device                         |
+| `Scene`                                                                     | the first `setLogoEnabled(true)`, or with the device if the logo is on       | with the device (turning the logo off only stops drawing it)                           |
+| `FrameTargets`                                                              | the first frame, or a frame whose size or row stride changed                 | the next size/stride change; with the device                                           |
+| `FrameTargets`' work images                                                 | the first chain of two or more passes (the second work image: three or more) | with the targets                                                                       |
+| `Scene`'s depth image                                                       | `Scene::prepare()` when the frame size changes                               | the next size change; with the scene                                                   |
 
 - **Destroy order on a device change** (`_destroyDevice`): scene, shader pass, LUT pass, LUTs, targets, then the device. They all belong to it.
 - **Recreate order** (`_createDevice`): the device, the LUT pass and identity, the LUT (from the kept `LutData`), the shader pass (from the kept `CompiledShader`) and the scene (if the logo is on). The targets come back with the next frame.
 - **`CompiledShader` and `LutData` are kept by the renderer**, not only on the GPU. That's why a device change can rebuild the pass and re-upload the LUT without recompiling or re-parsing.
-
----
 
 ## 4. A frame, step by step
 
@@ -253,11 +260,11 @@ There are no deletion queues or reference counting. Each object is a plain struc
 
 `renderFrame` picks the passes every frame, from what's loaded and the LUT mode (`LutMode`):
 
-| LUT mode | Passes |
-|---|---|
-| no LUT | shader |
-| `Before` | LUT, shader |
-| `After` | shader, LUT |
+| LUT mode | Passes                                                      |
+| -------- | ----------------------------------------------------------- |
+| no LUT   | shader                                                      |
+| `Before` | LUT, shader                                                 |
+| `After`  | shader, LUT                                                 |
 | `Shader` | shader, with the LUT bound as its `iChannel1` (no LUT pass) |
 
 A missing shader drops out of the list, and in `Shader` mode with no shader the LUT pass runs alone. With no passes at all (the logo alone), the input is copied to the output.
@@ -269,6 +276,7 @@ A missing shader drops out of the list, and in `Shader` mode with no shader the 
 `ReaShaderRenderer::renderFrame` with a shader and a LUT in `After` mode, and the logo on. The steps are in order; "B*n*" is a barrier.
 
 **CPU, before recording:**
+
 1. If needed, recreate `FrameTargets`. `scene->prepare()` makes the depth image the right size.
 2. `FrameTargets::writeInput`: `memcpy` REAPER's pixels into the mapped upload buffer, then `flush`.
 3. `ShaderPass::writeParams`: write each slider's value at its reflected byte offset in the mapped params buffer, then `flush`. Sliders without a value (the plugin's params are still pending) get their default.
@@ -276,22 +284,22 @@ A missing shader drops out of the list, and in `Shader` mode with no shader the 
 
 **GPU commands** (`Context::beginCommands` → ... → `submitAndWait`):
 
-| # | Where | Image / buffer | Layout | Waits for (src) | Before (dst) | Why |
-|---|---|---|---|---|---|---|
-| B1 | `recordUpload` | input | `UNDEFINED` → `TRANSFER_DST` | nothing | copy writes | the copy fully overwrites it, so the old contents can be discarded |
-| | | *copy upload buffer → input* | | | | |
-| B2 | `recordUpload` | input | `TRANSFER_DST` → `SHADER_READ_ONLY` | copy writes | fragment shader reads | the first pass must see the finished copy |
-| B3 | `beginFullscreenRendering` (shader pass) | work[0] | `UNDEFINED` → `COLOR_ATTACHMENT` | fragment shader (execution only) | color attachment writes | the pass writes every pixel (`loadOp = DONT_CARE`). A work image may have been sampled by an earlier pass of the chain, and those reads must finish before it's overwritten |
-| | | *draw: 3 vertices, the user's fragment shader, sampling input* | | | | |
-| B4 | `recordPasses` | work[0] | `COLOR_ATTACHMENT` → `SHADER_READ_ONLY` | color attachment writes | fragment shader reads | the next pass samples what this one rendered |
-| B5 | `beginFullscreenRendering` (LUT pass) | output | `UNDEFINED` → `COLOR_ATTACHMENT` | fragment shader (execution only) | color attachment writes | as B3 |
-| | | *draw: 3 vertices, `lut.frag`, sampling work[0] and the LUT* | | | | |
-| B6 | `Scene::record` | output | `COLOR_ATTACHMENT` → same | color attachment writes | color attachment reads + writes | the logo is drawn over the last pass's result (`loadOp = LOAD`), so that must be finished first. No layout change, just a memory dependency |
-| B7 | `Scene::record` | depth | `UNDEFINED` → `DEPTH_ATTACHMENT` | nothing | depth writes (early fragment tests) | cleared every frame (`loadOp = CLEAR`, `storeOp = DONT_CARE`) |
-| | | *draw each object: indexed triangles, depth tested* | | | | |
-| B8 | `recordDownload` | output | `COLOR_ATTACHMENT` → `TRANSFER_SRC` | color attachment writes | copy reads | the copy must read the final pixels |
-| | | *copy output → readback buffer* | | | | |
-| B9 | `recordDownload` | readback (buffer) | — | copy writes | host reads | makes the GPU's write visible to the CPU after the fence |
+| #   | Where                                    | Image / buffer                                                 | Layout                                  | Waits for (src)                  | Before (dst)                        | Why                                                                                                                                                                         |
+| --- | ---------------------------------------- | -------------------------------------------------------------- | --------------------------------------- | -------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B1  | `recordUpload`                           | input                                                          | `UNDEFINED` → `TRANSFER_DST`            | nothing                          | copy writes                         | the copy fully overwrites it, so the old contents can be discarded                                                                                                          |
+|     |                                          | _copy upload buffer → input_                                   |                                         |                                  |                                     |                                                                                                                                                                             |
+| B2  | `recordUpload`                           | input                                                          | `TRANSFER_DST` → `SHADER_READ_ONLY`     | copy writes                      | fragment shader reads               | the first pass must see the finished copy                                                                                                                                   |
+| B3  | `beginFullscreenRendering` (shader pass) | work[0]                                                        | `UNDEFINED` → `COLOR_ATTACHMENT`        | fragment shader (execution only) | color attachment writes             | the pass writes every pixel (`loadOp = DONT_CARE`). A work image may have been sampled by an earlier pass of the chain, and those reads must finish before it's overwritten |
+|     |                                          | _draw: 3 vertices, the user's fragment shader, sampling input_ |                                         |                                  |                                     |                                                                                                                                                                             |
+| B4  | `recordPasses`                           | work[0]                                                        | `COLOR_ATTACHMENT` → `SHADER_READ_ONLY` | color attachment writes          | fragment shader reads               | the next pass samples what this one rendered                                                                                                                                |
+| B5  | `beginFullscreenRendering` (LUT pass)    | output                                                         | `UNDEFINED` → `COLOR_ATTACHMENT`        | fragment shader (execution only) | color attachment writes             | as B3                                                                                                                                                                       |
+|     |                                          | _draw: 3 vertices, `lut.frag`, sampling work[0] and the LUT_   |                                         |                                  |                                     |                                                                                                                                                                             |
+| B6  | `Scene::record`                          | output                                                         | `COLOR_ATTACHMENT` → same               | color attachment writes          | color attachment reads + writes     | the logo is drawn over the last pass's result (`loadOp = LOAD`), so that must be finished first. No layout change, just a memory dependency                                 |
+| B7  | `Scene::record`                          | depth                                                          | `UNDEFINED` → `DEPTH_ATTACHMENT`        | nothing                          | depth writes (early fragment tests) | cleared every frame (`loadOp = CLEAR`, `storeOp = DONT_CARE`)                                                                                                               |
+|     |                                          | _draw each object: indexed triangles, depth tested_            |                                         |                                  |                                     |                                                                                                                                                                             |
+| B8  | `recordDownload`                         | output                                                         | `COLOR_ATTACHMENT` → `TRANSFER_SRC`     | color attachment writes          | copy reads                          | the copy must read the final pixels                                                                                                                                         |
+|     |                                          | _copy output → readback buffer_                                |                                         |                                  |                                     |                                                                                                                                                                             |
+| B9  | `recordDownload`                         | readback (buffer)                                              | —                                       | copy writes                      | host reads                          | makes the GPU's write visible to the CPU after the fence                                                                                                                    |
 
 With more passes, B3 and B4 repeat for every pass but the last, which renders to `output` (B5).
 
@@ -300,6 +308,7 @@ With more passes, B3 and B4 repeat for every pass but the last, which renders to
 5. `FrameTargets::readOutput`: `invalidate`, then `memcpy` the readback buffer into REAPER's new frame.
 
 **Without passes** (the logo alone), `recordPasses` calls `_recordInputToOutput` in place of B3–B5 and the draws:
+
 - input `SHADER_READ_ONLY` → `TRANSFER_SRC`;
 - output `UNDEFINED` → `TRANSFER_DST`;
 - copy input → output;
@@ -307,11 +316,9 @@ With more passes, B3 and B4 repeat for every pass but the last, which renders to
 
 **The invariant:** after the passes, `output` is always in `COLOR_ATTACHMENT_OPTIMAL`, whether the last pass or `_recordInputToOutput` wrote it. `Scene::record` and `recordDownload` rely on it.
 
-**Row padding:** REAPER's rows may be longer than `width × 4` bytes (`rowBytes`, REAPER's "rowspan"). The copies handle it with `bufferRowLength` (the row length in *pixels*, so `rowBytes` must be a multiple of 4, or `FrameTargets::create` throws). The `memcpy`s copy `rowBytes × (height − 1) + width × 4` bytes, because the last row may end right after its pixels.
+**Row padding:** REAPER's rows may be longer than `width × 4` bytes (`rowBytes`, REAPER's "rowspan"). The copies handle it with `bufferRowLength` (the row length in _pixels_, so `rowBytes` must be a multiple of 4, or `FrameTargets::create` throws). The `memcpy`s copy `rowBytes × (height − 1) + width × 4` bytes, because the last row may end right after its pixels.
 
 **Across frames:** there are no barriers between frames. The fence wait guarantees the previous frame's GPU work is complete, and every image of the frame starts from `UNDEFINED`.
-
----
 
 ## 5. The shader contract
 
@@ -339,12 +346,14 @@ The user-facing documentation, which covers what a shader can use and the `//@pa
 **Push constants ↔ `ShaderInputs`:** the preamble's `ReaShaderInputs` block and the C++ struct `gpu::ShaderInputs` (`shader_compiler.h`) must describe the same bytes (std430 layout: `vec2` at 0, `float` at 8 and 12, `int` at 16 = 20 bytes). `renderFrame` fills it. `iFrame` counts frames since the pass was installed.
 
 **Compiling** (`compileGlsl`): shaderc targets Vulkan 1.3, with automatic bindings.
+
 - **Uniform blocks** have their binding shifted to start at 1 (`kParamsBinding`), so a plain `uniform Params { ... };` lands on binding 1.
 - **Samplers** are shifted to 3 and up, so reflection rejects them.
 
 User shaders should leave `layout(set, binding)` out: the shift applies to explicit bindings too.
 
 **Reflection** (`reflect`) walks the descriptor bindings SPIRV-Reflect finds in the SPIR-V:
+
 - anything outside descriptor set 0 is an error ("only descriptor set 0 is available"): our pipeline layout has one set, and a shader using another would make pipeline creation invalid;
 - `iChannel0` at binding 0 and `iChannel1` at binding 2 are skipped (checked by name too: a user declaration at those bindings would alias them);
 - binding 1 must be a uniform buffer: that's the `Params` block;
@@ -353,6 +362,7 @@ User shaders should leave `layout(set, binding)` out: the shift applies to expli
 Errors name the resource, or the block's type name (`Params`) when it has no instance name.
 
 Each `Params` member must be `float`/`vec2`/`vec3`/`vec4`. Each component becomes one `ShaderParamField`:
+
 - `name` is `member` or `member.x`;
 - `offset` is its byte offset in the block, from reflection, so the C++ side never needs to know GLSL's layout rules;
 - label, default and range come from `//@param member 'Label' default min max` (`parseAnnotations`), and are otherwise the member's name, 0.5, 0..1.
@@ -360,44 +370,45 @@ Each `Params` member must be `float`/`vec2`/`vec3`/`vec4`. Each component become
 **Params buffer:** `ShaderPass` always creates it (at least 16 bytes) and binds it at binding 1, even when the shader has no `Params`. The descriptor set layout declares the binding, so it must be valid.
 
 **The stored form** (`toJson`/`fromJson`): `{ version: 1, paramsSize, params: [{ name, label, defaultValue, minValue, maxValue, offset }], spirv: [words] }`.
+
 - **Where it lives:** in `resources/shaders/compiled/<name>.json`, and embedded in the plugin's state, so projects never recompile.
 - **Versioning:** `fromJson` rejects any other `version`. Bump `kStoredVersion` whenever old SPIR-V or JSON would be wrong for the current code (e.g. the preamble's bindings or push constants change). Adding `iChannel1` didn't need it: older SPIR-V just doesn't use binding 2, which the pipeline layout provides anyway.
-
----
 
 ## 6. Threads and safety
 
 Four threads touch the renderer (the full list is in `src/plugin/plugin.h`):
 
-| Thread | Calls |
-|---|---|
-| REAPER's video thread | `renderFrame` |
-| main | `init()` (from `activate()`), `shutdown()` (via the destructor) |
+| Thread                | Calls                                                                                                                                  |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| REAPER's video thread | `renderFrame`                                                                                                                          |
+| main                  | `init()` (from `activate()`), `shutdown()` (via the destructor)                                                                        |
 | webview (UI messages) | `setShader` / `clearShader` (shader select or upload), `setLut` / `clearLut` / `setLutMode`, `changeRenderingDevice`, `setLogoEnabled` |
-| main (state load) | the same setters, when a project is loaded |
+| main (state load)     | the same setters, when a project is loaded                                                                                             |
 
 **`frameMutex`:**
+
 - **The lock:** every public function locks `frameMutex`, because they all touch the same GPU objects and the one command buffer.
 - **The video thread never waits:** `renderFrame` uses `try_lock`, and if another thread holds the mutex (a device switch, a shader install, `init()` creating the instance), the frame passes through. REAPER's video thread must never block.
 - **Compiling and parsing happen outside the lock:** they run on the upload path, before `setShader` / `setLut`. Under the lock there's only pipeline creation or a LUT's upload, which are short.
 
 **Nothing throws out:**
+
 - **Exceptions stay inside:** Vulkan errors throw inside the render code (`VK_CHECK`, `unwrap` for vk-bootstrap), and every public function of `ReaShaderRenderer` catches them.
 - **Why it matters:** an exception escaping into REAPER or the CLAP host is fatal to REAPER.
 - **Where errors go:** they are logged (with a message box for the user where it matters), or returned as a string (`setShader`: the UI shows the error, and the previous shader stays).
 
 **`failed`:** a Vulkan error in `init()`, `changeRenderingDevice()` or `renderFrame()` sets `failed`, and from then on every frame passes through. It is cleared by:
+
 - the next `init()`, which tears everything down and starts over (the plugin calls it on every `activate()`);
 - a successful `changeRenderingDevice()`.
 
 **Why the GPU stays up across deactivate:**
+
 - The plugin's `deactivate()` removes REAPER's video processor, so frames stop arriving, but it doesn't shut the renderer down.
 - CLAP needs a deactivate/activate cycle whenever the param list changes, which happens on every shader change (a host "restart").
 - Recreating the Vulkan instance and device each time would take noticeable time.
 
 **Swapping the shader or the LUT is safe without waiting:** frames render one at a time and each waits on its fence. So whenever `setShader` or `setLut` holds the mutex, the GPU isn't using the old pass or LUT, and `_installShader` / `_installLut` can destroy it immediately. The same holds for descriptor sets, which is why passes can rebind their inputs every frame.
-
----
 
 ## 7. Decisions and why
 
@@ -417,13 +428,12 @@ Four threads touch the renderer (the full list is in `src/plugin/plugin.h`):
 - **The shader always has an `iChannel1`.** When the LUT isn't the shader's (no LUT, or mode `Before`/`After`), a 17³ identity is bound, so the descriptor is always valid and a shader calling `iLut` gets its input back. 17 points, not 2: some GPUs interpolate with 8-bit weights, which on a 2-point identity can be off by one 8-bit step.
 - **Plain `create()`/`destroy()` structs, no deletion queues.** There are few objects with clear owners (the lifetime table above), so an explicit list of handles per struct is easier to follow than a generic mechanism.
 
----
-
 ## 8. How to extend
 
 ### Add a pass
 
 Passes are chained by `FrameTargets::recordPasses` (see [the chain](#the-chain)). To add a kind of pass:
+
 - **Implement `gpu::Pass`:** `bindInput` writes the input's descriptor (with `writeImageDescriptor`), and `record` starts with `beginFullscreenRendering(commandBuffer, target)`, draws, and ends rendering. That leaves the target in `COLOR_ATTACHMENT_OPTIMAL`, as the invariant needs.
 - **One descriptor set per pass object:** a pass object can appear only once in a chain. To run a shader twice, create two passes.
 - **Lifetime:** create it with the device (or when its content is set), destroy it in `_destroyDevice`, and add it to the list in `renderFrame`.
@@ -444,8 +454,6 @@ Passes are chained by `FrameTargets::recordPasses` (see [the chain](#the-chain))
 4. **Stored shaders** carry SPIR-V compiled against the old preamble, both in `resources/shaders/compiled/` and inside saved projects:
    - appending a field keeps them working, since they just don't read it;
    - reordering or changing fields breaks them, so bump `kStoredVersion` in that case.
-
----
 
 ## 9. Debugging
 
