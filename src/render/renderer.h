@@ -48,8 +48,8 @@ namespace ReaShader
 			std::shared_ptr<const gpu::LutData> lut;			// ...or a LUT node
 			std::shared_ptr<const gpu::LutData> shaderLut;		// a shader node's iChannel1 (none: an identity)
 			bool bypass = false;								// left out of the passes, keeps its GPU objects
-			// the node's params in FrameInputs::paramValues: a shader's in the order of CompiledShader::params,
-			// a LUT's Mix; params past FrameInputs::paramCount get their defaults
+			// the node's params in FrameInputs::paramValues, as host values (0..1 over each param's range): a
+			// shader's in the order of CompiledShader::params, a LUT's Mix; params past paramCount get defaults
 			size_t firstParam = 0;
 			size_t paramCount = 0;
 		};
@@ -75,7 +75,7 @@ namespace ReaShader
 		{
 			double time;
 			double frameRate;
-			const double* paramValues; // the plugin's params, by index in the param list
+			const double* paramValues; // the plugin's params by id, as host values (0..1 over their range)
 			size_t paramCount;
 		};
 		// false: nothing rendered (inactive, busy, failed, or no pass and no logo): the caller passes the input through

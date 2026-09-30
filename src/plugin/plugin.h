@@ -83,8 +83,9 @@ namespace ReaShader
 
 		// -------- clap.params --------
 
-		uint32_t automatableParamCount() const;
-		bool getAutomatableParamInfo(uint32_t index, clap_param_info_t* info) const;
+		// every param, used or not (index = id): the list never changes size
+		uint32_t paramCount() const;
+		bool getParamInfo(uint32_t index, clap_param_info_t* info) const;
 		bool getParamValue(clap_id id, double* value) const;
 		bool valueToText(clap_id id, double value, char* buffer, uint32_t size) const;
 		bool textToValue(clap_id id, const char* text, double* value) const;
@@ -124,24 +125,32 @@ namespace ReaShader
 											   int nparms, double projectTime, double frameRate, int forceFormat);
 		static bool _getVideoParam(IREAPERVideoProcessor* videoProcessor, int idx, double* valueOut);
 
-		// Replaces the chain nodes' params (any thread).
-		// The host's param list may only change while deactivated: when active, the plugin asks the
-		// host to restart it and swaps the params in deactivate(), then asks the host to rescan.
-		void _setNodeParams(std::vector<Parameters::NodeParams> nodeParams);
-		void _applyPendingNodeParams();
+		// What a chain change does to the nodes' params
+		enum class ParamsChange
+		{
+			None, // bypass, a shader's LUT: the same params
+			Edit, // nodes added, removed, moved or swapped from the UI: params replaced, the gone ones cleared
+			Load  // a loaded state: params replaced (with the state's values), nothing cleared (the project's
+				  // envelopes come with it)
+		};
 
-		// Runs `edit` on a copy of the chain, hands the result to the renderer, and keeps it on success.
-		// `paramsChange`: nodes were added, removed, moved or swapped, so their params are replaced.
+		// Runs `edit` on a copy of the chain, replaces the nodes' params, hands the chain to the renderer, and
+		// keeps it on success (then tells the host, see _notifyHostParams). `savedValues`: a loaded state's.
 		// Returns the error (from `edit` or the renderer), empty on success; on error the chain stays.
-		std::string _editChain(const std::function<std::string(std::vector<Node>&)>& edit, bool paramsChange);
+		std::string _editChain(const std::function<std::string(std::vector<Node>&)>& edit, ParamsChange paramsChange,
+							   const Parameters::ValueMap& savedValues = {});
+
+		// Main thread: tells the host about changed params: clear() for the gone ones, then
+		// rescan(INFO | VALUES), which the host takes while the plugin is active (the list never changes size)
+		void _notifyHostParams();
 
 		// reports a chain change to the UI: the error, or `done`, then a snapshot
 		void _chainEdited(const std::string& error, const std::string& done);
 
 		// compiles GLSL or parses a .cube file, stores it, then appends a node with it
 		void _upload(Node::Kind kind, const std::string& fileName, const std::string& source);
-		// the chain from a v4 state's "chain" (invalid nodes are skipped)
-		void _loadChain(const Parameters::json& chainState);
+		// the chain from a v4 state's "chain" (invalid nodes are skipped), with the state's param values
+		void _loadChain(const Parameters::json& chainState, const Parameters::ValueMap& savedValues);
 
 		void _webuiSend(const Parameters::json& msg);
 		void _webuiSendSnapshot();
@@ -154,17 +163,15 @@ namespace ReaShader
 		Parameters::ParamList params;
 		std::atomic<bool> hostChangedParams{ false }; // echo to the web UI on the main thread
 		std::atomic<bool> active{ false };
-		std::atomic<bool> nodeParamsPending{ false };	 // the nodes' params wait for a restart
-		bool restartRequested{ false };					 // main thread only
+		std::atomic<bool> hostParamsChanged{ false }; // names, visibility or values to rescan on the main thread
 
 		// everything below is guarded by stateMutex
 		mutable std::mutex stateMutex;
 		int renderingDevice{ 0 };
 		std::vector<std::string> renderingDeviceNames;
 		bool showLogo{ false };
-		std::vector<Node> chain;			  // in order
-		Parameters::ValueMap savedNodeValues; // from a loaded state, restored when the nodes' params appear
-		std::vector<Parameters::NodeParams> pendingNodeParams;
+		std::vector<Node> chain;				   // in order
+		std::vector<Parameters::Id> paramsToClear; // gone after UI edits, for the host's clear()
 		int trackNumber{ 0 };					// 1-based, 0 = not found, -1 = master
 		std::string trackName;
 

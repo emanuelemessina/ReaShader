@@ -18,6 +18,7 @@
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -51,6 +52,7 @@ namespace host
 		std::string name;
 		double minValue, maxValue, defaultValue;
 		double value; // the host's current value (what automation would send)
+		bool hidden;  // CLAP_PARAM_IS_HIDDEN
 	};
 
 	class Reaper
@@ -80,8 +82,9 @@ namespace host
 		std::string saveState();
 		void loadState(const std::string& state);
 
-		// Host automation of a param: the host's value (what process_frame gets) changes now, and the next
-		// audio block carries it to the plugin as a CLAP param event
+		// Host automation of a param, like an envelope on its id: the host's value (what process_frame gets)
+		// changes now and stays through rescans (and params.clear, like REAPER), and the next audio block
+		// carries it to the plugin as a CLAP param event
 		void automate(clap_id id, double value);
 
 		// `blocks` audio blocks of constant `input` through process(), on the audio thread.
@@ -98,9 +101,13 @@ namespace host
 
 		// -------- observations --------
 
-		const std::vector<Param>& params() const;
-		const Param* param(const std::string& name) const; // by name, null if absent
+		const std::vector<Param>& params() const;		   // every param, hidden ones too
+		std::vector<Param> visibleParams() const;		   // what REAPER lists in its menus and generic UI
+		const Param* param(const std::string& name) const; // a visible one by name, null if absent
+		std::vector<clap_id> cleared() const;			   // ids the plugin asked the host to forget (params.clear)
 		double pluginValue(clap_id id) const;			   // params.get_value: the plugin's own value
+		std::string paramText(clap_id id, double value) const;			 // params.value_to_text (what REAPER shows)
+		double paramFromText(clap_id id, const std::string& text) const; // params.text_to_value
 		bool isActive() const;
 		bool hasVideoProcessor() const;
 		int restarts() const; // restarts done for request_restart
@@ -150,6 +157,8 @@ namespace host
 		const clap_plugin_t* plugin = nullptr;
 		const clap_plugin_params_t* pluginParams = nullptr;
 		std::vector<Param> paramList;
+		std::map<clap_id, double> envelopes; // automated ids, and their values
+		std::vector<clap_id> clearedIds;
 		std::mutex automationMutex;
 		std::vector<clap_event_param_value_t> automation; // for the next audio block
 		bool active = false;

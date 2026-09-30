@@ -22,7 +22,7 @@ It started as my own experiment in making a video processor for REAPER, and grew
   - upload new shaders and `.cube` LUTs;
   - move each shader's sliders, and blend each LUT with its Mix;
   - choose the GPU.
-- Every slider is also a host parameter, so it can be automated in REAPER. Automation stays with its shader or LUT when you reorder the chain.
+- Every slider is also a host parameter, so it can be automated in REAPER. Each shader or LUT in the chain has a letter, shown on its card, and its parameters are named with it in REAPER (`[B] brightness: Brightness`), so the same shader twice can be told apart. The letter stays with it, and so does its automation, when you reorder the chain.
 - With an empty chain, the video passes through unchanged.
 
 It's a work in progress. Only Windows is supported for now; macOS/Linux builds are planned (the code has `TODO`s where platform work is missing).
@@ -50,9 +50,11 @@ ReaShader needs Vulkan (from your GPU driver) and, on Windows, WebView2 (built i
    - **Bypass** leaves it out, keeping its settings;
    - **×** removes it; the drop-down in its header swaps it for another stored shader or LUT;
    - a LUT's **Mix** blends between its input (0%) and the LUT's result (100%);
-   - a shader's **LUT (iLut)** hands a LUT to the shader itself, which decides how to use it through `iLut()` (try `lut_split.frag`).
+   - a shader's **LUT (iLut)** hands a LUT to the shader itself, which decides how to use it through `iLut()` (try `lut_split.frag`). It shows only for shaders that use a LUT.
 
    Pick a stored shader or LUT from "Add a shader" / "Add a LUT" to append it again: the same one can be in the chain more than once, each with its own settings.
+
+   Removing a node frees its letter for the next node you add. REAPER keeps the removed node's envelopes and parameter modulation on that letter's parameters, and they will drive the next node that gets it: delete them in REAPER when you remove an automated node. In REAPER these are separate: deleting an envelope lane doesn't remove an LFO or other modulation, which you turn off in its own window (Param → Parameter modulation/MIDI link).
 
 Writing your own shader is simple: see [the examples' README](src/shaders/examples/README.md).
 

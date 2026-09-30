@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -109,7 +110,7 @@ namespace
 			return json::parse(out.data);
 		}
 
-		// loads a state, then lets the plugin apply its params
+		// loads a state; inactive, the plugin applies its params right away
 		void loadState(const json& state)
 		{
 			struct In
@@ -128,7 +129,6 @@ namespace
 			} in;
 			in.data = state.dump();
 			REQUIRE(plugin.loadState(&in.stream));
-			plugin.onMainThread();
 		}
 
 		double value(clap_id id)
@@ -139,6 +139,7 @@ namespace
 		}
 
 		int callbacks = 0, restarts = 0, rescans = 0, flushes = 0;
+		std::vector<clap_id> cleared; // params the plugin asked the host to forget
 		std::vector<json> sent;
 		ReaShaderPlugin plugin;
 
@@ -151,7 +152,7 @@ namespace
 		{
 			static const clap_host_params_t hostParams{
 				[](const clap_host_t* host, clap_param_rescan_flags) { self(host)->rescans++; },
-				[](const clap_host_t*, clap_id, clap_param_clear_flags) {},
+				[](const clap_host_t* host, clap_id id, clap_param_clear_flags) { self(host)->cleared.push_back(id); },
 				[](const clap_host_t* host) { self(host)->flushes++; },
 			};
 			return std::strcmp(id, CLAP_EXT_PARAMS) == 0 ? &hostParams : nullptr;
@@ -189,6 +190,18 @@ namespace
 		ui.edit({ { "type", "lutUpload" }, { "name", file }, { "source", lutFixture(file) } });
 	}
 
+	// a shader with `vectors` vec4 sliders (4 each)
+	std::string manySliders(int vectors)
+	{
+		std::string members, sum = "vec4(0)";
+		for (int i = 0; i < vectors; i++)
+		{
+			members += "vec4 p" + std::to_string(i) + "; ";
+			sum += " + p" + std::to_string(i);
+		}
+		return "uniform Params { " + members + "};\nvoid main() { fragColor = " + sum + "; }\n";
+	}
+
 	std::string status(UiSession& ui)
 	{
 		return ui.last("chainStatus")["status"];
@@ -222,9 +235,9 @@ TEST_SUITE("protocol")
 		json snapshot = ui.last("snapshot");
 		REQUIRE(snapshot.is_object());
 		CHECK_FALSE(snapshot["version"].get<std::string>().empty());
-		REQUIRE(snapshot["params"].size() == Parameters::DefaultCount);
-		CHECK(snapshot["params"][Parameters::AudioGainIndex]["name"] == "Audio Gain");
-		CHECK(snapshot["params"][Parameters::AudioGainIndex]["id"] == Parameters::AudioGain);
+		REQUIRE(snapshot["params"].size() == 1); // the used ones: Audio Gain
+		CHECK(snapshot["params"][0]["name"] == "Audio Gain");
+		CHECK(snapshot["params"][0]["id"] == Parameters::AudioGain);
 		CHECK(snapshot["logo"] == false);
 		CHECK(snapshot["chain"] == json::array());
 		CHECK(snapshot["shaders"] == json::array());
@@ -288,22 +301,24 @@ TEST_SUITE("protocol")
 		CHECK(std::filesystem::exists(util::paths::compiledShadersDir() / "brightness.json"));
 		CHECK(ui.callbacks >= 1);
 
-		// inactive: the new params are applied right away, and the host rescans
+		// the params are there right away; the host rescans their names and values on the main thread
 		ui.plugin.onMainThread();
 		CHECK(ui.rescans == 1);
 		CHECK(ui.restarts == 0);
-		CHECK(ui.plugin.automatableParamCount() == Parameters::DefaultCount + 1);
+		CHECK(ui.plugin.paramCount() == Parameters::kParamCount); // the list never changes size
 
 		json snapshot = ui.last("snapshot");
 		CHECK(snapshot["chain"] == json::array({ { { "uid", 0 },
+												   { "tag", "A" },
 												   { "kind", "shader" },
 												   { "name", "brightness" },
 												   { "bypass", false },
-												   { "lut", "" } } }));
+												   { "lut", "" },
+												   { "samplesLut", false } } }));
 		CHECK(snapshot["shaders"] == json::array({ "brightness" }));
-		REQUIRE(snapshot["params"].size() == Parameters::DefaultCount + 1);
-		json brightness = snapshot["params"][Parameters::DefaultCount];
-		CHECK(brightness["label"] == "brightness: Brightness");
+		REQUIRE(snapshot["params"].size() == 2);
+		json brightness = snapshot["params"][1];
+		CHECK(brightness["label"] == "[A] brightness: Brightness");
 		CHECK(brightness["name"] == "0/brightness");
 		CHECK(brightness["id"] == nodeParamId(0, 0));
 		CHECK(brightness["node"] == 0);
@@ -334,7 +349,7 @@ TEST_SUITE("protocol")
 		CHECK(ui.chain() == std::vector<std::string>{ "0:shader:brightness", "1:lut:invert" });
 		CHECK(ui.last("snapshot")["luts"] == json::array({ "invert" }));
 
-		json mix = ui.param("invert: Mix");
+		json mix = ui.param("[B] invert: Mix");
 		REQUIRE(mix.is_object());
 		CHECK(mix["id"] == nodeParamId(1, 0));
 		CHECK(mix["name"] == "1/mix");
@@ -378,15 +393,12 @@ TEST_SUITE("protocol")
 		ui.edit({ { "type", "nodeAdd" }, { "kind", "shader" }, { "name", "tint" }, { "index", 0 } });
 		ui.edit({ { "type", "nodeAdd" }, { "kind", "shader" }, { "name", "../../tint" }, { "index", 99 } });
 		CHECK(status(ui) == "Added tint");
+		// the smallest free uids: the removed ones come back at once
 		CHECK(ui.chain() == std::vector<std::string>{ "1:shader:tint", "0:lut:invert", "2:shader:tint" });
 
-		// the same shader twice: two nodes, each with its own params
-		CHECK(ui.param("tint: Amount")["id"] == nodeParamId(1, 0));
-		int amounts = 0;
-		json snapshot = ui.last("snapshot");
-		for (const json& p : snapshot["params"])
-			amounts += p["label"] == "tint: Amount";
-		CHECK(amounts == 2);
+		// the same shader twice: two nodes, each with its own params, told apart by their tag
+		CHECK(ui.param("[B] tint: Amount")["id"] == nodeParamId(1, 0));
+		CHECK(ui.param("[C] tint: Amount")["id"] == nodeParamId(2, 0));
 
 		ui.edit({ { "type", "nodeAdd" }, { "kind", "shader" }, { "name", "missing" } });
 		CHECK(ui.last("chainStatus")["state"] == "error");
@@ -396,6 +408,46 @@ TEST_SUITE("protocol")
 		ui.edit({ { "type", "nodeAdd" }, { "kind", "lut" }, { "name", "tint" } }); // not a LUT
 		CHECK(ui.last("chainStatus")["state"] == "error");
 		CHECK(ui.chain().size() == 3);
+	}
+
+	TEST_CASE("a shader with more than 40 sliders is rejected everywhere, never loaded in part")
+	{
+		UiSession ui;
+
+		// upload: not even stored
+		ui.edit({ { "type", "shaderUpload" }, { "name", "big.frag" }, { "source", manySliders(11) } });
+		CHECK(ui.last("chainStatus")["state"] == "error");
+		CHECK(status(ui) == "big has 44 sliders, and a shader can have at most 40");
+		CHECK_FALSE(std::filesystem::exists(util::paths::compiledShadersDir() / "big.json"));
+		CHECK(ui.chain().empty());
+
+		// exactly 40: fine
+		ui.edit({ { "type", "shaderUpload" }, { "name", "forty.frag" }, { "source", manySliders(10) } });
+		CHECK(status(ui) == "Added forty");
+		CHECK(ui.chain() == std::vector<std::string>{ "0:shader:forty" });
+
+		// a stored one from elsewhere (e.g. an older version): not added, not swapped in
+		json big = gpu::toJson(gpu::compileShader(manySliders(11), "big.frag"));
+		std::ofstream(util::paths::compiledShadersDir() / "big.json") << big.dump();
+		ui.edit({ { "type", "nodeAdd" }, { "kind", "shader" }, { "name", "big" } });
+		CHECK(status(ui) == "big has 44 sliders, and a shader can have at most 40");
+		ui.edit({ { "type", "nodeSet" }, { "uid", 0 }, { "name", "big" } });
+		CHECK(status(ui) == "big has 44 sliders, and a shader can have at most 40");
+		CHECK(ui.chain() == std::vector<std::string>{ "0:shader:forty" });
+
+		// in a project: left out of the chain, and the UI told
+		UiSession other;
+		other.loadState(
+			{ { "version", 4 },
+			  { "params", json::object() },
+			  { "chain", json::array({ { { "uid", 0 }, { "kind", "shader" }, { "name", "big" }, { "data", big } },
+									   { { "uid", 1 },
+										 { "kind", "lut" },
+										 { "name", "invert" },
+										 { "data", gpu::toJson(test::invertLut()) } } }) } });
+		CHECK(other.chain() == std::vector<std::string>{ "1:lut:invert" });
+		CHECK(other.last("chainStatus")["state"] == "error");
+		CHECK(status(other).find("big has 44 sliders") != std::string::npos);
 	}
 
 	TEST_CASE("a chain holds at most 16 nodes; an upload to a full chain is still stored")
@@ -415,7 +467,7 @@ TEST_SUITE("protocol")
 		CHECK(ui.chain().size() == 16);
 	}
 
-	TEST_CASE("nodeRemove: the node and its params go; a new node takes the smallest free uid")
+	TEST_CASE("nodeRemove: the node and its params go, the host is asked to forget them; the uid is free again")
 	{
 		UiSession ui;
 		uploadShader(ui, "brightness.frag");
@@ -426,7 +478,8 @@ TEST_SUITE("protocol")
 		CHECK(status(ui) == "Removed brightness");
 		CHECK(ui.rescans == rescans + 1);
 		CHECK(ui.chain() == std::vector<std::string>{ "1:lut:invert" });
-		CHECK(ui.param("brightness: Brightness").is_null());
+		CHECK(ui.param("[A] brightness: Brightness").is_null());
+		CHECK(ui.cleared == std::vector<clap_id>{ nodeParamId(0, 0) });
 
 		uploadShader(ui, "tint.frag");
 		CHECK(ui.chain() == std::vector<std::string>{ "1:lut:invert", "0:shader:tint" });
@@ -437,7 +490,7 @@ TEST_SUITE("protocol")
 		CHECK(status(ui) == "No such node");
 	}
 
-	TEST_CASE("nodeMove: the order and the params' order change, their ids and values don't")
+	TEST_CASE("nodeMove: the order changes, the params' ids, values and labels don't")
 	{
 		UiSession ui;
 		uploadShader(ui, "brightness.frag");
@@ -449,12 +502,16 @@ TEST_SUITE("protocol")
 		CHECK(status(ui) == "Moved invert");
 		CHECK(ui.chain() == std::vector<std::string>{ "1:lut:invert", "0:shader:brightness" });
 
-		json params = ui.last("snapshot")["params"];
-		REQUIRE(params.size() == Parameters::DefaultCount + 2);
-		CHECK(params[Parameters::DefaultCount]["id"] == nodeParamId(1, 0));
-		CHECK(params[Parameters::DefaultCount + 1]["id"] == nodeParamId(0, 0));
+		json params = ui.last("snapshot")["params"]; // in id order, whatever the chain's
+		REQUIRE(params.size() == 3);
+		CHECK(params[1]["id"] == nodeParamId(0, 0));
+		CHECK(params[2]["id"] == nodeParamId(1, 0));
 		CHECK(ui.value(nodeParamId(0, 0)) == 0.3);
 		CHECK(ui.value(nodeParamId(1, 0)) == 0.6);
+		// the labels stay (REAPER keeps an envelope's name from its creation), and the host keeps its references
+		CHECK(ui.param("[B] invert: Mix")["id"] == nodeParamId(1, 0));
+		CHECK(ui.param("[A] brightness: Brightness")["id"] == nodeParamId(0, 0));
+		CHECK(ui.cleared.empty());
 
 		ui.edit({ { "type", "nodeMove" }, { "uid", 1 }, { "index", 5 } }); // past the end: last
 		CHECK(ui.chain() == std::vector<std::string>{ "0:shader:brightness", "1:lut:invert" });
@@ -473,7 +530,7 @@ TEST_SUITE("protocol")
 		CHECK(ui.rescans == rescans);
 		CHECK(ui.last("snapshot")["chain"][0]["bypass"] == true);
 		CHECK(ui.savedState()["chain"][0]["bypass"] == true);
-		CHECK(ui.param("brightness: Brightness").is_object());
+		CHECK(ui.param("[A] brightness: Brightness").is_object());
 
 		ui.edit({ { "type", "nodeBypass" }, { "uid", 0 }, { "bypass", false } });
 		CHECK(status(ui) == "Enabled brightness");
@@ -488,11 +545,15 @@ TEST_SUITE("protocol")
 		uploadLut(ui, "invert.cube");		 // uid 2
 		ui.edit({ { "type", "nodeRemove" }, { "uid", 1 } });
 
+		ui.cleared.clear();
 		ui.edit({ { "type", "nodeSet" }, { "uid", 0 }, { "name", "brightness" } });
 		CHECK(status(ui) == "Loaded brightness");
 		CHECK(ui.chain() == std::vector<std::string>{ "0:shader:brightness", "2:lut:invert" });
-		CHECK(ui.param("brightness: Brightness")["id"] == nodeParamId(0, 0));
-		CHECK(ui.param("tint: Amount").is_null());
+		CHECK(ui.param("[A] brightness: Brightness")["id"] == nodeParamId(0, 0));
+		CHECK(ui.param("[A] tint: Amount").is_null());
+		// tint's params (amount, color.x/y/z at ids 1..4) went away, or their id is brightness's now
+		CHECK(ui.cleared ==
+			  std::vector<clap_id>{ nodeParamId(0, 0), nodeParamId(0, 1), nodeParamId(0, 2), nodeParamId(0, 3) });
 
 		ui.edit({ { "type", "nodeSet" }, { "uid", 2 }, { "name", "brightness" } }); // a LUT node: LUTs only
 		CHECK(status(ui) == "Can't read the stored LUT brightness");
@@ -504,7 +565,14 @@ TEST_SUITE("protocol")
 		UiSession ui;
 		uploadShader(ui, "lut_split.frag");
 		uploadLut(ui, "invert.cube");
+		uploadShader(ui, "brightness.frag");
 		int rescans = ui.rescans;
+
+		// the snapshot says which shaders sample a LUT at all
+		json snapshot = ui.last("snapshot");
+		CHECK(snapshot["chain"][0]["samplesLut"] == true);
+		CHECK(snapshot["chain"][2]["samplesLut"] == false);
+		CHECK_FALSE(snapshot["chain"][1].contains("samplesLut")); // a LUT node
 
 		ui.edit({ { "type", "nodeLut" }, { "uid", 0 }, { "name", "invert" } });
 		CHECK(status(ui) == "lut_split: LUT invert");
@@ -522,6 +590,45 @@ TEST_SUITE("protocol")
 		CHECK(status(ui) == "Only a shader node samples a LUT");
 		ui.edit({ { "type", "nodeLut" }, { "uid", 0 }, { "name", "../../missing" } });
 		CHECK(status(ui) == "Can't read the stored LUT missing");
+	}
+
+	TEST_CASE("the UI edits real values; the host gets them as 0..1 over the param's range")
+	{
+		UiSession ui;
+		uploadShader(ui, "pixelate.frag"); // blockSize: 16, 1..128
+		const clap_id blockSize = nodeParamId(0, 0);
+
+		json param = ui.param("[A] pixelate: Block size (px)");
+		CHECK(param["value"] == 16);
+		CHECK(param["minValue"] == 1);
+		CHECK(param["maxValue"] == 128);
+		CHECK(ui.value(blockSize) == doctest::Approx(15.0 / 127));
+
+		clap_param_info_t info{};
+		REQUIRE(ui.plugin.getParamInfo(blockSize, &info));
+		CHECK(info.min_value == 0);
+		CHECK(info.max_value == 1);
+		CHECK(info.default_value == doctest::Approx(15.0 / 127));
+
+		ui.receive({ { "type", "paramValue" }, { "id", blockSize }, { "value", 64.5 } });
+		CHECK(ui.value(blockSize) == doctest::Approx(0.5));
+		clap_id id = 99;
+		double value = 0;
+		REQUIRE(ui.plugin.takeParamChangeForHost(id, value));
+		CHECK(value == doctest::Approx(0.5));
+
+		// the host's automation, echoed to the UI as the real value
+		ui.plugin.applyHostParamValue(blockSize, 1.0);
+		ui.plugin.onMainThread();
+		CHECK(ui.last("paramValue")["value"] == doctest::Approx(128.0));
+		CHECK(ui.savedState()["params"]["0/blockSize"] == doctest::Approx(128.0));
+
+		// text both ways, in the real range
+		char text[64];
+		REQUIRE(ui.plugin.valueToText(blockSize, 0.5, text, sizeof(text)));
+		CHECK(std::string(text) == "64.500");
+		REQUIRE(ui.plugin.textToValue(blockSize, "1", &value));
+		CHECK(value == 0.0);
 	}
 
 	TEST_CASE("a LUT node's Mix edits in the UI go to the host like any param")
@@ -569,6 +676,9 @@ TEST_SUITE("protocol")
 
 		UiSession ui;
 		ui.loadState(saved);
+		// inactive: the params are there right away (REAPER binds envelopes right after loading), none cleared
+		CHECK(ui.rescans == 1);
+		CHECK(ui.cleared.empty());
 		CHECK(ui.chain() == std::vector<std::string>{ "2:shader:brightness", "0:shader:lut_split", "1:lut:invert" });
 		CHECK(ui.value(nodeParamId(2, 0)) == 0.7);
 		CHECK(ui.savedState() == saved);

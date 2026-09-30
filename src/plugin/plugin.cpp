@@ -112,7 +112,16 @@ namespace ReaShader
 			return data;
 		}
 
-		// a node's content from a stored JSON: its name, data and parsed form; throws on invalid data
+		// a shader with more sliders than a node's slots is rejected, never loaded in part
+		void checkSliders(const gpu::CompiledShader& shader, const std::string& name)
+		{
+			if (shader.params.size() > Parameters::kNodeSlots)
+				throw std::runtime_error(std::format("{} has {} sliders, and a shader can have at most {}", name,
+													 shader.params.size(), Parameters::kNodeSlots));
+		}
+
+		// a node's content from a stored JSON: its name, data and parsed form; throws on invalid data, or a
+		// shader with too many sliders
 		void setContent(Node& node, const std::string& name, const std::string& data)
 		{
 			try
@@ -128,6 +137,8 @@ namespace ReaShader
 										 (node.kind == Node::Kind::Shader ? "shader " : "LUT ") + name + ": " +
 										 e.what());
 			}
+			if (node.shader)
+				checkSliders(*node.shader, name);
 			node.name = name;
 			node.data = data;
 		}
@@ -176,11 +187,19 @@ namespace ReaShader
 			return (uint32_t)*uid;
 		}
 
-		// a new node with a stored shader or LUT, at `index` (past the end: last); returns the error, if any
+		// A node's tag in labels and the UI, "A".."P": its uid as a letter, so it isn't taken for a position
+		std::string tagOf(uint32_t uid)
+		{
+			return std::string(1, (char)('A' + uid));
+		}
+
+		// A new node with a stored shader or LUT, at `index` (past the end: last); returns the error, if any.
+		// Its uid is the smallest free one. A removed node's uid comes back at once, on purpose: REAPER keeps
+		// a removed node's envelopes and modulation on its param ids, and they'd drive the next node there
+		// sooner or later anyway, so it's better seen right away.
 		std::string insertNode(std::vector<Node>& chain, Node::Kind kind, const std::string& name,
 							   const std::string& data, size_t index)
 		{
-			// the smallest free uid
 			uint32_t uid = 0;
 			while (uid < Parameters::kMaxNodes && findNode(chain, uid))
 				uid++;
@@ -197,7 +216,9 @@ namespace ReaShader
 		}
 
 		// Each node's params, in chain order: a shader's sliders, a LUT's Mix.
-		// Names (state keys) are "<uid>/<member>", labels "<node name>: <label>".
+		// Names (state keys) are "<uid>/<member>", labels "[<tag>] <node name>: <label>": both stay the same for
+		// the node's life, because REAPER keeps an envelope's name from when it was created, and the tag tells
+		// the same shader twice apart.
 		std::vector<Parameters::NodeParams> paramsOfNodes(const std::vector<Node>& chain)
 		{
 			std::vector<Parameters::NodeParams> result;
@@ -205,17 +226,17 @@ namespace ReaShader
 			{
 				Parameters::NodeParams nodeParams{ node.uid, {} };
 				std::string prefix = std::to_string(node.uid) + "/";
+				std::string labelPrefix = std::format("[{}] {}: ", tagOf(node.uid), node.name);
 				if (node.shader)
 				{
 					for (const gpu::ShaderParamField& field : node.shader->params)
 					{
 						Parameters::Param param;
 						param.name = prefix + field.name;
-						param.label = node.name + ": " + field.label;
+						param.label = labelPrefix + field.label;
 						param.defaultValue = field.defaultValue;
 						param.minValue = field.minValue;
 						param.maxValue = field.maxValue;
-						param.automatable = true;
 						nodeParams.params.push_back(std::move(param));
 					}
 				}
@@ -223,10 +244,9 @@ namespace ReaShader
 				{
 					Parameters::Param mix; // 0 = the frame as is, 1 = fully through the LUT
 					mix.name = prefix + "mix";
-					mix.label = node.name + ": Mix";
+					mix.label = labelPrefix + "Mix";
 					mix.units = "%";
 					mix.defaultValue = 1.0;
-					mix.automatable = true;
 					nodeParams.params.push_back(std::move(mix));
 				}
 				result.push_back(std::move(nodeParams));
@@ -234,12 +254,11 @@ namespace ReaShader
 			return result;
 		}
 
-		// The renderer's chain, each node with its params' place in the param list: after the fixed params,
-		// in chain order, at most kNodeSlots per node (as ParamList lays out paramsOfNodes())
+		// The renderer's chain, each node with its params' place in the param list: its uid's slots, at most
+		// kNodeSlots (as ParamList lays out paramsOfNodes())
 		std::vector<ReaShaderRenderer::ChainNode> rendererChain(const std::vector<Node>& chain)
 		{
 			std::vector<ReaShaderRenderer::ChainNode> result;
-			size_t index = Parameters::DefaultCount;
 			for (const Node& node : chain)
 			{
 				size_t count = node.shader ? node.shader->params.size() : 1;
@@ -250,9 +269,8 @@ namespace ReaShader
 								   .lut = node.lut,
 								   .shaderLut = node.shaderLut,
 								   .bypass = node.bypass,
-								   .firstParam = index,
+								   .firstParam = Parameters::nodeParamId(node.uid, 0),
 								   .paramCount = count });
-				index += count;
 			}
 			return result;
 		}
@@ -381,84 +399,85 @@ namespace ReaShader
 		// stop REAPER's video callbacks (the renderer lives on until the plugin is destroyed)
 		delete videoProcessor;
 		videoProcessor = nullptr;
-
-		if (nodeParamsPending)
-			_applyPendingNodeParams();
 	}
 
 	void ReaShaderPlugin::onMainThread()
 	{
-		if (nodeParamsPending)
-		{
-			if (!active)
-				_applyPendingNodeParams();
-			else if (!restartRequested)
-			{
-				restartRequested = true;
-				host->request_restart(host); // -> deactivate() -> activate()
-			}
-		}
+		if (hostParamsChanged.exchange(false))
+			_notifyHostParams();
 
 		if (hostChangedParams.exchange(false))
 		{
 			for (const Parameters::Param& p : params.list())
-			{
-				if (p.automatable)
-					_webuiSend({ { "type", "paramValue" }, { "id", p.id }, { "value", params.value(p.id) } });
-			}
+				_webuiSend({ { "type", "paramValue" }, { "id", p.id }, { "value", p.toReal(params.value(p.id)) } });
 		}
 	}
 
 	// -------- clap.params --------
 
-	uint32_t ReaShaderPlugin::automatableParamCount() const
+	uint32_t ReaShaderPlugin::paramCount() const
 	{
-		return params.automatableCount();
+		return Parameters::kParamCount;
 	}
 
-	bool ReaShaderPlugin::getAutomatableParamInfo(uint32_t index, clap_param_info_t* info) const
+	// Every param, index = id. An unused node slot is hidden with an empty name: REAPER then leaves it out of
+	// its menus entirely (a hidden param with a name is listed, greyed).
+	bool ReaShaderPlugin::getParamInfo(uint32_t index, clap_param_info_t* info) const
 	{
-		auto param = params.automatableAt(index);
-		if (!param)
+		if (index >= Parameters::kParamCount)
 			return false;
+		Parameters::Param param = params.at(index);
 
+		// 0..1 over the param's own range (see Param::toHost); value_to_text shows the real value
 		*info = {};
-		info->id = param->id;
-		info->flags = CLAP_PARAM_IS_AUTOMATABLE;
-		std::snprintf(info->name, sizeof(info->name), "%s", param->label.c_str());
-		info->min_value = param->minValue;
-		info->max_value = param->maxValue;
-		info->default_value = param->defaultValue;
+		info->id = param.id;
+		info->flags = CLAP_PARAM_IS_AUTOMATABLE | (param.used() ? 0 : CLAP_PARAM_IS_HIDDEN);
+		std::snprintf(info->name, sizeof(info->name), "%s", param.label.c_str());
+		info->min_value = 0.0;
+		info->max_value = 1.0;
+		info->default_value = param.toHost(param.defaultValue);
 		return true;
 	}
 
 	bool ReaShaderPlugin::getParamValue(clap_id id, double* value) const
 	{
-		if (!params.contains(id))
+		if (id >= Parameters::kParamCount)
 			return false;
 		*value = params.value(id);
 		return true;
 	}
 
-	bool ReaShaderPlugin::valueToText(clap_id, double value, char* buffer, uint32_t size) const
+	// a host value (0..1) as the param's real value, like the web UI shows it: "64.500", or "50.0 %"
+	bool ReaShaderPlugin::valueToText(clap_id id, double value, char* buffer, uint32_t size) const
 	{
-		std::snprintf(buffer, size, "%.3f", value);
+		if (id >= Parameters::kParamCount)
+			return false;
+		Parameters::Param param = params.at(id);
+		double real = param.toReal(value);
+		if (param.units == "%")
+			std::snprintf(buffer, size, "%.1f %%", real * 100.0);
+		else
+			std::snprintf(buffer, size, "%.3f", real);
 		return true;
 	}
 
-	bool ReaShaderPlugin::textToValue(clap_id, const char* text, double* value) const
+	// a real value typed in the host (a percentage for "%" params) as a host value (0..1)
+	bool ReaShaderPlugin::textToValue(clap_id id, const char* text, double* value) const
 	{
+		if (id >= Parameters::kParamCount)
+			return false;
 		char* end = nullptr;
 		double parsed = std::strtod(text, &end);
 		if (end == text)
 			return false;
-		*value = parsed;
+		Parameters::Param param = params.at(id);
+		*value = param.toHost(param.units == "%" ? parsed / 100.0 : parsed);
 		return true;
 	}
 
 	void ReaShaderPlugin::applyHostParamValue(clap_id id, double value)
 	{
-		if (!params.contains(id))
+		if (id >= Parameters::kParamCount)
 			return;
 		params.setValue(id, value);
 		hostChangedParams = true;
@@ -558,25 +577,31 @@ namespace ReaShader
 			deviceChanged = device != renderingDevice;
 			renderingDevice = device;
 			showLogo = logo;
-			savedNodeValues.clear();
-			for (const auto& [name, value] : savedParams.items())
-			{
-				if (value.is_number())
-					savedNodeValues[name] = value.get<double>();
-			}
+		}
+		Parameters::ValueMap savedValues;
+		for (const auto& [name, value] : savedParams.items())
+		{
+			if (value.is_number())
+				savedValues[name] = value.get<double>();
 		}
 
 		if (deviceChanged)
 			reaShaderRenderer->changeRenderingDevice(device); // no-op when not active
 		reaShaderRenderer->setLogoEnabled(logo);
 
-		_loadChain(state.value("chain", json::array()));
+		_loadChain(state.value("chain", json::array()), savedValues);
+
+		// the host learns the new names and values now: REAPER binds the project's envelopes right after this
+		hostParamsChanged = false;
+		_notifyHostParams();
+
 		_webuiSendSnapshot();
 		return true;
 	}
 
-	void ReaShaderPlugin::_loadChain(const json& chainState)
+	void ReaShaderPlugin::_loadChain(const json& chainState, const Parameters::ValueMap& savedValues)
 	{
+		std::vector<std::string> skipped;
 		std::string error = _editChain(
 			[&](std::vector<Node>& nodes) -> std::string {
 				nodes.clear();
@@ -606,21 +631,24 @@ namespace ReaShader
 					catch (const std::exception& e)
 					{
 						LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "State load: node skipped", e.what());
+						skipped.push_back(e.what());
 					}
 				}
 				return {};
 			},
-			true);
+			ParamsChange::Load, savedValues);
 
 		if (!error.empty())
 		{
-			// the current chain stays, so the loaded values must not reach its params
-			{
-				std::lock_guard lock(stateMutex);
-				savedNodeValues.clear();
-			}
 			LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "State load: chain failed", error);
 			_webuiSendChainStatus(error, "error");
+		}
+		else if (!skipped.empty())
+		{
+			std::string status = "Left out of the project's chain:";
+			for (const std::string& reason : skipped)
+				status += "\n- " + reason;
+			_webuiSendChainStatus(status, "error");
 		}
 	}
 
@@ -644,13 +672,12 @@ namespace ReaShader
 		if (!output)
 			return input;
 
-		// param values at video time, by index in the param list: parmlist[0] is wet/dry, then the param at
-		// index i is at parmlist[i + 1] (params REAPER doesn't know yet fall back to the current value)
-		double paramValues[Parameters::ParamList::maxCount];
-		// while the nodes' params wait for a restart, they use their defaults
-		size_t paramCount = plugin->nodeParamsPending ? Parameters::DefaultCount : plugin->params.count();
+		// param values at video time, by id (= index): parmlist[0] is wet/dry, then param i is at parmlist[i + 1]
+		// (params REAPER doesn't pass fall back to the current value)
+		double paramValues[Parameters::kParamCount];
+		const size_t paramCount = Parameters::kParamCount;
 		for (size_t i = 0; i < paramCount; i++)
-			paramValues[i] = (int)i + 1 < nparms ? parmlist[i + 1] : plugin->params.valueAt(i);
+			paramValues[i] = (int)i + 1 < nparms ? parmlist[i + 1] : plugin->params.value((Parameters::Id)i);
 
 		FrameView inputFrame{ w, h, input->get_rowspan(), reinterpret_cast<uint8_t*>(input->get_bits()) };
 		FrameView outputFrame{ w, h, output->get_rowspan(), reinterpret_cast<uint8_t*>(output->get_bits()) };
@@ -670,9 +697,9 @@ namespace ReaShader
 	bool ReaShaderPlugin::_getVideoParam(IREAPERVideoProcessor* videoProcessor, int idx, double* valueOut)
 	{
 		auto* plugin = static_cast<ReaShaderPlugin*>(videoProcessor->userdata);
-		if (idx < 0 || (size_t)idx >= plugin->params.count())
+		if (idx < 0 || (size_t)idx >= Parameters::kParamCount)
 			return false;
-		*valueOut = plugin->params.valueAt((size_t)idx);
+		*valueOut = plugin->params.value((Parameters::Id)idx);
 		return true;
 	}
 
@@ -696,37 +723,23 @@ namespace ReaShader
 		renderingDeviceNames = deviceNames;
 	}
 
-	void ReaShaderPlugin::_setNodeParams(std::vector<Parameters::NodeParams> nodeParams)
+	void ReaShaderPlugin::_notifyHostParams()
 	{
+		std::vector<Parameters::Id> clears;
 		{
 			std::lock_guard lock(stateMutex);
-			pendingNodeParams = std::move(nodeParams);
+			clears.swap(paramsToClear);
 		}
-		nodeParamsPending = true;
-		host->request_callback(host); // -> onMainThread()
-	}
-
-	// main thread, plugin deactivated
-	void ReaShaderPlugin::_applyPendingNodeParams()
-	{
-		std::vector<Parameters::NodeParams> nodeParams;
-		Parameters::ValueMap savedValues;
-		{
-			std::lock_guard lock(stateMutex);
-			nodeParams = std::move(pendingNodeParams);
-			savedValues = std::move(savedNodeValues); // a loaded state's values apply once
-			pendingNodeParams.clear();
-			savedNodeValues.clear();
-		}
-		params.replaceNodeParams(std::move(nodeParams), savedValues);
-		nodeParamsPending = false;
-		restartRequested = false;
 
 		auto* hostParams = static_cast<const clap_host_params_t*>(host->get_extension(host, CLAP_EXT_PARAMS));
-		if (hostParams)
-			hostParams->rescan(host, CLAP_PARAM_RESCAN_ALL);
-
-		_webuiSendSnapshot();
+		if (!hostParams)
+			return;
+		// params that went away, or whose id now holds another param: the host's automation and modulation of
+		// them would otherwise drive whatever takes the id next
+		for (Parameters::Id id : clears)
+			hostParams->clear(host, id,
+							  CLAP_PARAM_CLEAR_ALL | CLAP_PARAM_CLEAR_AUTOMATIONS | CLAP_PARAM_CLEAR_MODULATIONS);
+		hostParams->rescan(host, CLAP_PARAM_RESCAN_INFO | CLAP_PARAM_RESCAN_VALUES);
 	}
 
 	// -------- the chain --------
@@ -736,7 +749,7 @@ namespace ReaShader
 	// embedded in the project state. Every change goes through _editChain.
 
 	std::string ReaShaderPlugin::_editChain(const std::function<std::string(std::vector<Node>&)>& edit,
-											bool paramsChange)
+											ParamsChange paramsChange, const Parameters::ValueMap& savedValues)
 	{
 		std::lock_guard chainLock(chainMutex);
 		std::vector<Node> edited;
@@ -759,15 +772,22 @@ namespace ReaShader
 		if (!error.empty())
 			return error;
 
-		std::vector<Parameters::NodeParams> nodeParams;
-		if (paramsChange)
-			nodeParams = paramsOfNodes(edited);
+		if (paramsChange != ParamsChange::None)
+		{
+			std::vector<Parameters::Id> gone = params.replaceNodeParams(paramsOfNodes(edited), savedValues);
+			std::lock_guard lock(stateMutex);
+			if (paramsChange == ParamsChange::Edit)
+				paramsToClear.insert(paramsToClear.end(), gone.begin(), gone.end());
+		}
 		{
 			std::lock_guard lock(stateMutex);
 			chain = std::move(edited);
 		}
-		if (paramsChange)
-			_setNodeParams(std::move(nodeParams));
+		if (paramsChange != ParamsChange::None)
+		{
+			hostParamsChanged = true;
+			host->request_callback(host); // -> onMainThread() -> _notifyHostParams()
+		}
 		return {};
 	}
 
@@ -780,8 +800,14 @@ namespace ReaShader
 		std::string data;
 		try
 		{
-			data = kind == Node::Kind::Shader ? gpu::toJson(gpu::compileShader(source, fileName)).dump()
-											  : gpu::toJson(gpu::parseCube(source, fileName)).dump();
+			if (kind == Node::Kind::Shader)
+			{
+				gpu::CompiledShader shader = gpu::compileShader(source, fileName);
+				checkSliders(shader, name); // not stored: it could never be added
+				data = gpu::toJson(shader).dump();
+			}
+			else
+				data = gpu::toJson(gpu::parseCube(source, fileName)).dump();
 			writeFile(storedPath(storedDir(kind), name), data);
 		}
 		catch (const std::exception& e)
@@ -791,8 +817,9 @@ namespace ReaShader
 			return;
 		}
 
-		std::string error = _editChain(
-			[&](std::vector<Node>& nodes) { return insertNode(nodes, kind, name, data, nodes.size()); }, true);
+		std::string error =
+			_editChain([&](std::vector<Node>& nodes) { return insertNode(nodes, kind, name, data, nodes.size()); },
+					   ParamsChange::Edit);
 		_chainEdited(error, "Added " + name);
 	}
 
@@ -812,7 +839,8 @@ namespace ReaShader
 	//
 	// Messages to the UI:
 	// - snapshot    { version, track, params, devices, logo, chain, shaders, luts }: everything, the UI rebuilds
-	//                itself from it; chain = [{ uid, kind, name, bypass, lut (shader nodes: its LUT's name) }]
+	//                itself from it; chain = [{ uid, tag, kind, name, bypass, lut, samplesLut }] (lut, samplesLut:
+	//                shader nodes only: its LUT's name, and whether the shader samples a LUT at all)
 	// - paramValue  { id, value }: a host automation change
 	// - chainStatus { status, state }: state is "busy", "ok" or "error"
 	//
@@ -866,11 +894,15 @@ namespace ReaShader
 			for (const Node& node : chain)
 			{
 				json shown = { { "uid", node.uid },
+							   { "tag", tagOf(node.uid) },
 							   { "kind", kindName(node.kind) },
 							   { "name", node.name },
 							   { "bypass", node.bypass } };
 				if (node.kind == Node::Kind::Shader)
+				{
 					shown["lut"] = node.lutName;
+					shown["samplesLut"] = node.shader->samplesLut;
+				}
 				nodes.push_back(std::move(shown));
 			}
 
@@ -908,14 +940,11 @@ namespace ReaShader
 			if (!param)
 				return;
 
-			params.setValue(param->id, msg.value("value", param->defaultValue));
-			if (param->automatable)
-			{
-				params.flagForHost(param->id);
-				auto* hostParams = static_cast<const clap_host_params_t*>(host->get_extension(host, CLAP_EXT_PARAMS));
-				if (hostParams)
-					hostParams->request_flush(host);
-			}
+			params.setRealValue(param->id, msg.value("value", param->defaultValue)); // the UI's are real values
+			params.flagForHost(param->id);
+			auto* hostParams = static_cast<const clap_host_params_t*>(host->get_extension(host, CLAP_EXT_PARAMS));
+			if (hostParams)
+				hostParams->request_flush(host);
 		}
 		else if (type == "renderingDevice")
 		{
@@ -953,7 +982,7 @@ namespace ReaShader
 						return "Unknown node kind";
 					return insertNode(nodes, *kind, name, readStored(*kind, name), at);
 				},
-				true);
+				ParamsChange::Edit);
 			_chainEdited(error, "Added " + name);
 		}
 		else if (type == "nodeRemove" || type == "nodeMove" || type == "nodeBypass" || type == "nodeSet" ||
@@ -962,7 +991,8 @@ namespace ReaShader
 			std::optional<uint32_t> uid = uidOf(msg);
 			std::string done;
 			// bypass and a shader's LUT leave the params as they are
-			bool paramsChange = type != "nodeBypass" && type != "nodeLut";
+			ParamsChange paramsChange =
+				type == "nodeBypass" || type == "nodeLut" ? ParamsChange::None : ParamsChange::Edit;
 			std::string error = _editChain(
 				[&](std::vector<Node>& nodes) -> std::string {
 					Node* node = uid ? findNode(nodes, *uid) : nullptr;

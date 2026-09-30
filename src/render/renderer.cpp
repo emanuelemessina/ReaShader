@@ -380,11 +380,18 @@ namespace ReaShader
 
 				if (objects.shaderPass)
 				{
+					// the host's values are 0..1 over each field's range (see Parameters::Param::toHost)
 					float values[Parameters::kNodeSlots];
 					if (count > Parameters::kNodeSlots)
 						count = Parameters::kNodeSlots;
+					if (count > node.shader->params.size())
+						count = node.shader->params.size();
 					for (size_t p = 0; p < count; p++)
-						values[p] = (float)inputs.paramValues[node.firstParam + p];
+					{
+						const gpu::ShaderParamField& field = node.shader->params[p];
+						values[p] = field.minValue +
+									(float)inputs.paramValues[node.firstParam + p] * (field.maxValue - field.minValue);
+					}
 					objects.shaderPass->writeParams(*context, values, count);
 					objects.shaderPass->bindLut(*context, lut.image.view);
 				}

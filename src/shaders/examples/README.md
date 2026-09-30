@@ -29,6 +29,8 @@ Every shader gets these without declaring them:
 
 Put the values you want to control in a `Params` uniform block. Allowed types are `float`, `vec2`, `vec3` and `vec4`. Each value (or vector component) gets a slider in the plugin window, and is also a host parameter that you can automate in REAPER.
 
+A shader can have at most **40 sliders** (a `vec3` counts 3, a `vec4` 4), like REAPER's own video processor. A shader with more is rejected when you upload it, with an error in the plugin window.
+
 Describe each value with an annotation: its label, default and range.
 
 ```glsl
@@ -43,7 +45,7 @@ The format is `//@param <member> '<Label>' <default> <min> <max>`. The label and
 
 ## Using a LUT
 
-A LUT (a `.cube` file) can be a step of the chain on its own, before or after your shader, blended by its Mix. To use one inside your shader instead, pick it in the shader card's "LUT (iLut)" drop-down. Then:
+A LUT (a `.cube` file) can be a step of the chain on its own, before or after your shader, blended by its Mix. To use one inside your shader instead, pick it in the shader card's "LUT (iLut)" drop-down, which shows once your `main()` uses `iLut` or `iChannel1`. Then:
 
 - `iLut(color)` returns `color` (0..1 RGB) through that LUT, and blending is up to you;
 - `iChannel1` is the LUT as a 3D texture, if you want to sample it yourself.
