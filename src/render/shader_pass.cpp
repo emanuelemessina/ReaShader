@@ -109,8 +109,10 @@ namespace ReaShader::gpu
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet,
 								0, nullptr);
+		ShaderInputs pushed = inputs;
+		pushed.frame = frame++;
 		vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ShaderInputs),
-						   &inputs);
+						   &pushed);
 		vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
 		vkCmdEndRendering(commandBuffer);

@@ -43,6 +43,13 @@ namespace test
 		std::vector<uint8_t> bytes;
 	};
 
+	// 256x4, B = x, G = 255 - x, R = 3x (wrapping), A = 255: every 8-bit value in every color channel
+	TestFrame gradient();
+
+	// color channels further than `tolerance` from expected(input value, 0..255); alpha must be the input's
+	int mismatches(TestFrame& input, TestFrame& output, const std::function<double(double)>& expected,
+				   double tolerance = 1.0);
+
 	// -------- GPU --------
 
 	// Runs `body` once per usable GPU, with that GPU's device created on a Vulkan instance shared by the run.
@@ -51,6 +58,12 @@ namespace test
 
 	// destroys the shared instance (end of the run)
 	void shutdownGpu();
+
+	// the number of usable GPUs
+	size_t gpuCount();
+
+	// validation layer messages logged so far in this run (debug builds), one line each
+	std::vector<std::string> validationMessages();
 
 	// One frame the way ReaShaderRenderer::renderFrame records it:
 	// upload -> passes (FrameTargets::recordPasses; none: a plain copy) -> scene (optional) -> download.

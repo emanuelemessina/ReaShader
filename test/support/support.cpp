@@ -12,6 +12,8 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <memory>
 #include <sstream>
@@ -54,25 +56,46 @@ namespace test
 		return { width, height, rowBytes, bytes.data() };
 	}
 
+	TestFrame gradient()
+	{
+		TestFrame frame(256, 4, 0);
+		for (int y = 0; y < frame.height; y++)
+			for (int x = 0; x < frame.width; x++)
+			{
+				uint8_t* p = frame.at(x, y);
+				p[0] = (uint8_t)x, p[1] = (uint8_t)(255 - x), p[2] = (uint8_t)(x * 3), p[3] = 255;
+			}
+		return frame;
+	}
+
+	int mismatches(TestFrame& input, TestFrame& output, const std::function<double(double)>& expected, double tolerance)
+	{
+		int count = 0;
+		for (int y = 0; y < input.height; y++)
+			for (int x = 0; x < input.width; x++)
+				for (int c = 0; c < 4; c++)
+				{
+					int source = input.at(x, y)[c];
+					double want = c == 3 ? source : std::clamp(expected(source), 0.0, 255.0);
+					count += std::abs(output.at(x, y)[c] - want) > tolerance;
+				}
+		return count;
+	}
+
 	// -------- GPU --------
 
 	namespace
 	{
 		std::unique_ptr<gpu::Context> sharedContext;
 
-		// validation layer messages, as logged by gpu::Context into <test binary dir>/rs.log (one line each, first
-		// line of the message only; the file is written with a flush per message)
-		std::vector<std::string> validationMessages()
+		gpu::Context& sharedInstance()
 		{
-			std::vector<std::string> messages;
-			std::ifstream log(util::paths::pluginDir() / "rs.log");
-			std::string line;
-			while (std::getline(log, line))
+			if (!sharedContext)
 			{
-				if (line.find("(Vulkan) Validation") != std::string::npos)
-					messages.push_back(line);
+				sharedContext = std::make_unique<gpu::Context>();
+				sharedContext->createInstance();
 			}
-			return messages;
+			return *sharedContext;
 		}
 
 		// destroys the device even when a REQUIRE throws out of the test body
@@ -88,12 +111,7 @@ namespace test
 
 	void forEachGpu(const std::function<void(gpu::Context&)>& body)
 	{
-		if (!sharedContext)
-		{
-			sharedContext = std::make_unique<gpu::Context>();
-			sharedContext->createInstance();
-		}
-		gpu::Context& context = *sharedContext;
+		gpu::Context& context = sharedInstance();
 
 		std::vector<std::string> gpus = context.deviceNames();
 		REQUIRE_MESSAGE(!gpus.empty(), "no GPU with Vulkan 1.3");
@@ -111,6 +129,26 @@ namespace test
 			for (size_t m = knownMessages; m < messages.size(); m++)
 				FAIL_CHECK(messages[m]);
 		}
+	}
+
+	size_t gpuCount()
+	{
+		return sharedInstance().deviceNames().size();
+	}
+
+	// as logged by gpu::Context into <test binary dir>/rs.log (first line of the message only; the file is written
+	// with a flush per message)
+	std::vector<std::string> validationMessages()
+	{
+		std::vector<std::string> messages;
+		std::ifstream log(util::paths::pluginDir() / "rs.log");
+		std::string line;
+		while (std::getline(log, line))
+		{
+			if (line.find("(Vulkan) Validation") != std::string::npos)
+				messages.push_back(line);
+		}
+		return messages;
 	}
 
 	void shutdownGpu()

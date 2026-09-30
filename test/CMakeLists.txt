@@ -73,6 +73,7 @@ target_sources(reashader_tests PRIVATE
     cases/params.cpp
     cases/protocol.cpp
     cases/render.cpp
+    cases/renderer.cpp
     cases/shader_compiler.cpp
 )
 

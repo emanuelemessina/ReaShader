@@ -22,35 +22,6 @@ using namespace ReaShader;
 
 namespace
 {
-	// B = x, G = 255 - x, R = 3x (wrapping), A = 255: every 8-bit value in every color channel
-	test::TestFrame gradient()
-	{
-		test::TestFrame frame(256, 4, 0);
-		for (int y = 0; y < frame.height; y++)
-			for (int x = 0; x < frame.width; x++)
-			{
-				uint8_t* p = frame.at(x, y);
-				p[0] = (uint8_t)x, p[1] = (uint8_t)(255 - x), p[2] = (uint8_t)(x * 3), p[3] = 255;
-			}
-		return frame;
-	}
-
-	// color channels further than `tolerance` from expected(input value, 0..255); alpha must be the input's
-	int mismatches(test::TestFrame& input, test::TestFrame& output, const std::function<double(double)>& expected,
-				   double tolerance = 1.0)
-	{
-		int count = 0;
-		for (int y = 0; y < input.height; y++)
-			for (int x = 0; x < input.width; x++)
-				for (int c = 0; c < 4; c++)
-				{
-					int source = input.at(x, y)[c];
-					double want = c == 3 ? source : std::clamp(expected(source), 0.0, 255.0);
-					count += std::abs(output.at(x, y)[c] - want) > tolerance;
-				}
-		return count;
-	}
-
 	gpu::CompiledShader brightnessShader()
 	{
 		return gpu::compileShader(test::readFile(test::repoPath("src/shaders/examples/brightness.frag")),
@@ -189,7 +160,7 @@ TEST_SUITE("render")
 
 	TEST_CASE("a LUT pass: an identity keeps the frame, an inverting LUT inverts it, the amount blends")
 	{
-		test::TestFrame input = gradient(), output(256, 4, 0);
+		test::TestFrame input = test::gradient(), output(256, 4, 0);
 		gpu::LutData inverted = test::invertLut();
 
 		test::forEachGpu([&](gpu::Context& context) {
@@ -221,7 +192,7 @@ TEST_SUITE("render")
 
 	TEST_CASE("the LUT before or after a shader: the order of the passes")
 	{
-		test::TestFrame input = gradient(), output(256, 4, 0);
+		test::TestFrame input = test::gradient(), output(256, 4, 0);
 		gpu::LutData inverted = test::invertLut();
 		gpu::CompiledShader brightness = brightnessShader();
 
@@ -250,7 +221,7 @@ TEST_SUITE("render")
 
 	TEST_CASE("a shader samples the LUT as iChannel1 through iLut (an identity by default)")
 	{
-		test::TestFrame input = gradient(), output(256, 4, 0);
+		test::TestFrame input = test::gradient(), output(256, 4, 0);
 		gpu::LutData inverted = test::invertLut();
 		gpu::CompiledShader shader = gpu::compileShader(
 			"void main() { vec4 c = texture(iChannel0, uv); fragColor = vec4(iLut(c.rgb), c.a); }\n", "ilut.glsl");
@@ -276,7 +247,7 @@ TEST_SUITE("render")
 
 	TEST_CASE("four passes ping-pong through the work images")
 	{
-		test::TestFrame input = gradient(), output(256, 4, 0);
+		test::TestFrame input = test::gradient(), output(256, 4, 0);
 		gpu::LutData inverted = test::invertLut();
 		gpu::CompiledShader brightness = brightnessShader();
 
@@ -312,7 +283,7 @@ TEST_SUITE("render")
 
 	TEST_CASE("each frame samples its own input, not the previous frame's")
 	{
-		test::TestFrame first = gradient(), second = gradient(), output(256, 4, 0);
+		test::TestFrame first = test::gradient(), second = test::gradient(), output(256, 4, 0);
 		for (uint8_t& byte : second.bytes)
 			byte = (uint8_t)(255 - byte);
 		gpu::CompiledShader brightness = brightnessShader();

@@ -93,7 +93,7 @@ One JSON document: `{ version: 3, params: { name: value }, device, logo, shader:
 - **Compiled once, on upload (the only place):** `_uploadShader()` runs `gpu::compileShader`, writes `resources/shaders/compiled/<stem>.json`, then uses it.
 - **The shader list** is the `*.json` files in `util::paths::compiledShadersDir()`. `shaderSelect` loads one, and `""` means none.
 - **The current shader** is `shaderName` + `shaderData` (the stored JSON), saved in state. There is none at start, so video passes through.
-- **Loading:** `_useShader()` parses the stored JSON (`gpu::fromJson`) and hands it to `ReaShaderRenderer::setShader()`. `_clearShader()` unloads it.
+- **Loading:** `_useShader()` parses the stored JSON (`gpu::fromJson`), hands the renderer a new chain with it (`_setChain`), then replaces the shader's params (`paramsOf`). `_clearShader()` unloads it.
 - **Status:** every outcome goes to the UI as `shaderStatus`: `Loaded <name>` or the error. The UI itself shows `busy` (a spinner) while it waits.
 - **Writable plugin folder:** uploading writes into the plugin folder. The per-user CLAP folder is writable; a system-wide install might not be.
 
@@ -101,7 +101,7 @@ One JSON document: `{ version: 3, params: { name: value }, device, logo, shader:
 
 CLAP allows the param list to change only while the plugin is deactivated. So:
 
-1. `setShaderParams()`, called from any thread, stores the new params as pending and requests a main-thread callback.
+1. `_setShaderParams()`, called from any thread, stores the new params as pending and requests a main-thread callback.
 2. `onMainThread()` applies them now if the plugin is inactive, or else calls `host->request_restart()`.
 3. On restart, the host's `deactivate()` applies them.
 
@@ -112,9 +112,9 @@ Applying means `ParamList::replaceShaderParams()` + `host_params->rescan(CLAP_PA
 - **Parsed once, on upload (the only place):** `_uploadLut()` runs `gpu::parseCube` (`render/lut_file.*`), writes `resources/luts/<stem>.json`, then uses it. Only `.cube` files are read. A 1D LUT is baked into a 33³ cube and a `DOMAIN` other than 0..1 is resampled onto 0..1, so the stored form is always a 0..1 cube: `{ version, title, size, data }`, where `data` is base64 of half-float RGB (`util/base64.*`).
 - **The LUT list** is the `*.json` files in `util::paths::lutsDir()`. `lutSelect` loads one, and `""` means none.
 - **The current LUT** is `lutName` + `lutData` (the stored JSON), saved in state. There is none at start.
-- **Loading:** `_useLut()` parses the stored JSON (`gpu::lutFromJson`) and hands it to `ReaShaderRenderer::setLut()`. `_clearLut()` unloads it.
+- **Loading:** `_useLut()` parses the stored JSON (`gpu::lutFromJson`) and hands the renderer a new chain with it (`_setChain`). `_clearLut()` unloads it.
 - **Status:** every outcome goes to the UI as `lutStatus`, like `shaderStatus`.
-- **The mode** (`lutMode`: `before` / `after` the shader, or `shader`) isn't a host param: it lives in state and the web UI, and goes to `ReaShaderRenderer::setLutMode()`. Unknown modes are ignored. In `shader` mode the shader samples the LUT itself, as `iChannel1` (see [the shader contract](#8-the-shader-contract)); with no shader, the LUT pass runs alone.
+- **The mode** (`lutMode`: `before` / `after` the shader, or `shader`) isn't a host param: it lives in state and the web UI, and decides the chain's order (`_setChain`). Unknown modes are ignored. In `shader` mode the shader samples the LUT itself, as `iChannel1` (see [the shader contract](#8-the-shader-contract)); with no shader, the LUT pass runs alone.
 - **LUT Mix** is a fixed host param (see [Parameters](#6-parameters)): 0 = the frame as is, 1 = fully through the LUT. It applies to the LUT pass; in `shader` mode, blending is up to the shader.
 
 ### Rendering device
@@ -133,7 +133,9 @@ The GPU choice isn't a host param: it lives in state and the web UI. Changing it
 
 ### Renderer access
 
-`ReaShaderRenderer` reaches plugin data only through `getRenderingDeviceIndex`, `setRenderingDeviceIndex`, `setRenderingDevicesList` and `setShaderParams`. The plugin's param values come in with each frame (`FrameInputs`), by index in the param list: the fixed ones first (e.g. `Parameters::LutMixIndex`), then the shader's.
+`ReaShaderRenderer` reaches plugin data only through `getRenderingDeviceIndex`, `setRenderingDeviceIndex` and `setRenderingDevicesList`. The plugin hands it a chain of nodes (`setChain`, see [The renderer](#7-the-renderer)), each naming its params by index in the param list, and the values come in with each frame (`FrameInputs`).
+
+**Chain changes** (`_useShader`, `_clearShader`, `_useLut`, `_clearLut`, `_setLutMode`) hold `chainMutex` from reading the chain's parts (the parsed shader and LUT, under `stateMutex`) to the renderer's `setChain`, so two threads never build chains from each other's stale parts. The lock order is `chainMutex`, then the renderer's `frameMutex`, then `stateMutex`.
 
 ## 3. The per-frame video path
 
@@ -144,10 +146,10 @@ REAPER calls `ReaShaderPlugin::_processVideoFrame` (`plugin/plugin.cpp`), which 
 3. `ReaShaderRenderer::renderFrame()`, under `try_lock(frameMutex)`:
    1. (re)creates `FrameTargets` if the size or row stride changed;
    2. `memcpy`s into the mapped upload buffer, and writes the shader's `Params` into its mapped UBO;
-   3. records one command buffer: buffer → input image → the passes (the shader and the LUT, in the LUT mode's order, through work images; a plain copy when there are none) → output image → logo scene on top (if enabled) → readback buffer;
+   3. records one command buffer: buffer → input image → the chain's passes (bypassed nodes left out, through work images; a plain copy when there are none) → output image → logo scene on top (if enabled) → readback buffer;
    4. submits once and waits on one fence (a 2 s timeout means a GPU hang, and sets `failed`);
    5. `memcpy`s out into a new `vproc->newVideoFrame`.
-4. If `renderFrame` returns `false` (inactive, busy, failed, or no shader, LUT or logo), the input frame is passed through unchanged.
+4. If `renderFrame` returns `false` (inactive, busy, failed, or no pass and no logo), the input frame is passed through unchanged.
 
 ## 4. The embedded web UI
 
@@ -213,16 +215,15 @@ Messages are plain JSON objects with a `"type"` field. In C++ they're documented
 - **Lifetimes: plain structs with `create()`/`destroy()` listing their handles, no deletion queues:**
   - `Context` (instance, device);
   - `FrameTargets` (frame size), with two work images created the first time a chain of passes needs them;
-  - `ShaderPass` (per shader);
-  - `LutPass` and an identity `Lut` (with the device), and the current `Lut` (per LUT);
+  - per chain node: its pass (`ShaderPass` or `LutPass`) and its `Lut`, kept across `setChain` calls while the node's content is the same;
+  - an identity `Lut` (with the device);
   - `Scene` (from the first time the logo is on until the device goes; its depth buffer per frame size).
 
-  A device switch destroys the scene, the passes, the LUTs, the targets and the device, then recreates the device, the LUT pass, the LUT, the shader pass and the scene. The targets come back with the next frame.
+  A device switch destroys the scene, the nodes' objects, the identity, the targets and the device, then recreates the device, the identity, the nodes' objects and the scene. The targets come back with the next frame.
 
 - **Errors:** `VK_CHECK` throws `std::runtime_error`, and `ReaShaderRenderer`'s public functions catch everything.
-- **Shader changes:** the renderer never compiles. `setShader(CompiledShader)` swaps the pass under `frameMutex`. Frames render one at a time and wait on the fence, so the old pass is idle. With no device (inactive), the shader is kept and installed by the next `init()`. `clearShader()` removes it. With no shader, no LUT and no logo, `renderFrame` returns `false` (passthrough).
-- **LUT changes:** the renderer never parses. `setLut(LutData)` uploads the table under `frameMutex` and swaps it in, like `setShader`, and the `LutData` is kept for the next `init()` or device switch. `clearLut()` removes it. `setLutMode()` picks the order.
-- **The passes:** each frame, `renderFrame` lists them from the LUT mode (LUT then shader, shader then LUT, or the shader alone with the LUT as its `iChannel1`), and `FrameTargets::recordPasses` chains them: the first samples the input, the last renders to the output, the ones between go through two ping-pong work images. The shader's `iChannel1` is a 17³ identity unless the mode is `shader`.
+- **The chain:** the renderer never compiles or parses. `setChain(nodes)` takes an ordered list of `ChainNode`s: a shader (`shared_ptr<const CompiledShader>`, with an optional LUT as its `iChannel1`) or a LUT (`shared_ptr<const LutData>`), a uid, a bypass flag, and the node's params (a range of indices into `FrameInputs::paramValues`). At most 16 nodes, uids unique. Under `frameMutex`, it builds the objects of nodes that are new or whose content changed (by uid and pointer), keeps the others, and swaps; on error the current chain stays and the error is returned. With no device (inactive), the chain is kept and installed by the next `init()`. With no pass (every node bypassed, or none) and no logo, `renderFrame` returns `false` (passthrough).
+- **The passes:** each frame, `renderFrame` lists the non-bypassed nodes' passes in order, and `FrameTargets::recordPasses` chains them: the first samples the input, the last renders to the output, the ones between go through two ping-pong work images. A shader node without a LUT gets a 17³ identity as `iChannel1`. Each shader pass counts its own `iFrame`.
 - **Internal shaders** (`fullscreen.vert`, `lut.frag`, `scene.vert`, `scene.frag`) are SPIR-V arrays compiled at build time, never read from disk.
 - **The scene (`scene.*`):**
   - `Mesh` (.obj via tinyobjloader, host-visible vertex/index buffers) and `Texture` (stb, staged to a device image) can be reused for more 3D content.
