@@ -9,7 +9,7 @@
 @use './palette' as c;
 
 select {
-    color: white;
+    color: c.$white;
     background-color: c.$background;
     border: 1px solid c.$accent;
     padding: .4rem;
@@ -17,7 +17,7 @@ select {
 
     &:focus {
         outline: none;
-        border-color: white;
+        border-color: c.$white;
     }
 
     option {

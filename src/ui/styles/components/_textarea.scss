@@ -6,7 +6,7 @@
  *            Licensed under the MIT License: see https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE
  */
 
-@use './_palette' as c;
+@use './palette' as c;
 
 textarea{
     margin: 0;
@@ -26,8 +26,8 @@ textarea{
 
     &:focus-visible{
         outline: none;
-        box-shadow: inset 0 0 5px 0 #000;
-        background-color: white;
+        box-shadow: inset 0 0 5px 0 c.$black;
+        background-color: c.$white;
 
         &::placeholder{
             color: c.$b-50;
@@ -35,12 +35,12 @@ textarea{
     }
 
     &:not(:placeholder-shown) {
-        background-color: white;
+        background-color: c.$white;
     }
 
     &::placeholder{
         white-space: normal;
         
-        color: white;
+        color: c.$white;
     }
 }
