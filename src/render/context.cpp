@@ -107,12 +107,13 @@ namespace ReaShader::gpu
 		VkFenceCreateInfo fenceInfo{ VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
 		VK_CHECK(vkCreateFence(device, &fenceInfo, nullptr, &fence));
 
-		// enough for a handful of passes: each uses one set (up to two image samplers + a uniform buffer)
-		VkDescriptorPoolSize poolSizes[] = { { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32 },
-											 { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 16 } };
+		// each pass uses one set (up to two image samplers + a uniform buffer): enough for two full chains
+		// (while setChain builds the new one, the old one is still there) plus the logo scene
+		VkDescriptorPoolSize poolSizes[] = { { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 128 },
+											 { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 64 } };
 		VkDescriptorPoolCreateInfo descriptorPoolInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
 		descriptorPoolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-		descriptorPoolInfo.maxSets = 16;
+		descriptorPoolInfo.maxSets = 64;
 		descriptorPoolInfo.poolSizeCount = 2;
 		descriptorPoolInfo.pPoolSizes = poolSizes;
 		VK_CHECK(vkCreateDescriptorPool(device, &descriptorPoolInfo, nullptr, &descriptorPool));

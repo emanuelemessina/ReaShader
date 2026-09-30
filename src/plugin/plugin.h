@@ -26,6 +26,12 @@ namespace ReaShader
 {
 	class ReaShaderRenderer; // forward-declared to keep Vulkan headers out of this header
 
+	namespace gpu
+	{
+		struct CompiledShader;
+		struct LutData;
+	} // namespace gpu
+
 	// The plugin's logic, one instance per plugin instance: parameters, state, web UI messages and
 	// the REAPER video tap. The CLAP shell (src/clap) forwards everything here.
 	//
@@ -74,11 +80,6 @@ namespace ReaShader
 		void setRenderingDeviceIndex(int index);
 		void setRenderingDevicesList(const std::vector<std::string>& deviceNames);
 
-		// Replaces the params reflected from the current shader (any thread).
-		// The host's param list may only change while deactivated: when active, the plugin asks the
-		// host to restart it and swaps the params in deactivate(), then asks the host to rescan.
-		void setShaderParams(std::vector<Parameters::Param> shaderParams);
-
 		// -------- web UI --------
 
 		// WebUIHost registers a sender when its webview is ready and clears it on teardown;
@@ -97,6 +98,15 @@ namespace ReaShader
 		static IVideoFrame* _processVideoFrame(IREAPERVideoProcessor* videoProcessor, const double* parmlist,
 											   int nparms, double projectTime, double frameRate, int forceFormat);
 		static bool _getVideoParam(IREAPERVideoProcessor* videoProcessor, int idx, double* valueOut);
+
+		// Replaces the params reflected from the current shader (any thread).
+		// The host's param list may only change while deactivated: when active, the plugin asks the
+		// host to restart it and swaps the params in deactivate(), then asks the host to rescan.
+		void _setShaderParams(std::vector<Parameters::Param> shaderParams);
+
+		// the renderer's chain from a shader, a LUT and the LUT mode; returns the renderer's error, empty on success
+		std::string _setChain(std::shared_ptr<const gpu::CompiledShader> shader,
+							  std::shared_ptr<const gpu::LutData> lut, const std::string& mode);
 
 		void _uploadShader(const std::string& fileName, const std::string& source);
 		void _useShader(const std::string& name, const std::string& data);
@@ -130,13 +140,18 @@ namespace ReaShader
 		bool showLogo{ false };
 		std::string shaderName; // empty = no shader
 		std::string shaderData; // the current shader's compiled form (JSON)
+		std::shared_ptr<const gpu::CompiledShader> compiledShader; // shaderData, parsed
 		std::string lutName;			// empty = no LUT
 		std::string lutData;			// the current LUT's stored form (JSON)
+		std::shared_ptr<const gpu::LutData> lutTable; // lutData, parsed
 		std::string lutMode{ "after" }; // "before" / "after" the shader, or "shader" (sampled by it)
 		Parameters::ValueMap savedShaderValues; // restored when the shader's params appear
 		std::vector<Parameters::Param> pendingShaderParams;
 		int trackNumber{ 0 };					// 1-based, 0 = not found, -1 = master
 		std::string trackName;
+
+		// serializes changes to the chain, from reading its parts to the renderer's setChain
+		std::mutex chainMutex;
 
 		std::mutex webUISenderMutex;
 		WebUISender webUISender;

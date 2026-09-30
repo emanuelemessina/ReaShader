@@ -29,10 +29,12 @@ namespace ReaShader::gpu
 		// values in the order of CompiledShader::params; params past `count` get their default
 		void writeParams(Context& context, const float* values, size_t count);
 
+		// `inputs` with iFrame = the frames this pass recorded since create()
 		void record(VkCommandBuffer commandBuffer, const Image& target, const ShaderInputs& inputs) override;
 
 	  private:
 		std::vector<ShaderParamField> params;
+		int32_t frame = 0;
 
 		VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
 		VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;

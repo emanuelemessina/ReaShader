@@ -78,9 +78,22 @@ namespace ReaShader
 			return mode == "before" || mode == "after" || mode == "shader";
 		}
 
-		LutMode toLutMode(const std::string& mode)
+		// a shader's sliders, in the order of its Params fields
+		std::vector<Parameters::Param> paramsOf(const gpu::CompiledShader& shader)
 		{
-			return mode == "before" ? LutMode::Before : mode == "shader" ? LutMode::Shader : LutMode::After;
+			std::vector<Parameters::Param> params;
+			for (const gpu::ShaderParamField& field : shader.params)
+			{
+				Parameters::Param param;
+				param.name = field.name;
+				param.label = field.label;
+				param.defaultValue = field.defaultValue;
+				param.minValue = field.minValue;
+				param.maxValue = field.maxValue;
+				param.automatable = true;
+				params.push_back(std::move(param));
+			}
+			return params;
 		}
 	} // namespace
 
@@ -418,7 +431,7 @@ namespace ReaShader
 		renderingDeviceNames = deviceNames;
 	}
 
-	void ReaShaderPlugin::setShaderParams(std::vector<Parameters::Param> shaderParams)
+	void ReaShaderPlugin::_setShaderParams(std::vector<Parameters::Param> shaderParams)
 	{
 		{
 			std::lock_guard lock(stateMutex);
@@ -479,14 +492,27 @@ namespace ReaShader
 	// makes a compiled shader (its stored JSON) the current one; on error the current one stays
 	void ReaShaderPlugin::_useShader(const std::string& name, const std::string& data)
 	{
+		std::lock_guard chainLock(chainMutex);
+		std::shared_ptr<const gpu::CompiledShader> compiled;
 		std::string error;
 		try
 		{
-			error = reaShaderRenderer->setShader(gpu::fromJson(json::parse(data)));
+			compiled = std::make_shared<const gpu::CompiledShader>(gpu::fromJson(json::parse(data)));
 		}
 		catch (const std::exception& e)
 		{
 			error = std::string("Invalid compiled shader: ") + e.what();
+		}
+		if (compiled)
+		{
+			std::shared_ptr<const gpu::LutData> currentLut;
+			std::string mode;
+			{
+				std::lock_guard lock(stateMutex);
+				currentLut = lutTable;
+				mode = lutMode;
+			}
+			error = _setChain(compiled, currentLut, mode);
 		}
 
 		if (!error.empty())
@@ -500,7 +526,9 @@ namespace ReaShader
 			std::lock_guard lock(stateMutex);
 			shaderName = name;
 			shaderData = data;
+			compiledShader = compiled;
 		}
+		_setShaderParams(paramsOf(*compiled));
 		_webuiSendShaderStatus("Loaded " + name, "ok");
 		_webuiSendSnapshot();
 	}
@@ -508,12 +536,23 @@ namespace ReaShader
 	// no shader: video passes through
 	void ReaShaderPlugin::_clearShader()
 	{
-		reaShaderRenderer->clearShader();
 		{
+			std::lock_guard chainLock(chainMutex);
+			std::shared_ptr<const gpu::LutData> currentLut;
+			std::string mode;
+			{
+				std::lock_guard lock(stateMutex);
+				currentLut = lutTable;
+				mode = lutMode;
+			}
+			// only the LUT's node is left, which the renderer already has: nothing to build, nothing can fail
+			_setChain(nullptr, currentLut, mode);
 			std::lock_guard lock(stateMutex);
 			shaderName.clear();
 			shaderData.clear();
+			compiledShader.reset();
 		}
+		_setShaderParams({});
 		_webuiSendSnapshot();
 	}
 
@@ -547,14 +586,27 @@ namespace ReaShader
 	// makes a stored LUT (its JSON) the current one; on error the current one stays
 	void ReaShaderPlugin::_useLut(const std::string& name, const std::string& data)
 	{
+		std::lock_guard chainLock(chainMutex);
+		std::shared_ptr<const gpu::LutData> parsed;
 		std::string error;
 		try
 		{
-			error = reaShaderRenderer->setLut(gpu::lutFromJson(json::parse(data)));
+			parsed = std::make_shared<const gpu::LutData>(gpu::lutFromJson(json::parse(data)));
 		}
 		catch (const std::exception& e)
 		{
 			error = std::string("Invalid stored LUT: ") + e.what();
+		}
+		if (parsed)
+		{
+			std::shared_ptr<const gpu::CompiledShader> currentShader;
+			std::string mode;
+			{
+				std::lock_guard lock(stateMutex);
+				currentShader = compiledShader;
+				mode = lutMode;
+			}
+			error = _setChain(currentShader, parsed, mode);
 		}
 
 		if (!error.empty())
@@ -568,6 +620,7 @@ namespace ReaShader
 			std::lock_guard lock(stateMutex);
 			lutName = name;
 			lutData = data;
+			lutTable = parsed;
 		}
 		_webuiSendLutStatus("Loaded " + name, "ok");
 		_webuiSendSnapshot();
@@ -575,25 +628,81 @@ namespace ReaShader
 
 	void ReaShaderPlugin::_clearLut()
 	{
-		reaShaderRenderer->clearLut();
 		{
+			std::lock_guard chainLock(chainMutex);
+			std::shared_ptr<const gpu::CompiledShader> currentShader;
+			std::string mode;
+			{
+				std::lock_guard lock(stateMutex);
+				currentShader = compiledShader;
+				mode = lutMode;
+			}
+			std::string error = _setChain(currentShader, nullptr, mode);
+			if (!error.empty())
+			{
+				// the shader's iChannel1 goes back to the identity: its pass is kept, so this can't fail in practice
+				LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "LUT unload failed", error);
+				return;
+			}
 			std::lock_guard lock(stateMutex);
 			lutName.clear();
 			lutData.clear();
+			lutTable.reset();
 		}
 		_webuiSendSnapshot();
 	}
 
-	// unknown modes are ignored
+	// unknown modes are ignored; on error (the shader's own LUT couldn't be built) the mode stays
 	void ReaShaderPlugin::_setLutMode(const std::string& mode)
 	{
 		if (!isLutMode(mode))
 			return;
+		std::lock_guard chainLock(chainMutex);
+		std::shared_ptr<const gpu::CompiledShader> currentShader;
+		std::shared_ptr<const gpu::LutData> currentLut;
 		{
 			std::lock_guard lock(stateMutex);
-			lutMode = mode;
+			currentShader = compiledShader;
+			currentLut = lutTable;
 		}
-		reaShaderRenderer->setLutMode(toLutMode(mode));
+		std::string error = _setChain(currentShader, currentLut, mode);
+		if (!error.empty())
+		{
+			LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "LUT mode change failed", error);
+			_webuiSendLutStatus(error, "error");
+			return;
+		}
+		std::lock_guard lock(stateMutex);
+		lutMode = mode;
+	}
+
+	// The chain for one shader and one LUT, as fixed nodes:
+	// - "before": LUT -> shader
+	// - "after": shader -> LUT
+	// - "shader": the shader alone, sampling the LUT as iChannel1 (with no shader: the LUT alone)
+	std::string ReaShaderPlugin::_setChain(std::shared_ptr<const gpu::CompiledShader> chainShader,
+										   std::shared_ptr<const gpu::LutData> chainLut, const std::string& mode)
+	{
+		using Node = ReaShaderRenderer::ChainNode;
+		std::vector<Node> chain;
+		Node lutNode{ .uid = Parameters::kLutNode, .lut = chainLut, .firstParam = Parameters::LutMixIndex, .paramCount = 1 };
+		bool lutInShader = chainShader && mode == "shader";
+
+		if (chainLut && !lutInShader && mode == "before")
+			chain.push_back(lutNode);
+		if (chainShader)
+		{
+			size_t paramCount = chainShader->params.size();
+			chain.push_back({ .uid = Parameters::kShaderNode,
+							  .shader = chainShader,
+							  .shaderLut = lutInShader ? chainLut : nullptr,
+							  .firstParam = Parameters::DefaultCount,
+							  .paramCount = paramCount < Parameters::kNodeSlots ? paramCount : Parameters::kNodeSlots });
+		}
+		if (chainLut && !lutInShader && mode != "before")
+			chain.push_back(lutNode);
+
+		return reaShaderRenderer->setChain(std::move(chain));
 	}
 
 	// -------- web UI --------

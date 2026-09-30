@@ -57,8 +57,9 @@ test/
   CMakeLists.txt       the test application's own CMake project (never included by the main build)
   main.cpp             doctest's runner, plus teardown of the shared GPU instance
   support/             helpers shared by the cases (no tests here): support.* for unit tests (repoPath, readFile,
-                       TestFrame, forEachGpu, render, invertLut), host_helpers.h for host tests (checkNoProblems,
-                       frames, mismatches, brightnessMismatches, projectState, projectLut)
+                       TestFrame, gradient, mismatches, forEachGpu, gpuCount, validationMessages, render,
+                       invertLut), host_helpers.h for host tests (checkNoProblems, frames, mismatches,
+                       brightnessMismatches, projectState, projectLut)
   host/                the fake REAPER host (no tests here; Windows only)
   cases/               the tests: one file per area, each a TEST_SUITE
   shaders/             fixtures: broken.frag
@@ -75,6 +76,7 @@ Test suites:
 | `lut`             | `cases/lut.cpp`             | the `.cube` parser: the table as written (red fastest), comments/CRLF/unknown keywords, a 1D LUT baked into a cube, a `DOMAIN` resampled onto 0..1, errors with file and line, the stored JSON form at half precision, base64. No GPU.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `render`          | `cases/render.cpp`          | the renderer's building blocks on **every GPU**, checked pixel by pixel: an example shader at an odd width with padded rows, `Params` values and B,G,R,A order, defaults for params not given, the logo scene over a plain copy, the LUT pass (identity, inverting, blended), a LUT before or after a shader, a shader sampling the LUT with `iLut`, four passes through the work images, consecutive frames.                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `host`            | `cases/host_lifecycle.cpp`  | the built plugin in the fake host: its descriptor, the initial param list (Audio Gain, LUT Mix), activate/process/deactivate twice (audio unchanged at gain 1, the video processor created and deleted), video passthrough with no shader, destroying an active plugin.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `renderer`        | `cases/renderer.cpp`        | `ReaShaderRenderer` itself on **every GPU**, on its own Vulkan instance with a device switch between GPUs (the chain carries over): no chain or only bypassed nodes pass through, nodes in order with their own params (the same shader twice, a reorder), five nodes with two bypassed, a LUT node's Mix (1 without a value), shader params the frame doesn't have yet at their defaults, a shader node's own LUT as `iChannel1`, a node's objects kept while its content is the same (its `iFrame` goes on, pauses while bypassed, restarts with new content or another uid), invalid chains rejected with the current one kept, a chain set before `init()`. |
 | `host`            | `cases/host_scenarios.cpp`  | project scenarios: a shader arriving with a project while active (restart, rescan, its params and their stable ids, frames through it) or before activation (no restart); param values at video time vs. the plugin's own; the state round trip (shader, LUT, values by name, logo); a LUT from a project in each mode (before/after the shader, left to the shader, alone) and LUT Mix; the logo over video; an unrecognized state.                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 **The build (`test/CMakeLists.txt`)** follows the main build's structure:
@@ -134,7 +136,13 @@ test::forEachGpu([&](gpu::Context& context) {
   - `.params` go to every shader pass, whose `iChannel1` is `.shaderLut` (default: an identity).
   - A `gpu::LutPass` gets its LUT (`bindLut`) and amount (`setAmount`) from the test.
   - A pass object may appear only once in `.passes` (one descriptor set each).
-- **`test::TestFrame(width, height, padding)`** is a BGRA frame with `padding` extra bytes per row, like REAPER's row stride. Use odd widths and padded rows where layout matters.
+- **`test::TestFrame(width, height, padding)`** is a BGRA frame with `padding` extra bytes per row, like REAPER's row stride. Use odd widths and padded rows where layout matters. `test::gradient()` is a 256×4 frame with every 8-bit value in every color channel, and `test::mismatches(input, output, expected, tolerance)` counts the color channels off from `expected(input value)` (alpha must be unchanged).
+
+**Renderer tests** (the `renderer` suite) test `ReaShaderRenderer` itself, with its real chain code, rather than the building blocks:
+
+- **`TestRenderer`** (`cases/renderer.cpp`) is a `ReaShaderPlugin` (never initialized: the renderer only asks it for the rendering device) and a `ReaShaderRenderer` on its own Vulkan instance, like in REAPER.
+- **`forEachGpu(body)`** runs `init()`, then the body once per GPU (`test::gpuCount()`), switching with `changeRenderingDevice()` before each, so the chain carries over from one GPU to the next. Validation messages logged meanwhile (`test::validationMessages()`) fail the test.
+- **`render(input, output, params)`** calls `renderFrame` with `params` as the plugin's values by index, and returns `false` when the frame passed through.
 
 ## 4. The fake REAPER host
 

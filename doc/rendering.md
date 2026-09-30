@@ -161,7 +161,7 @@ A **pipeline layout** ties them together: which set layouts and which push-const
 
 **In our code:**
 
-- `Context::createDevice` creates one descriptor pool (16 sets, 32 image samplers, 16 uniform buffers, with individually freeable sets) and one sampler (linear, clamp to edge on all three axes), shared by everything.
+- `Context::createDevice` creates one descriptor pool (64 sets, 128 image samplers, 64 uniform buffers, with individually freeable sets) and one sampler (linear, clamp to edge on all three axes), shared by everything.
 - **`ShaderPass`** has one set:
   - binding 0 = `iChannel0` (the pass's input);
   - binding 1 = the `Params` uniform buffer;
@@ -222,7 +222,7 @@ Vulkan doesn't take GLSL. It takes **SPIR-V**, a binary intermediate language (a
 
 | File                     | What it is                                                                                                                                                                          |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `renderer.h/.cpp`        | **`ReaShaderRenderer`**: the only class the plugin talks to. Owns everything below, holds `frameMutex`, picks the passes (the LUT mode), records a frame, never throws.             |
+| `renderer.h/.cpp`        | **`ReaShaderRenderer`**: the only class the plugin talks to. Owns everything below, holds `frameMutex`, builds the chain's passes (`setChain`), records a frame, never throws.             |
 | `context.h/.cpp`         | **`gpu::Context`**: instance, GPU list, device, queue, the one command buffer + fence, VMA allocator, descriptor pool, sampler.                                                     |
 | `frame_targets.h/.cpp`   | **`gpu::FrameTargets`**: the frame's upload/readback buffers and input/output/work images, the commands that move pixels between them, and `recordPasses`, which chains the passes. |
 | `pass.h/.cpp`            | **`gpu::Pass`**: the interface of a fullscreen pass (`bindInput`, `record`), plus what passes share: `fullscreen.vert`, `beginFullscreenRendering`, `writeImageDescriptor`.         |
@@ -242,45 +242,46 @@ There are no deletion queues or reference counting. Each object is a plain struc
 | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | `Context` instance                                                          | `init()` (the plugin's first `activate()`, or after a failure)               | `shutdown()` / the renderer's destructor (plugin destroyed), or `init()` starting over |
 | `Context` device (+ queue, command buffer, fence, allocator, pool, sampler) | with the instance; `changeRenderingDevice()`                                 | before the instance; `changeRenderingDevice()`                                         |
-| `ShaderPass`                                                                | `setShader()`, or with the device if a shader is kept                        | replaced by the next `setShader()`; `clearShader()`; with the device                   |
-| `LutPass` and the identity `Lut`                                            | with the device                                                              | with the device                                                                        |
-| the current `Lut`                                                           | `setLut()`, or with the device if a LUT is kept                              | replaced by the next `setLut()`; `clearLut()`; with the device                         |
+| a node's pass (`ShaderPass` or `LutPass`)                                   | `setChain()` for a new uid or new content, or with the device                | a `setChain()` without that uid, or with new content; with the device                  |
+| a node's `Lut` (a LUT node's table, or a shader node's `iChannel1`)         | `setChain()` for a new uid or a new table, or with the device                | a `setChain()` without that uid, or with a new table; with the device                  |
+| the identity `Lut`                                                          | with the device                                                              | with the device                                                                        |
 | `Scene`                                                                     | the first `setLogoEnabled(true)`, or with the device if the logo is on       | with the device (turning the logo off only stops drawing it)                           |
 | `FrameTargets`                                                              | the first frame, or a frame whose size or row stride changed                 | the next size/stride change; with the device                                           |
 | `FrameTargets`' work images                                                 | the first chain of two or more passes (the second work image: three or more) | with the targets                                                                       |
 | `Scene`'s depth image                                                       | `Scene::prepare()` when the frame size changes                               | the next size change; with the scene                                                   |
 
-- **Destroy order on a device change** (`_destroyDevice`): scene, shader pass, LUT pass, LUTs, targets, then the device. They all belong to it.
-- **Recreate order** (`_createDevice`): the device, the LUT pass and identity, the LUT (from the kept `LutData`), the shader pass (from the kept `CompiledShader`) and the scene (if the logo is on). The targets come back with the next frame.
-- **`CompiledShader` and `LutData` are kept by the renderer**, not only on the GPU. That's why a device change can rebuild the pass and re-upload the LUT without recompiling or re-parsing.
+- **A node's objects** (`NodeObjects` in `renderer.cpp`) are grouped per node, in the chain's order. `setChain` keeps the pass of a node whose uid is in the current chain with the same `shader` pointer (or, for a LUT node, still a LUT node), and its `Lut` when the table pointer is the same. So adding, removing, moving or bypassing a node rebuilds nothing else. It builds everything new first, and only then takes the kept objects and destroys the old chain's rest: an error leaves the current chain untouched.
+- **Destroy order on a device change** (`_destroyDevice`): scene, the nodes' objects, the identity, targets, then the device. They all belong to it.
+- **Recreate order** (`_createDevice`): the device, the identity, every node's objects (from the kept chain) and the scene (if the logo is on). The targets come back with the next frame.
+- **The chain is kept by the renderer** (`ChainNode`s holding `shared_ptr`s to the `CompiledShader`s and `LutData`s), not only on the GPU. That's why a device change can rebuild the passes and re-upload the LUTs without recompiling or re-parsing, and why `setChain` works with no device (the next `init()` installs it).
 
 ## 4. A frame, step by step
 
 ### The chain
 
-`renderFrame` picks the passes every frame, from what's loaded and the LUT mode (`LutMode`):
+The chain is a list of nodes (`ReaShaderRenderer::ChainNode`), set with `setChain`. Each node is a shader or a LUT:
 
-| LUT mode | Passes                                                      |
-| -------- | ----------------------------------------------------------- |
-| no LUT   | shader                                                      |
-| `Before` | LUT, shader                                                 |
-| `After`  | shader, LUT                                                 |
-| `Shader` | shader, with the LUT bound as its `iChannel1` (no LUT pass) |
+- **a shader node** is a `ShaderPass`, with its own `Lut` as `iChannel1` (`shaderLut`), or the identity;
+- **a LUT node** is a `LutPass` with its table.
 
-A missing shader drops out of the list, and in `Shader` mode with no shader the LUT pass runs alone. With no passes at all (the logo alone), the input is copied to the output.
+`renderFrame` lists the passes every frame: the nodes in order, bypassed ones left out. With no passes at all (the logo alone), the input is copied to the output; with no passes and no logo, the frame passes through.
+
+**Params per node:** each node names its params in `FrameInputs::paramValues`, the plugin's values by index (`firstParam`, `paramCount`). A shader node's go to its `Params` block in order; a LUT node's one param is its Mix. Values past `FrameInputs::paramCount` (params still waiting for the host's rescan) get their defaults: the shader's, and 1 for a Mix.
+
+The plugin turns its shader, LUT and LUT mode into a chain (`ReaShaderPlugin::_setChain`): LUT then shader (`before`), shader then LUT (`after`), or the shader alone with the LUT as its `iChannel1` (`shader`).
 
 `FrameTargets::recordPasses` records them in order. The first pass samples `input`, the last renders to `output`, and the ones between render to `work[0]`, `work[1]`, `work[0]`, ... Each pass's input is bound right before it's recorded, so a pass object appears at most once in a chain (it has one descriptor set).
 
 ### Commands
 
-`ReaShaderRenderer::renderFrame` with a shader and a LUT in `After` mode, and the logo on. The steps are in order; "B*n*" is a barrier.
+`ReaShaderRenderer::renderFrame` with a shader node then a LUT node, and the logo on. The steps are in order; "B*n*" is a barrier.
 
 **CPU, before recording:**
 
 1. If needed, recreate `FrameTargets`. `scene->prepare()` makes the depth image the right size.
 2. `FrameTargets::writeInput`: `memcpy` REAPER's pixels into the mapped upload buffer, then `flush`.
 3. `ShaderPass::writeParams`: write each slider's value at its reflected byte offset in the mapped params buffer, then `flush`. Sliders without a value (the plugin's params are still pending) get their default.
-4. Bind the LUTs: the shader's `iChannel1` (the LUT in `Shader` mode, otherwise the identity) and the LUT pass's table. Set the LUT pass's amount.
+4. Bind the LUTs: the shader's `iChannel1` (its node's LUT, otherwise the identity) and the LUT pass's table. Set the LUT pass's amount (its node's Mix).
 
 **GPU commands** (`Context::beginCommands` → ... → `submitAndWait`):
 
@@ -343,7 +344,7 @@ The user-facing documentation, which covers what a shader can use and the `//@pa
 
 **`iLut`** samples `iChannel1` at the texel centers, `(c × (size − 1) + 0.5) / size`, so 0 and 1 land on the LUT's first and last entries rather than on the texture's edges. `lut.frag` does the same.
 
-**Push constants ↔ `ShaderInputs`:** the preamble's `ReaShaderInputs` block and the C++ struct `gpu::ShaderInputs` (`shader_compiler.h`) must describe the same bytes (std430 layout: `vec2` at 0, `float` at 8 and 12, `int` at 16 = 20 bytes). `renderFrame` fills it. `iFrame` counts frames since the pass was installed.
+**Push constants ↔ `ShaderInputs`:** the preamble's `ReaShaderInputs` block and the C++ struct `gpu::ShaderInputs` (`shader_compiler.h`) must describe the same bytes (std430 layout: `vec2` at 0, `float` at 8 and 12, `int` at 16 = 20 bytes). `renderFrame` fills it, except `iFrame`: each `ShaderPass` counts the frames it recorded since it was created, so a node kept by `setChain` keeps counting, and a bypassed one pauses.
 
 **Compiling** (`compileGlsl`): shaderc targets Vulkan 1.3, with automatic bindings.
 
@@ -382,20 +383,20 @@ Four threads touch the renderer (the full list is in `src/plugin/plugin.h`):
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | REAPER's video thread | `renderFrame`                                                                                                                          |
 | main                  | `init()` (from `activate()`), `shutdown()` (via the destructor)                                                                        |
-| webview (UI messages) | `setShader` / `clearShader` (shader select or upload), `setLut` / `clearLut` / `setLutMode`, `changeRenderingDevice`, `setLogoEnabled` |
+| webview (UI messages) | `setChain` (shader or LUT select or upload, LUT mode), `changeRenderingDevice`, `setLogoEnabled`                                        |
 | main (state load)     | the same setters, when a project is loaded                                                                                             |
 
 **`frameMutex`:**
 
 - **The lock:** every public function locks `frameMutex`, because they all touch the same GPU objects and the one command buffer.
 - **The video thread never waits:** `renderFrame` uses `try_lock`, and if another thread holds the mutex (a device switch, a shader install, `init()` creating the instance), the frame passes through. REAPER's video thread must never block.
-- **Compiling and parsing happen outside the lock:** they run on the upload path, before `setShader` / `setLut`. Under the lock there's only pipeline creation or a LUT's upload, which are short.
+- **Compiling and parsing happen outside the lock:** they run on the upload path, before `setChain`. Under the lock there's only pipeline creation and LUT uploads, for the nodes that changed, which are short.
 
 **Nothing throws out:**
 
 - **Exceptions stay inside:** Vulkan errors throw inside the render code (`VK_CHECK`, `unwrap` for vk-bootstrap), and every public function of `ReaShaderRenderer` catches them.
 - **Why it matters:** an exception escaping into REAPER or the CLAP host is fatal to REAPER.
-- **Where errors go:** they are logged (with a message box for the user where it matters), or returned as a string (`setShader`: the UI shows the error, and the previous shader stays).
+- **Where errors go:** they are logged (with a message box for the user where it matters), or returned as a string (`setChain`: the UI shows the error, and the previous chain stays).
 
 **`failed`:** a Vulkan error in `init()`, `changeRenderingDevice()` or `renderFrame()` sets `failed`, and from then on every frame passes through. It is cleared by:
 
@@ -408,7 +409,7 @@ Four threads touch the renderer (the full list is in `src/plugin/plugin.h`):
 - CLAP needs a deactivate/activate cycle whenever the param list changes, which happens on every shader change (a host "restart").
 - Recreating the Vulkan instance and device each time would take noticeable time.
 
-**Swapping the shader or the LUT is safe without waiting:** frames render one at a time and each waits on its fence. So whenever `setShader` or `setLut` holds the mutex, the GPU isn't using the old pass or LUT, and `_installShader` / `_installLut` can destroy it immediately. The same holds for descriptor sets, which is why passes can rebind their inputs every frame.
+**Swapping the chain is safe without waiting:** frames render one at a time and each waits on its fence. So whenever `setChain` holds the mutex, the GPU isn't using the old passes or LUTs, and it can destroy them immediately. The same holds for descriptor sets, which is why passes can rebind their inputs every frame.
 
 ## 7. Decisions and why
 
@@ -417,15 +418,16 @@ Four threads touch the renderer (the full list is in `src/plugin/plugin.h`):
 - **Host-visible buffers for frame I/O, device-local images for the work.** The CPU writes into the upload buffer, the GPU copies it into an optimal-tiled image (sampling and rendering need images), and the reverse on the way out. Separate host-access flags keep the readback buffer in CPU-cached memory, since reading write-combined memory is very slow.
 - **`B8G8R8A8_UNORM` everywhere (`kFrameFormat`).** REAPER's `'RGBA'` frames are B, G, R, A in memory, the same byte order as this format. Copies are byte-for-byte, and the format itself maps channels, so the shader's `.r` is red. There's no blit, swizzle or conversion pass. `UNORM` (not sRGB) means values pass through untouched.
 - **Compile only on upload.** Compiling GLSL is slow, and shaderc is big. Doing it once, and storing SPIR-V plus the reflected params, means loading a project or selecting a shader never compiles, and projects are self-contained.
-- **One sampler, one descriptor pool, one command buffer per device.** Nothing needs more. The pool's 16 sets cover the passes plus a handful of scene objects.
+- **One sampler, one descriptor pool, one command buffer per device.** Nothing needs more. The pool's 64 sets cover two full chains of 16 nodes (the old chain is still there while `setChain` builds the new one) plus the scene's objects.
 - **Viewport and scissor are dynamic.** Pipelines don't depend on the frame size, so a size change recreates only `FrameTargets` (and the scene's depth image), never pipelines.
 - **The logo texture is sRGB, drawn onto a UNORM target.** Sampling an `R8G8B8A8_SRGB` texture converts it to linear values, and writing to a UNORM target stores them without converting back, so the logo comes out darker than the PNG. `scene.frag` adds 0.2. This is the logo's established look, and it was kept on purpose.
-- **A chain of passes, not a fixed shader-then-LUT sequence.** Each pass samples one image and renders another, and `recordPasses` links them through two ping-pong images. The LUT's position is just an order in a list, and more passes (e.g. several shaders) need no new recording code.
-- **Inputs are rebound every frame.** A pass's input depends on its place in the chain, which changes with the LUT mode. Rewriting one descriptor per pass per frame is cheap, and legal because the previous frame has finished (the fence).
+- **A chain of passes, not a fixed shader-then-LUT sequence.** Each pass samples one image and renders another, and `recordPasses` links them through two ping-pong images. A node's position is just an order in a list, and any number of shaders and LUTs need no new recording code.
+- **Nodes are identified by uid, content by pointer.** The chain's content is immutable and shared (`shared_ptr<const ...>`), so "the same content" is a pointer comparison, with no hashing or deep compare, and the renderer keeps no copies.
+- **Inputs are rebound every frame.** A pass's input depends on its place in the chain, which changes when nodes are added, moved or bypassed. Rewriting one descriptor per pass per frame is cheap, and legal because the previous frame has finished (the fence).
 - **`SHADER_READ`, not `SHADER_SAMPLED_READ`, before sampling.** Synchronization2's narrower `SHADER_SAMPLED_READ` is the textbook access for sampling, but Intel's Windows driver (UHD 620) doesn't invalidate its texture cache for it: in a four-pass chain, the last pass sampled `work[0]` as the first pass left it, not as the third pass rewrote it. `SHADER_READ` includes sampled reads, and every barrier before sampling uses it. The render test "four passes ping-pong through the work images" catches it.
 - **The LUT is a 3D texture, filtered by the hardware.** Trilinear interpolation between entries is what `.cube` LUTs expect, and the sampler does it for free. The format is RGBA16F: every GPU filters it (3-channel formats aren't guaranteed), and half floats are plenty for an 8-bit frame.
 - **LUTs are normalized when parsed.** A 1D LUT becomes a 33³ cube, and a `DOMAIN` other than 0..1 is resampled onto 0..1 (`lut_file.cpp`), so the GPU side knows one kind of LUT and `lut.frag` / `iLut` need no domain uniforms.
-- **The shader always has an `iChannel1`.** When the LUT isn't the shader's (no LUT, or mode `Before`/`After`), a 17³ identity is bound, so the descriptor is always valid and a shader calling `iLut` gets its input back. 17 points, not 2: some GPUs interpolate with 8-bit weights, which on a 2-point identity can be off by one 8-bit step.
+- **The shader always has an `iChannel1`.** When its node has no LUT, a 17³ identity is bound, so the descriptor is always valid and a shader calling `iLut` gets its input back. 17 points, not 2: some GPUs interpolate with 8-bit weights, which on a 2-point identity can be off by one 8-bit step.
 - **Plain `create()`/`destroy()` structs, no deletion queues.** There are few objects with clear owners (the lifetime table above), so an explicit list of handles per struct is easier to follow than a generic mechanism.
 
 ## 8. How to extend
@@ -435,15 +437,15 @@ Four threads touch the renderer (the full list is in `src/plugin/plugin.h`):
 Passes are chained by `FrameTargets::recordPasses` (see [the chain](#the-chain)). To add a kind of pass:
 
 - **Implement `gpu::Pass`:** `bindInput` writes the input's descriptor (with `writeImageDescriptor`), and `record` starts with `beginFullscreenRendering(commandBuffer, target)`, draws, and ends rendering. That leaves the target in `COLOR_ATTACHMENT_OPTIMAL`, as the invariant needs.
-- **One descriptor set per pass object:** a pass object can appear only once in a chain. To run a shader twice, create two passes.
-- **Lifetime:** create it with the device (or when its content is set), destroy it in `_destroyDevice`, and add it to the list in `renderFrame`.
+- **One descriptor set per pass object:** a pass object can appear only once in a chain. That's why every node has its own objects, and the same shader in two nodes builds two passes.
+- **A new kind of node:** give `ChainNode` its content, and `NodeObjects` (`renderer.cpp`) its objects: what to build in `create`, what `reuse` can keep, and the per-frame setup in `renderFrame`.
 - **Tests:** `test::render` takes the same list (`RenderInputs::passes`), so a render test runs the real chaining code.
 
 ### Add a scene object or texture
 
 - In `Scene::create`, load a `Mesh` (`.obj`) and a `Texture` (any format stb_image reads), and add an `Object { mesh, createTextureSet(context, texture), localTransform }`.
 - Free them in `Scene::destroy`: the texture set is freed per object, but meshes and textures are members, so add them there.
-- Each object uses one descriptor set from the shared pool (16 sets in total, shared with the passes).
+- Each object uses one descriptor set from the shared pool (64 sets in total, shared with the passes).
 - Assets live in `res/`. The build copies them to `resources/` next to the plugin on every build.
 
 ### Add a built-in shader input (like `iTime`)
