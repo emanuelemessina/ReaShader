@@ -13,6 +13,8 @@ Every shader gets these without declaring them:
 | `uv` | `vec2` | position in the frame, 0..1, (0, 0) = top left |
 | `fragColor` | `vec4` | the output color of this pixel |
 | `iChannel0` | `sampler2D` | the input video frame: `texture(iChannel0, uv)` |
+| `iChannel1` | `sampler3D` | the LUT (see [Using the LUT](#using-the-lut)) |
+| `iLut(color)` | `vec3 → vec3` | `color` through the LUT |
 | `iResolution` | `vec2` | frame size in pixels |
 | `iTime` | `float` | project time in seconds |
 | `iFrameRate` | `float` | frames per second |
@@ -33,3 +35,20 @@ uniform Params
 ```
 
 The format is `//@param <member> '<Label>' <default> <min> <max>`. The label and the numbers are optional, in that order. Without an annotation a slider is labelled with the member's name, starts at 0.5 and ranges 0..1.
+
+## Using the LUT
+
+The plugin applies a LUT (a `.cube` file, uploaded under "LUT") before or after your shader, on its own. To use it inside your shader instead, pick the LUT mode "In the shader (iLut)". Then:
+
+- the plugin doesn't apply the LUT itself, and LUT Mix has no effect: blending is up to you;
+- `iLut(color)` returns `color` (0..1 RGB) through the LUT;
+- `iChannel1` is the LUT as a 3D texture, if you want to sample it yourself.
+
+In the other modes, `iLut` returns its input unchanged, so a shader that uses it still works.
+
+`lut_split.frag` shows the LUT on one side of a movable line:
+
+```glsl
+vec4 video = texture(iChannel0, uv);
+fragColor = vec4(uv.x < split ? iLut(video.rgb) : video.rgb, video.a);
+```

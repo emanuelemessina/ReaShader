@@ -8,6 +8,7 @@
 
 #include "plugin/plugin.h"
 
+#include "render/lut_file.h"
 #include "render/renderer.h"
 #include "render/shader_compiler.h"
 #include "util/logging.h"
@@ -35,17 +36,17 @@ namespace ReaShader
 
 	namespace
 	{
-		// compiled shaders: <name>.json, written on upload
-		std::filesystem::path compiledShaderPath(const std::string& name)
+		// uploads are stored as <dir>/<name>.json: compiled shaders, parsed LUTs
+		std::filesystem::path storedPath(const std::filesystem::path& dir, const std::string& name)
 		{
-			return util::paths::compiledShadersDir() / (name + ".json");
+			return dir / (name + ".json");
 		}
 
-		std::vector<std::string> compiledShaders()
+		std::vector<std::string> storedNames(const std::filesystem::path& dir)
 		{
 			std::vector<std::string> names;
 			std::error_code error;
-			for (const auto& entry : std::filesystem::directory_iterator(util::paths::compiledShadersDir(), error))
+			for (const auto& entry : std::filesystem::directory_iterator(dir, error))
 			{
 				if (entry.path().extension() == ".json")
 					names.push_back(entry.path().stem().string());
@@ -69,6 +70,17 @@ namespace ReaShader
 			file << content;
 			if (!file)
 				throw std::runtime_error("Can't write " + path.string());
+		}
+
+		// the LUT modes, as named in the protocol and the state
+		bool isLutMode(const std::string& mode)
+		{
+			return mode == "before" || mode == "after" || mode == "shader";
+		}
+
+		LutMode toLutMode(const std::string& mode)
+		{
+			return mode == "before" ? LutMode::Before : mode == "shader" ? LutMode::Shader : LutMode::After;
 		}
 	} // namespace
 
@@ -240,8 +252,11 @@ namespace ReaShader
 	// -------- clap.state --------
 	//
 	// One JSON document:
-	// { "version": 2, "params": { "<name>": value }, "device": n, "logo": false, "shader": { "name": "", "compiled": {...} } }
-	// The compiled shader is embedded, so a project doesn't depend on the plugin's shader folder.
+	// { "version": 3, "params": { "<name>": value }, "device": n, "logo": false,
+	//   "shader": { "name": "", "compiled": {...} }, "lut": { "name": "", "mode": "after", "data": {...} } }
+	// The compiled shader and the LUT are embedded, so a project doesn't depend on the plugin's folders.
+
+	constexpr int kStateVersion = 3;
 
 	bool ReaShaderPlugin::saveState(const clap_ostream_t* stream)
 	{
@@ -249,11 +264,13 @@ namespace ReaShader
 		{
 			std::lock_guard lock(stateMutex);
 			json compiled = shaderData.empty() ? json() : json::parse(shaderData, nullptr, false);
-			state = { { "version", 2 },
+			json lut = lutData.empty() ? json() : json::parse(lutData, nullptr, false);
+			state = { { "version", kStateVersion },
 					  { "params", params.valuesToJson() },
 					  { "device", renderingDevice },
 					  { "logo", showLogo },
-					  { "shader", { { "name", shaderName }, { "compiled", compiled } } } };
+					  { "shader", { { "name", shaderName }, { "compiled", compiled } } },
+					  { "lut", { { "name", lutName }, { "mode", lutMode }, { "data", lut } } } };
 		}
 
 		std::string data = state.dump();
@@ -280,7 +297,7 @@ namespace ReaShader
 			data.append(buffer, (size_t)n);
 
 		json state = json::parse(data, nullptr, /* allow_exceptions */ false);
-		if (!state.is_object() || state.value("version", 0) != 2)
+		if (!state.is_object() || state.value("version", 0) != kStateVersion)
 		{
 			// unrecognized format or version: keep the defaults
 			LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "State load", "Unrecognized state, using defaults");
@@ -316,6 +333,15 @@ namespace ReaShader
 			_useShader(shader.value("name", ""), compiled.dump());
 		else
 			_clearShader();
+
+		const json lut = state.value("lut", json::object());
+		_setLutMode(lut.value("mode", "after"));
+		const json lutStored = lut.value("data", json());
+		if (lutStored.is_object())
+			_useLut(lut.value("name", ""), lutStored.dump());
+		else
+			_clearLut();
+
 		_webuiSendSnapshot();
 		return true;
 	}
@@ -352,7 +378,7 @@ namespace ReaShader
 		FrameView outputFrame{ w, h, output->get_rowspan(), reinterpret_cast<uint8_t*>(output->get_bits()) };
 		ReaShaderRenderer::FrameInputs inputs{ projectTime, frameRate, paramValues, paramCount };
 
-		// false: inactive, busy, failed, or no shader and no logo -> pass the input through
+		// false: inactive, busy, failed, or no shader, LUT or logo -> pass the input through
 		if (!plugin->reaShaderRenderer->renderFrame(inputFrame, outputFrame, inputs))
 		{
 			output->Release();
@@ -439,7 +465,7 @@ namespace ReaShader
 		try
 		{
 			data = gpu::toJson(gpu::compileShader(source, fileName)).dump();
-			writeFile(compiledShaderPath(name), data);
+			writeFile(storedPath(util::paths::compiledShadersDir(), name), data);
 		}
 		catch (const std::exception& e)
 		{
@@ -491,12 +517,93 @@ namespace ReaShader
 		_webuiSendSnapshot();
 	}
 
+	// -------- LUT --------
+	//
+	// A .cube file is parsed once, when uploaded, and stored in the LUTs folder as <name>.json.
+	// Selecting one loads the stored form; the current one is also embedded in the project state.
+
+	// parses a .cube file, stores it, then uses it
+	void ReaShaderPlugin::_uploadLut(const std::string& fileName, const std::string& source)
+	{
+		std::string name = std::filesystem::path(fileName).stem().string();
+		if (name.empty())
+			name = "lut";
+
+		std::string data;
+		try
+		{
+			data = gpu::toJson(gpu::parseCube(source, fileName)).dump();
+			writeFile(storedPath(util::paths::lutsDir(), name), data);
+		}
+		catch (const std::exception& e)
+		{
+			LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "LUT upload failed", e.what());
+			_webuiSendLutStatus(e.what(), "error");
+			return;
+		}
+		_useLut(name, data);
+	}
+
+	// makes a stored LUT (its JSON) the current one; on error the current one stays
+	void ReaShaderPlugin::_useLut(const std::string& name, const std::string& data)
+	{
+		std::string error;
+		try
+		{
+			error = reaShaderRenderer->setLut(gpu::lutFromJson(json::parse(data)));
+		}
+		catch (const std::exception& e)
+		{
+			error = std::string("Invalid stored LUT: ") + e.what();
+		}
+
+		if (!error.empty())
+		{
+			LOG(WARNING, toConsole | toFile, "ReaShaderPlugin", "LUT load failed", error);
+			_webuiSendLutStatus(error, "error");
+			return;
+		}
+
+		{
+			std::lock_guard lock(stateMutex);
+			lutName = name;
+			lutData = data;
+		}
+		_webuiSendLutStatus("Loaded " + name, "ok");
+		_webuiSendSnapshot();
+	}
+
+	void ReaShaderPlugin::_clearLut()
+	{
+		reaShaderRenderer->clearLut();
+		{
+			std::lock_guard lock(stateMutex);
+			lutName.clear();
+			lutData.clear();
+		}
+		_webuiSendSnapshot();
+	}
+
+	// unknown modes are ignored
+	void ReaShaderPlugin::_setLutMode(const std::string& mode)
+	{
+		if (!isLutMode(mode))
+			return;
+		{
+			std::lock_guard lock(stateMutex);
+			lutMode = mode;
+		}
+		reaShaderRenderer->setLutMode(toLutMode(mode));
+	}
+
 	// -------- web UI --------
 	//
 	// Messages to the UI:
-	// - snapshot    { version, track, params, devices, logo, shader, shaders }: everything, the UI rebuilds itself from it
+	// - snapshot    { version, track, params, devices, logo, shader, shaders, lut, luts }: everything, the UI
+	//                rebuilds itself from it
 	// - paramValue  { id, value }: a host automation change
 	// - shaderStatus{ status, state }: state is "busy", "ok" or "error"
+	// - lutStatus   { status, state }: the same, for the LUT
 	//
 	// Messages from the UI:
 	// - ready       {}: the page loaded, send a snapshot
@@ -506,6 +613,9 @@ namespace ReaShader
 	// - openUrl     { url }: opens an https:// link in the system browser
 	// - shaderSelect{ name }: a compiled shader, "" = none
 	// - shaderUpload{ name, source }: GLSL to compile and store
+	// - lutSelect   { name }: a stored LUT, "" = none
+	// - lutUpload   { name, source }: a .cube file's text, to parse and store
+	// - lutMode     { mode }: "before" / "after" the shader, or "shader" (the shader samples it as iChannel1)
 
 	void ReaShaderPlugin::setWebUISender(WebUISender sender)
 	{
@@ -542,10 +652,12 @@ namespace ReaShader
 					{ "track", { { "number", trackNumber }, { "name", track } } },
 					{ "devices", { { "names", renderingDeviceNames }, { "selected", renderingDevice } } },
 					{ "logo", showLogo },
-					{ "shader", { { "name", shaderName } } } };
+					{ "shader", { { "name", shaderName } } },
+					{ "lut", { { "name", lutName }, { "mode", lutMode } } } };
 		}
 		msg["params"] = params.toJson();
-		msg["shaders"] = compiledShaders();
+		msg["shaders"] = storedNames(util::paths::compiledShadersDir());
+		msg["luts"] = storedNames(util::paths::lutsDir());
 
 		_webuiSend(msg);
 	}
@@ -553,6 +665,11 @@ namespace ReaShader
 	void ReaShaderPlugin::_webuiSendShaderStatus(const std::string& status, const char* state)
 	{
 		_webuiSend({ { "type", "shaderStatus" }, { "status", status }, { "state", state } });
+	}
+
+	void ReaShaderPlugin::_webuiSendLutStatus(const std::string& status, const char* state)
+	{
+		_webuiSend({ { "type", "lutStatus" }, { "status", status }, { "state", state } });
 	}
 
 	void ReaShaderPlugin::handleWebUIMessage(const std::string& text)
@@ -608,7 +725,7 @@ namespace ReaShader
 				_webuiSendShaderStatus("No shader: video passes through", "ok");
 				return;
 			}
-			std::string data = readFile(compiledShaderPath(name));
+			std::string data = readFile(storedPath(util::paths::compiledShadersDir(), name));
 			if (data.empty())
 				_webuiSendShaderStatus("Can't read the compiled shader " + name, "error");
 			else
@@ -617,6 +734,29 @@ namespace ReaShader
 		else if (type == "shaderUpload")
 		{
 			_uploadShader(msg.value("name", ""), msg.value("source", ""));
+		}
+		else if (type == "lutSelect")
+		{
+			std::string name = std::filesystem::path(msg.value("name", "")).filename().string(); // no paths from the UI
+			if (name.empty())
+			{
+				_clearLut();
+				_webuiSendLutStatus("No LUT", "ok");
+				return;
+			}
+			std::string data = readFile(storedPath(util::paths::lutsDir(), name));
+			if (data.empty())
+				_webuiSendLutStatus("Can't read the stored LUT " + name, "error");
+			else
+				_useLut(name, data);
+		}
+		else if (type == "lutUpload")
+		{
+			_uploadLut(msg.value("name", ""), msg.value("source", ""));
+		}
+		else if (type == "lutMode")
+		{
+			_setLutMode(msg.value("mode", ""));
 		}
 		else
 		{

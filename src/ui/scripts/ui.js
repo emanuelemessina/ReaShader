@@ -16,18 +16,25 @@ function renderSnapshot(snapshot) {
     document.title = `${snapshot.track.number} | ${snapshot.track.name}`;
     renderParams(snapshot.params);
     renderDevices(snapshot.devices.names, snapshot.devices.selected);
-    renderShaderPicker(snapshot.shaders, snapshot.shader.name);
+    renderPicker('shader', snapshot.shaders, snapshot.shader.name);
+    renderPicker('lut', snapshot.luts, snapshot.lut.name);
+    renderLutModes(snapshot.lut.mode);
     renderAbout(snapshot.version, snapshot.logo);
 }
 
 // -------- params --------
 
-// only the shader's params have sliders (the plugin's own, like Audio Gain, are host-only)
+// sliders in the fieldset of their group: the shader's params, and the LUT's (LUT Mix);
+// the "main" group (Audio Gain) is host-only
 function renderParams(params) {
-    const container = document.querySelector('#shader .params');
-    container.replaceChildren();
+    const containers = {
+        shader: document.querySelector('#shader .params'),
+        lut: document.querySelector('#lut .params'),
+    };
+    Object.values(containers).forEach(container => container.replaceChildren());
     for (const param of params) {
-        if (param.group === "shader")
+        const container = containers[param.group];
+        if (container)
             container.appendChild(createSlider(param));
     }
 }
@@ -111,31 +118,53 @@ function renderDevices(names, selected) {
     group.appendChild(switchButton);
 }
 
-// -------- shader --------
+// -------- shader and LUT pickers --------
 
-// the compiled shaders (uploaded before) plus "none", which passes the video through,
-// next to a button that uploads a new one
-function renderShaderPicker(shaders, currentName) {
-    const picker = document.querySelector('#shader .picker');
+// What differs between the pickers of uploaded items: shaders (compiled on upload) and LUTs (parsed on upload)
+const PICKERS = {
+    shader: {
+        accept: '.glsl,.frag',
+        uploadTitle: 'Upload a .frag shader',
+        none: 'None (passthrough)',
+        hint: 'Upload a .frag shader with the folder button to compile it and add it to this list.',
+        uploading: name => `Compiling ${name}...`,
+        upload: file => native.shaderUpload(file),
+        select: name => native.shaderSelect(name),
+    },
+    lut: {
+        accept: '.cube',
+        uploadTitle: 'Upload a .cube LUT',
+        none: 'None',
+        hint: 'Upload a .cube LUT with the folder button to add it to this list.',
+        uploading: name => `Reading ${name}...`,
+        upload: file => native.lutUpload(file),
+        select: name => native.lutSelect(name),
+    },
+};
+
+// the stored items (uploaded before) plus "none", next to a button that uploads a new one
+function renderPicker(kind, names, currentName) {
+    const config = PICKERS[kind];
+    const picker = document.querySelector(`#${kind} .picker`);
     picker.replaceChildren();
 
     // upload: starts as soon as a file is picked (a cancelled dialog picks none)
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
-    fileInput.accept = '.glsl,.frag';
+    fileInput.accept = config.accept;
     fileInput.hidden = true;
     fileInput.addEventListener('change', () => {
         const file = fileInput.files[0];
         if (!file)
             return;
-        setShaderStatus(`Compiling ${file.name}...`, 'busy');
-        native.shaderUpload(file).catch(error => setShaderStatus(String(error), 'error'));
+        setStatus(kind, config.uploading(file.name), 'busy');
+        config.upload(file).catch(error => setStatus(kind, String(error), 'error'));
     });
 
     const uploadButton = document.createElement('button');
     uploadButton.type = 'button';
     uploadButton.classList.add('icon-button');
-    uploadButton.title = 'Upload a .frag shader';
+    uploadButton.title = config.uploadTitle;
     uploadButton.innerHTML = FOLDER_ICON;
     uploadButton.addEventListener('click', () => {
         fileInput.value = ''; // picking the same file again still uploads it
@@ -145,9 +174,9 @@ function renderShaderPicker(shaders, currentName) {
     const select = document.createElement('select');
     const none = document.createElement('option');
     none.value = '';
-    none.textContent = 'None (passthrough)';
+    none.textContent = config.none;
     select.appendChild(none);
-    for (const name of shaders) {
+    for (const name of names) {
         const option = document.createElement('option');
         option.value = name;
         option.textContent = name;
@@ -155,18 +184,48 @@ function renderShaderPicker(shaders, currentName) {
     }
     select.value = currentName;
 
-    // shown only while no shader is selected
+    // shown only while nothing is selected
     const hint = document.createElement('small');
-    hint.textContent = 'Upload a .frag shader with the folder button to compile it and add it to this list.';
+    hint.textContent = config.hint;
     hint.hidden = select.value !== '';
 
     select.addEventListener('change', () => {
         hint.hidden = select.value !== '';
-        setShaderStatus(select.value ? `Loading ${select.value}...` : 'Unloading...', 'busy');
-        native.shaderSelect(select.value);
+        setStatus(kind, select.value ? `Loading ${select.value}...` : 'Unloading...', 'busy');
+        config.select(select.value);
     });
 
     picker.append(fileInput, uploadButton, select, hint);
+}
+
+// where the LUT applies, relative to the shader
+const LUT_MODES = [
+    ['before', 'Before the shader'],
+    ['after', 'After the shader'],
+    ['shader', 'In the shader (iLut)'],
+];
+
+function renderLutModes(current) {
+    const container = document.querySelector('#lut .modes');
+    container.replaceChildren();
+    for (const [mode, text] of LUT_MODES) {
+        const option = document.createElement('div');
+        option.classList.add('radio-button-container');
+
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'lutMode';
+        radio.id = `lutMode_${mode}`;
+        radio.checked = mode === current;
+        radio.addEventListener('change', () => native.lutMode(mode));
+
+        const label = document.createElement('label');
+        label.htmlFor = radio.id;
+        label.textContent = text;
+
+        option.append(radio, label);
+        container.appendChild(option);
+    }
 }
 
 const FOLDER_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">' +
@@ -185,9 +244,10 @@ function setAboutOpen(open) {
     native.logo(open);
 }
 
-// the last shader action's outcome, kept across snapshots; state: "busy" (spinner), "ok" or "error"
-function setShaderStatus(text, state) {
-    const status = document.getElementById('shaderStatus');
+// the last shader or LUT action's outcome (kind: "shader" or "lut"), kept across snapshots;
+// state: "busy" (spinner), "ok" or "error"
+function setStatus(kind, text, state) {
+    const status = document.querySelector(`#${kind} .status`);
     status.querySelector('.text').textContent = text;
-    status.className = state;
+    status.className = `status ${state}`;
 }

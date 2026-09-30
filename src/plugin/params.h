@@ -27,7 +27,8 @@ namespace ReaShader::Parameters
 
 	enum class Group
 	{
-		Main,  // plugin params (fixed)
+		Main,  // plugin params (fixed), host-only
+		Lut,   // the LUT's params (fixed), shown with the LUT in the web UI
 		Shader // params reflected from the current shader (replaced on every shader change)
 	};
 
@@ -49,6 +50,7 @@ namespace ReaShader::Parameters
 	enum DefaultId : Id
 	{
 		AudioGain,
+		LutMix, // 0 = the frame as is, 1 = fully through the LUT
 
 		DefaultCount
 	};

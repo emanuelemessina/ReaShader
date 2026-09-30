@@ -2,7 +2,8 @@
 ; Defines from CMake: VcRedist (path of vc_redist.x64.exe), VcRedistMajor/Minor/Build (its toolset version).
 
 ; Upgrades replace the shipped folders, like build.cmake's deploy, so no stale files are left.
-; resources\shaders\compiled (uploaded shaders) is kept; uninstall asks about it (see installer.pas).
+; The uploads, resources\shaders\compiled (shaders) and resources\luts (LUTs), are kept; uninstall asks about them
+; (see installer.pas).
 
 [InstallDelete]
 Type: filesandordirs; Name: "{app}\ui"

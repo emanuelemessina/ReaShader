@@ -11,6 +11,7 @@
 #include "support/support.h"
 
 #include "plugin/plugin.h"
+#include "render/lut_file.h"
 #include "util/paths.h"
 
 #include <doctest/doctest.h>
@@ -34,6 +35,7 @@ namespace
 		{
 			// uploads are stored here: start from none
 			std::filesystem::remove_all(util::paths::compiledShadersDir());
+			std::filesystem::remove_all(util::paths::lutsDir());
 
 			plugin.initialize(&clapHost);
 			plugin.setWebUISender([this](const std::string& message) { sent.push_back(json::parse(message)); });
@@ -109,6 +111,11 @@ namespace
 	{
 		return test::readFile(test::repoPath("src/shaders/examples") / file);
 	}
+
+	std::string lutFixture(const char* file)
+	{
+		return test::readFile(test::repoPath("test/luts") / file);
+	}
 } // namespace
 
 TEST_SUITE("protocol")
@@ -121,11 +128,15 @@ TEST_SUITE("protocol")
 		json snapshot = ui.last("snapshot");
 		REQUIRE(snapshot.is_object());
 		CHECK_FALSE(snapshot["version"].get<std::string>().empty());
-		REQUIRE(snapshot["params"].size() == 1);
-		CHECK(snapshot["params"][0]["name"] == "Audio Gain");
+		REQUIRE(snapshot["params"].size() == Parameters::DefaultCount);
+		CHECK(snapshot["params"][Parameters::AudioGain]["name"] == "Audio Gain");
+		CHECK(snapshot["params"][Parameters::LutMix]["name"] == "LUT Mix");
 		CHECK(snapshot["logo"] == false);
 		CHECK(snapshot["shader"]["name"] == "");
 		CHECK(snapshot["shaders"] == json::array());
+		CHECK(snapshot["lut"]["name"] == "");
+		CHECK(snapshot["lut"]["mode"] == "after");
+		CHECK(snapshot["luts"] == json::array());
 		CHECK(snapshot["devices"]["selected"] == 0);
 		CHECK(snapshot.contains("track"));
 	}
@@ -165,10 +176,13 @@ TEST_SUITE("protocol")
 		CHECK(ui.callbacks == 1);
 		CHECK(ui.last("paramValue").is_null());
 
+		// every automatable param is echoed
 		ui.plugin.onMainThread();
-		json echo = ui.last("paramValue");
+		json echo;
+		for (const json& message : ui.sent)
+			if (message["type"] == "paramValue" && message["id"] == Parameters::AudioGain)
+				echo = message;
 		REQUIRE(echo.is_object());
-		CHECK(echo["id"] == 0);
 		CHECK(echo["value"] == 0.25);
 	}
 
@@ -188,13 +202,13 @@ TEST_SUITE("protocol")
 		ui.plugin.onMainThread();
 		CHECK(ui.rescans == 1);
 		CHECK(ui.restarts == 0);
-		CHECK(ui.plugin.automatableParamCount() == 2);
+		CHECK(ui.plugin.automatableParamCount() == Parameters::DefaultCount + 1);
 
 		json snapshot = ui.last("snapshot");
 		CHECK(snapshot["shader"]["name"] == "brightness");
 		CHECK(snapshot["shaders"] == json::array({ "brightness" }));
-		REQUIRE(snapshot["params"].size() == 2);
-		CHECK(snapshot["params"][1]["label"] == "Brightness");
+		REQUIRE(snapshot["params"].size() == Parameters::DefaultCount + 1);
+		CHECK(snapshot["params"][Parameters::DefaultCount]["label"] == "Brightness");
 	}
 
 	TEST_CASE("a broken upload reports the error and keeps the current shader")
@@ -246,6 +260,90 @@ TEST_SUITE("protocol")
 
 		ui.receive({ { "type", "logo" }, { "enabled", false } });
 		CHECK(ui.savedState()["logo"] == false);
+	}
+
+	TEST_CASE("lutUpload: parsed, stored, loaded, listed, and saved with the project")
+	{
+		UiSession ui;
+		ui.receive({ { "type", "lutUpload" }, { "name", "invert.cube" }, { "source", lutFixture("invert.cube") } });
+
+		json status = ui.last("lutStatus");
+		REQUIRE(status.is_object());
+		CHECK(status["state"] == "ok");
+		CHECK(status["status"] == "Loaded invert");
+		CHECK(std::filesystem::exists(util::paths::lutsDir() / "invert.json"));
+
+		json snapshot = ui.last("snapshot");
+		CHECK(snapshot["lut"]["name"] == "invert");
+		CHECK(snapshot["luts"] == json::array({ "invert" }));
+
+		json state = ui.savedState();
+		CHECK(state["version"] == 3);
+		CHECK(state["lut"]["name"] == "invert");
+		CHECK(state["lut"]["mode"] == "after");
+		gpu::LutData stored = gpu::lutFromJson(state["lut"]["data"]);
+		CHECK(stored.size == 2);
+		CHECK(stored.title == "Invert");
+	}
+
+	TEST_CASE("a broken .cube reports the error and keeps the current LUT")
+	{
+		UiSession ui;
+		ui.receive({ { "type", "lutUpload" }, { "name", "invert.cube" }, { "source", lutFixture("invert.cube") } });
+		ui.receive({ { "type", "lutUpload" }, { "name", "broken.cube" }, { "source", lutFixture("broken.cube") } });
+
+		json status = ui.last("lutStatus");
+		CHECK(status["state"] == "error");
+		CHECK(status["status"].get<std::string>().find("broken.cube:6") != std::string::npos);
+		CHECK_FALSE(std::filesystem::exists(util::paths::lutsDir() / "broken.json"));
+
+		ui.receive({ { "type", "ready" } });
+		CHECK(ui.last("snapshot")["lut"]["name"] == "invert");
+	}
+
+	TEST_CASE("lutSelect: a stored LUT by name, \"\" for none, never a path")
+	{
+		UiSession ui;
+		ui.receive({ { "type", "lutUpload" }, { "name", "curve_1d.cube" }, { "source", lutFixture("curve_1d.cube") } });
+
+		ui.receive({ { "type", "lutSelect" }, { "name", "" } });
+		CHECK(ui.last("lutStatus")["status"] == "No LUT");
+		CHECK(ui.last("snapshot")["lut"]["name"] == "");
+		CHECK(ui.savedState()["lut"]["data"].is_null());
+
+		ui.receive({ { "type", "lutSelect" }, { "name", "curve_1d" } });
+		CHECK(ui.last("lutStatus")["status"] == "Loaded curve_1d");
+		CHECK(ui.last("snapshot")["lut"]["name"] == "curve_1d");
+
+		ui.receive({ { "type", "lutSelect" }, { "name", "../../missing" } });
+		CHECK(ui.last("lutStatus")["state"] == "error");
+		CHECK(ui.last("lutStatus")["status"] == "Can't read the stored LUT missing");
+	}
+
+	TEST_CASE("lutMode is saved with the project; unknown modes are ignored")
+	{
+		UiSession ui;
+		for (const char* mode : { "before", "shader", "after" })
+		{
+			ui.receive({ { "type", "lutMode" }, { "mode", mode } });
+			CHECK(ui.savedState()["lut"]["mode"] == mode);
+		}
+		ui.receive({ { "type", "lutMode" }, { "mode", "sideways" } });
+		CHECK(ui.savedState()["lut"]["mode"] == "after");
+		ui.receive({ { "type", "ready" } });
+		CHECK(ui.last("snapshot")["lut"]["mode"] == "after");
+	}
+
+	TEST_CASE("LUT Mix edits in the UI go to the host like any param")
+	{
+		UiSession ui;
+		ui.receive({ { "type", "paramValue" }, { "id", Parameters::LutMix }, { "value", 0.4 } });
+
+		clap_id id = 99;
+		double value = 0;
+		REQUIRE(ui.plugin.takeParamChangeForHost(id, value));
+		CHECK(id == Parameters::LutMix);
+		CHECK(value == 0.4);
 	}
 
 	TEST_CASE("unknown and malformed messages are ignored")

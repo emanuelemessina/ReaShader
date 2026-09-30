@@ -19,7 +19,7 @@ TEST_SUITE("shader_compiler")
 {
 	TEST_CASE("the shipped examples compile")
 	{
-		for (const char* example : { "brightness.frag", "tint.frag", "wave.frag", "pixelate.frag" })
+		for (const char* example : { "brightness.frag", "tint.frag", "wave.frag", "pixelate.frag", "lut_split.frag" })
 		{
 			INFO(example);
 			CHECK_NOTHROW(gpu::compileShader(test::readFile(test::repoPath("src/shaders/examples") / example), example));

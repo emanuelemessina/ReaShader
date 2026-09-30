@@ -162,4 +162,12 @@ namespace test
 
 		identity.destroy(context);
 	}
+
+	gpu::LutData invertLut()
+	{
+		gpu::LutData lut = gpu::identityLut(33);
+		for (float& value : lut.rgb)
+			value = 1 - value;
+		return lut;
+	}
 } // namespace test

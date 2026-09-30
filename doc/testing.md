@@ -3,6 +3,7 @@
 ReaShader has a **test application**: a program that exercises the plugin so new features and stability can be checked automatically, **before** the manual test in REAPER. It lives in `test/`, fully separate from the plugin's build.
 
 It tests at two levels:
+
 - **Unit tests** compile pieces of the plugin's source (the renderer, the shader compiler, the parameter list, the plugin class for its web UI protocol) into the test program and call them directly.
 - **Host tests** load the **built plugin** (`build/windows-<profile>/ReaShader[-Debug].clap`) into a fake REAPER and drive it through CLAP and the REAPER API, the way REAPER does.
 
@@ -14,11 +15,10 @@ Contents:
 4. [The fake REAPER host](#4-the-fake-reaper-host)
 5. [Manual testing in REAPER](#5-manual-testing-in-reaper)
 
----
-
 ## 1. Running the tests
 
 **VS Code:** run the **`test`** task and pick the profile (debug or release). It:
+
 1. builds the plugin's preset, like `build+deploy`, but **doesn't deploy**;
 2. configures (first time only) and builds the test application in `build/tests-<profile>/`;
 3. runs it, and fails the task if any test fails.
@@ -33,23 +33,22 @@ cmake -DTEST=ON -DTEST_ARGS="--test-suite=render" -P build.cmake
 
 Or run the binary directly, which is faster when only tests changed: `build/tests-debug/reashader_tests`. It takes [doctest's command line](https://github.com/doctest/doctest/blob/master/doc/markdown/commandline.md):
 
-| Option | Effect |
-|---|---|
-| `--test-suite=render` | only one area (suites are listed in [Layout](#2-layout)) |
-| `--test-case="*logo*"` | only matching test cases |
-| `--success` | also print passing assertions |
-| `--list-test-cases` | list everything |
-| `--help` | all options |
+| Option                 | Effect                                                   |
+| ---------------------- | -------------------------------------------------------- |
+| `--test-suite=render`  | only one area (suites are listed in [Layout](#2-layout)) |
+| `--test-case="*logo*"` | only matching test cases                                 |
+| `--success`            | also print passing assertions                            |
+| `--list-test-cases`    | list everything                                          |
+| `--help`               | all options                                              |
 
 **Output:** a summary line, `[doctest] Status: SUCCESS!` or `FAILURE!`, and exit code 0 on success. Each failure prints the file and line, the expression with both sides' values, and the context (e.g. which GPU).
 
 **Tests are manual.** They don't run on `build+deploy`, so an experiment can still be deployed to REAPER while a test is red.
 
 **Profiles:**
+
 - **Debug** runs the GPU code with the Vulkan validation layer, including synchronization validation (see [rendering.md](rendering.md#9-debugging)), and any validation message fails the test that caused it.
 - **Release** runs without validation, closer to what users run.
-
----
 
 ## 2. Layout
 
@@ -68,25 +67,24 @@ test/
 
 Test suites:
 
-| Suite | File | Covers |
-|---|---|---|
-| `params` | `cases/params.cpp` | the parameter list: the fixed Audio Gain and LUT Mix, the shader group (ids, values saved by name or defaults, replacement, the size limit), values to and from JSON, `toJson` for the UI, params flagged for the host taken once with their latest value. |
-| `protocol` | `cases/protocol.cpp` | the web UI protocol on a plugin that's never activated (no GPU): `ready`'s snapshot, `paramValue` (to the host through a flush, unknown ids ignored), host automation echoed on the main thread, `shaderUpload` (stored, loaded, params rescanned; a broken one keeps the current shader), `shaderSelect` (by name, `""` for none, no paths), `lutUpload` (stored, loaded, listed, saved in the state; a broken one keeps the current LUT), `lutSelect`, `lutMode` (saved, unknown modes ignored), LUT Mix edits to the host, `logo` and `renderingDevice` saved with the project, malformed messages ignored. Uploads are stored in `resources/shaders/compiled` and `resources/luts` next to the test binary, emptied at the start of each test. `openUrl` isn't tested, since a valid URL opens the browser. |
-| `shader_compiler` | `cases/shader_compiler.cpp` | the shader contract: the examples compile, `Params` reflection and offsets, `//@param`, `iLut`, error line numbers, rejected resources, the stored JSON form. No GPU. |
-| `lut` | `cases/lut.cpp` | the `.cube` parser: the table as written (red fastest), comments/CRLF/unknown keywords, a 1D LUT baked into a cube, a `DOMAIN` resampled onto 0..1, errors with file and line, the stored JSON form at half precision, base64. No GPU. |
-| `render` | `cases/render.cpp` | the renderer's building blocks on **every GPU**, checked pixel by pixel: an example shader at an odd width with padded rows, `Params` values and B,G,R,A order, defaults for params not given, the logo scene over a plain copy, the LUT pass (identity, inverting, blended), a LUT before or after a shader, a shader sampling the LUT with `iLut`, four passes through the work images, consecutive frames. |
-| `host` | `cases/host_lifecycle.cpp` | the built plugin in the fake host: its descriptor, the initial param list (Audio Gain, LUT Mix), activate/process/deactivate twice (audio unchanged at gain 1, the video processor created and deleted), video passthrough with no shader, destroying an active plugin. |
-| `host` | `cases/host_scenarios.cpp` | project scenarios: a shader arriving with a project while active (restart, rescan, its params, frames through it) or before activation (no restart); param values at video time vs. the plugin's own; the state round trip (shader, LUT, values by name, logo); a LUT from a project in each mode (before/after the shader, left to the shader, alone) and LUT Mix; the logo over video; an unrecognized state. |
+| Suite             | File                        | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ----------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `params`          | `cases/params.cpp`          | the parameter list: the fixed Audio Gain and LUT Mix, the shader group (ids, values saved by name or defaults, replacement, the size limit), values to and from JSON, `toJson` for the UI, params flagged for the host taken once with their latest value.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `protocol`        | `cases/protocol.cpp`        | the web UI protocol on a plugin that's never activated (no GPU): `ready`'s snapshot, `paramValue` (to the host through a flush, unknown ids ignored), host automation echoed on the main thread, `shaderUpload` (stored, loaded, params rescanned; a broken one keeps the current shader), `shaderSelect` (by name, `""` for none, no paths), `lutUpload` (stored, loaded, listed, saved in the state; a broken one keeps the current LUT), `lutSelect`, `lutMode` (saved, unknown modes ignored), LUT Mix edits to the host, `logo` and `renderingDevice` saved with the project, malformed messages ignored. Uploads are stored in `resources/shaders/compiled` and `resources/luts` next to the test binary, emptied at the start of each test. `openUrl` isn't tested, since a valid URL opens the browser. |
+| `shader_compiler` | `cases/shader_compiler.cpp` | the shader contract: the examples compile, `Params` reflection and offsets, `//@param`, `iLut`, error line numbers, rejected resources, the stored JSON form. No GPU.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `lut`             | `cases/lut.cpp`             | the `.cube` parser: the table as written (red fastest), comments/CRLF/unknown keywords, a 1D LUT baked into a cube, a `DOMAIN` resampled onto 0..1, errors with file and line, the stored JSON form at half precision, base64. No GPU.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `render`          | `cases/render.cpp`          | the renderer's building blocks on **every GPU**, checked pixel by pixel: an example shader at an odd width with padded rows, `Params` values and B,G,R,A order, defaults for params not given, the logo scene over a plain copy, the LUT pass (identity, inverting, blended), a LUT before or after a shader, a shader sampling the LUT with `iLut`, four passes through the work images, consecutive frames.                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `host`            | `cases/host_lifecycle.cpp`  | the built plugin in the fake host: its descriptor, the initial param list (Audio Gain, LUT Mix), activate/process/deactivate twice (audio unchanged at gain 1, the video processor created and deleted), video passthrough with no shader, destroying an active plugin.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `host`            | `cases/host_scenarios.cpp`  | project scenarios: a shader arriving with a project while active (restart, rescan, its params, frames through it) or before activation (no restart); param values at video time vs. the plugin's own; the state round trip (shader, LUT, values by name, logo); a LUT from a project in each mode (before/after the shader, left to the shader, alone) and LUT Mix; the logo over video; an unrecognized state.                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 **The build (`test/CMakeLists.txt`)** follows the main build's structure:
+
 - it compiles the plugin sources under unit test (`src/plugin/*`, `src/render/*`, `src/util/*`, everything except the CLAP shell and the GUI) straight into `reashader_tests`, with the plugin's warning flags and `REASHADER_VERSION="test"`;
 - the host tests load the plugin built by the main build's preset of the same profile (`REASHADER_CLAP`), which the `test` task builds first;
 - it compiles the internal shaders with `glslc`, like the main build;
 - it stages `res/meshes` and `res/images` next to the binary, because the render code finds `resources/` next to its own binary.
 
 **Framework:** [doctest](https://github.com/doctest/doctest), a single header, as the submodule `external/doctest` (pinned to `v2.5.3`).
-
----
 
 ## 3. Writing a test
 
@@ -110,6 +108,7 @@ TEST_SUITE("area")
 ```
 
 **Rules:**
+
 - **Name tests as a sentence** saying what they check. Failures print it.
 - **Prefer `CHECK` over `REQUIRE`**, except for a precondition the rest of the test can't do without (e.g. a list's size before indexing it).
 - **Leave `std::rand`, timing and wall-clock values out of checks:** results must be the same on every run and every GPU. Tolerances (e.g. ±1 per channel) are fine where the GPU rounds.
@@ -137,13 +136,12 @@ test::forEachGpu([&](gpu::Context& context) {
   - A pass object may appear only once in `.passes` (one descriptor set each).
 - **`test::TestFrame(width, height, padding)`** is a BGRA frame with `padding` extra bytes per row, like REAPER's row stride. Use odd widths and padded rows where layout matters.
 
----
-
 ## 4. The fake REAPER host
 
 `test/host/` is a small REAPER stand-in, used by the `host` suite. It is our **model of REAPER**: what the plugin can expect from REAPER is written down there, as code.
 
 **What it does** (`host::Reaper`, `test/host/reaper.h`):
+
 - **Loading:** `LoadLibrary` on the `.clap`, `clap_entry.init`, the plugin factory. The thread that creates the `host::Reaper` is REAPER's **main thread**. There is one `host::Reaper` at a time, because REAPER's `GetFunc` has no context argument. `test/host/reaper_sdk.h` includes `<windows.h>` with `NOMINMAX` defined, for test code only (the plugin doesn't define it).
 - **One plugin instance**, driven like an FX on a track: `createPlugin()` (`create_plugin` + `init` + a param scan), `activate()`, `deactivate()`, `destroyPlugin()`.
 - **REAPER's threads:** `start_processing`, `process` and `stop_processing` run on an **audio** thread, and `process_frame` runs on a **video** thread (`host::HostThread`, `test/host/thread.h`). Each call waits for its thread, so a test reads top to bottom, while the plugin still sees the calls come from the right threads.
@@ -159,6 +157,7 @@ test::forEachGpu([&](gpu::Context& context) {
 - **Frames** (`host::VideoFrame`, `test/host/video.h`) are reference-counted, `'RGBA'` (B,G,R,A in memory), with padded rows (`host::rowspanFor`).
 
 **What it checks.** `reaper.problems()` lists everything that went wrong. Every host test ends by failing on each one. It contains:
+
 - **message boxes** the plugin showed: a watcher closes them within ~20 ms, so a run never hangs;
 - **Vulkan validation messages** in the plugin's `rs.log` (debug builds), which the host deletes before loading the plugin;
 - **broken contracts:**
@@ -169,6 +168,7 @@ test::forEachGpu([&](gpu::Context& context) {
   - `process_frame` returning nothing.
 
 **Observed and assumed.** Every REAPER behavior in the host is commented as either:
+
 - **observed:** verified in REAPER (e.g. the REAPER extension and the contexts 4 and 1, which the plugin's working video tap relies on);
 - **assumed:** not verified yet (e.g. the order of calls in `idle()`, the frames' row padding, `force_format` 0, state in 1000-byte chunks, the plugin counting as inactive from the start of `deactivate`).
 
@@ -194,8 +194,6 @@ TEST_CASE("what it checks")
 }
 ```
 
----
-
 ## 5. Manual testing in REAPER
 
 The test application runs first. Testing by hand in REAPER stays the final check, with the plugin deployed by `build+deploy`:
@@ -205,7 +203,13 @@ The test application runs first. Testing by hand in REAPER stays the final check
 3. With no shader (the initial state), check that video passes through unchanged.
 4. Upload each of `resources/shaders/examples/*.frag` from the plugin folder. Each one should:
    - appear in the shader list, with its sliders;
-   - show its params in REAPER's generic parameter list, after "Audio Gain";
+   - show its params in REAPER's generic parameter list, after "Audio Gain" and "LUT Mix";
    - keep those params in sync both ways with the web UI's sliders.
 5. Upload `test/shaders/broken.frag`: the compile error shows in the UI, and the current shader stays.
-6. Click the UI's logo: the about box opens and the 3D logo spins in the video window. Closing the box removes the logo.
+6. Under LUT, upload a real `.cube` LUT (a 33³ and a 65³ one, and a 1D one if you have it). With `brightness.frag` loaded:
+   - "Before the shader" and "After the shader" give visibly different results;
+   - "In the shader (iLut)" leaves the LUT out, until `lut_split.frag` is loaded: then it shows left of the split line;
+   - LUT Mix (web UI slider, REAPER's generic list, automation) blends from the original at 0% to the LUT at 100%.
+7. Upload `test/luts/broken.cube`: the error (line 6) shows in the UI, and the current LUT stays.
+8. Save the project, close it and reopen it: shader, LUT, mode and values come back. Switch the GPU with a LUT loaded: it keeps applying.
+9. Click the UI's logo: the about box opens and the 3D logo spins in the video window. Closing the box removes the logo.

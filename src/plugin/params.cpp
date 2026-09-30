@@ -20,7 +20,7 @@ namespace ReaShader::Parameters
 	{
 		const char* groupName(Group group)
 		{
-			return group == Group::Main ? "main" : "shader";
+			return group == Group::Main ? "main" : group == Group::Lut ? "lut" : "shader";
 		}
 	} // namespace
 
@@ -28,6 +28,7 @@ namespace ReaShader::Parameters
 	{
 		params = {
 			{ AudioGain, "Audio Gain", "Audio Gain", Group::Main, "%", 1.0, 0.0, 1.0, true }, // 1.0 = unchanged audio
+			{ LutMix, "LUT Mix", "LUT Mix", Group::Lut, "%", 1.0, 0.0, 1.0, true },
 		};
 		for (const Param& p : params)
 			values[p.id] = p.defaultValue;

@@ -64,6 +64,35 @@ find_package(Vulkan REQUIRED COMPONENTS glslc shaderc_combined)
 if(WIN32)
     set(WEBVIEW_BUILD_SHARED_LIBRARY OFF CACHE BOOL "" FORCE)
     add_subdirectory(external/webview SYSTEM)
+
+    # webview registers its window classes under the process's module handle (reaper.exe), so every plugin
+    # that links webview shares them: the first one loaded owns their window procedures, and a second one
+    # (e.g. ReaShader and ReaShader (Debug) in one REAPER session) crashes in the first one's code.
+    # A patched copy of the header, included before the original, registers them under this plugin's module.
+    set(WEBVIEW_ORIGINAL_DIR "${CMAKE_SOURCE_DIR}/external/webview/core/include")
+    set(WEBVIEW_PATCHED_DIR "${GENERATED_DIR}/webview-include")
+    set(_webview_from "HINSTANCE hInstance = GetModuleHandle(nullptr);")
+    set(_webview_to "static const char moduleAnchor = 0; HINSTANCE hInstance{}; GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, reinterpret_cast<LPCWSTR>(&moduleAnchor), &hInstance); /* ReaShader: this module, not the process (CMakeLists.txt) */")
+
+    file(READ "${WEBVIEW_ORIGINAL_DIR}/webview/webview.h" _webview_header)
+    string(FIND "${_webview_header}" "${_webview_from}" _webview_first)
+    string(FIND "${_webview_header}" "${_webview_from}" _webview_last REVERSE)
+    if(_webview_first EQUAL -1 OR NOT _webview_first EQUAL _webview_last)
+        message(FATAL_ERROR "webview.h changed: the module handle patch (CMakeLists.txt, WebView) doesn't apply. "
+                            "Check whether webview still registers its window classes under GetModuleHandle(nullptr).")
+    endif()
+    string(REPLACE "${_webview_from}" "${_webview_to}" _webview_header "${_webview_header}")
+
+    # written only when changed (configure_file COPYONLY), so the webview code isn't rebuilt on every configure
+    file(WRITE "${CMAKE_BINARY_DIR}/webview.h.patched" "${_webview_header}")
+    configure_file("${CMAKE_BINARY_DIR}/webview.h.patched" "${WEBVIEW_PATCHED_DIR}/webview/webview.h" COPYONLY)
+    # the deprecated root header too: webview's own webview.cc includes "webview.h", which includes
+    # "webview/webview.h" from its own folder first
+    configure_file("${WEBVIEW_ORIGINAL_DIR}/webview.h" "${WEBVIEW_PATCHED_DIR}/webview.h" COPYONLY)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${WEBVIEW_ORIGINAL_DIR}/webview/webview.h")
+
+    # first for webview's own library and, through it, for the plugin
+    target_include_directories(webview_core_static BEFORE PUBLIC "${WEBVIEW_PATCHED_DIR}")
 endif()
 
 # Boxer

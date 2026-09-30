@@ -33,23 +33,33 @@ end;
 
 // -------- uninstall --------
 
-// Uploaded shaders (resources\shaders\compiled) are the user's: ask before deleting them.
+// Uploads (resources\shaders\compiled, resources\luts) are the user's: ask once before deleting them.
 // A silent uninstall keeps them. The folders left empty are removed.
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  App, Compiled: String;
+  App, Compiled, Luts, Folders: String;
 begin
   if CurUninstallStep <> usPostUninstall then
     Exit;
 
   App := ExpandConstant('{app}');
   Compiled := App + '\resources\shaders\compiled';
+  Luts := App + '\resources\luts';
 
-  if DirExists(Compiled) and
-     (SuppressibleMsgBox('Also delete your uploaded shaders?' + #13#10#13#10 + Compiled,
+  Folders := '';
+  if DirExists(Compiled) then
+    Folders := Folders + #13#10 + Compiled;
+  if DirExists(Luts) then
+    Folders := Folders + #13#10 + Luts;
+
+  if (Folders <> '') and
+     (SuppressibleMsgBox('Also delete your uploaded shaders and LUTs?' + #13#10 + Folders,
                          mbConfirmation, MB_YESNO, IDNO) = IDYES) then
+  begin
     DelTree(Compiled, True, True, True);
+    DelTree(Luts, True, True, True);
+  end;
 
   RemoveDir(App + '\resources\shaders');
   RemoveDir(App + '\resources');

@@ -30,18 +30,24 @@ namespace
 
 TEST_SUITE("params")
 {
-	TEST_CASE("a new list holds only Audio Gain, at 1, automatable")
+	TEST_CASE("a new list holds the fixed params, Audio Gain and LUT Mix, both at 1 and automatable")
 	{
 		ParamList params;
 
-		REQUIRE(params.count() == 1);
+		REQUIRE(params.count() == DefaultCount);
 		CHECK(params.value(AudioGain) == 1.0);
-		CHECK(params.automatableCount() == 1);
+		CHECK(params.value(LutMix) == 1.0);
+		CHECK(params.automatableCount() == 2);
 		auto gain = params.automatableAt(0);
 		REQUIRE(gain);
 		CHECK(gain->name == "Audio Gain");
 		CHECK(gain->group == Group::Main);
-		CHECK_FALSE(params.automatableAt(1));
+		auto mix = params.automatableAt(1);
+		REQUIRE(mix);
+		CHECK(mix->id == LutMix);
+		CHECK(mix->name == "LUT Mix");
+		CHECK(mix->group == Group::Lut);
+		CHECK_FALSE(params.automatableAt(2));
 	}
 
 	TEST_CASE("shader params follow the fixed ones, with values saved by name or their defaults")
@@ -49,7 +55,7 @@ TEST_SUITE("params")
 		ParamList params;
 		params.replaceShaderParams({ shaderParam("amount", 0.5), shaderParam("tint.x", 0.25) }, { { "tint.x", 0.9 } });
 
-		REQUIRE(params.count() == 3);
+		REQUIRE(params.count() == DefaultCount + 2);
 		auto amount = params.find(DefaultCount);
 		auto tintX = params.find(DefaultCount + 1);
 		REQUIRE(amount);
@@ -59,7 +65,7 @@ TEST_SUITE("params")
 		CHECK(amount->group == Group::Shader);
 		CHECK(params.value(amount->id) == 0.5); // default
 		CHECK(params.value(tintX->id) == 0.9);	// saved
-		CHECK(params.automatableCount() == 3);
+		CHECK(params.automatableCount() == DefaultCount + 2);
 	}
 
 	TEST_CASE("a new shader's params replace the previous shader's")
@@ -68,7 +74,7 @@ TEST_SUITE("params")
 		params.replaceShaderParams({ shaderParam("a", 0.1), shaderParam("b", 0.2) }, {});
 		params.replaceShaderParams({ shaderParam("c", 0.3) }, {});
 
-		REQUIRE(params.count() == 2);
+		REQUIRE(params.count() == DefaultCount + 1);
 		CHECK(params.find(DefaultCount)->name == "c");
 		CHECK_FALSE(params.find(DefaultCount + 1));
 
@@ -95,12 +101,12 @@ TEST_SUITE("params")
 		params.setValue(AudioGain, 0.25);
 
 		nlohmann::json saved = params.valuesToJson();
-		CHECK(saved == nlohmann::json{ { "Audio Gain", 0.25 }, { "amount", 0.5 } });
+		CHECK(saved == nlohmann::json{ { "Audio Gain", 0.25 }, { "LUT Mix", 1.0 }, { "amount", 0.5 } });
 
 		params.valuesFromJson({ { "amount", 0.75 }, { "Audio Gain", "loud" }, { "missing", 1 } });
 		CHECK(params.value(DefaultCount) == 0.75);
 		CHECK(params.value(AudioGain) == 0.25);
-		CHECK(params.count() == 2);
+		CHECK(params.count() == DefaultCount + 1);
 	}
 
 	TEST_CASE("toJson describes every param for the web UI")
@@ -109,16 +115,18 @@ TEST_SUITE("params")
 		params.replaceShaderParams({ shaderParam("amount", 0.5) }, {});
 
 		nlohmann::json list = params.toJson();
-		REQUIRE(list.size() == 2);
-		CHECK(list[0]["name"] == "Audio Gain");
-		CHECK(list[0]["group"] == "main");
-		CHECK(list[1]["id"] == DefaultCount);
-		CHECK(list[1]["group"] == "shader");
-		CHECK(list[1]["value"] == 0.5);
+		REQUIRE(list.size() == DefaultCount + 1);
+		CHECK(list[AudioGain]["name"] == "Audio Gain");
+		CHECK(list[AudioGain]["group"] == "main");
+		CHECK(list[LutMix]["name"] == "LUT Mix");
+		CHECK(list[LutMix]["group"] == "lut");
+		CHECK(list[DefaultCount]["id"] == DefaultCount);
+		CHECK(list[DefaultCount]["group"] == "shader");
+		CHECK(list[DefaultCount]["value"] == 0.5);
 		for (const char* key : { "label", "units", "defaultValue", "minValue", "maxValue" })
 		{
 			INFO(key);
-			CHECK(list[1].contains(key));
+			CHECK(list[DefaultCount].contains(key));
 		}
 	}
 

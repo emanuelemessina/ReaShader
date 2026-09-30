@@ -7,8 +7,6 @@ Contents:
 1. [Gotchas](#1-gotchas)
 2. [Debugging crashes and hangs](#2-debugging-crashes-and-hangs)
 
----
-
 ## 1. Gotchas
 
 ### REAPER
@@ -40,10 +38,9 @@ Contents:
 ### Web UI
 
 - **`webview::terminate()` isn't cross-thread-safe on Win32** (a bare `PostQuitMessage`), despite the library's docs. Dispatch it onto the webview thread (see [architecture.md](architecture.md#4-the-embedded-web-ui)).
+- **webview's window classes are process-wide as shipped.** webview registers `webview_widget` and `webview_message` under `GetModuleHandle(nullptr)`, the _host's_ module (reaper.exe), not the plugin's. Every plugin in the process that links webview then shares those classes: the first one loaded owns their window procedures, and the next one's windows run the first one's code with its own data. With ReaShader and ReaShader (Debug) in one session, that crashed REAPER inside the other plugin's `.clap`. The build patches a copy of the header to register them under the plugin's own module (see [building.md](building.md#4-what-the-build-does)). Don't include `external/webview/.../webview.h` directly, bypassing that copy.
 - **UTF-16 frontend files break the UI:** a `file://` page gets no encoding detection, so UTF-16 shows as garbage text. Keep them UTF-8, and check with `file` after rewriting one.
 - **ES modules don't load from `file://`.** Use plain `<script>` tags in dependency order.
-
----
 
 ## 2. Debugging crashes and hangs
 
@@ -57,6 +54,7 @@ No WinDbg needed: `lldb` and `llvm-symbolizer` come with clang.
   ```powershell
   Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='Application Error'}
   ```
+
 - Open a dump with `lldb -c <dump>`, then run `thread list` / `bt all`.
 - If a stack won't unwind, run `memory read --format A --count 3000 $rsp` and look for `_CxxThrowException` and return addresses inside `ReaShader-Debug.clap` (or `ReaShader.clap` for release).
 - **An exception escaping into REAPER** shows up as `abort()` with exception `0x40000015` at a fixed offset "inside reaper.exe". Look for the plugin frame that threw.

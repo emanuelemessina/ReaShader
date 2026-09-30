@@ -51,16 +51,6 @@ namespace
 		return count;
 	}
 
-	// 33 points per side: the hardware's interpolation weights (8-bit on some GPUs) stay far below one 8-bit step,
-	// which a 2-point LUT like invert.cube would not guarantee
-	gpu::LutData invertLut()
-	{
-		gpu::LutData lut = gpu::identityLut(33);
-		for (float& value : lut.rgb)
-			value = 1 - value;
-		return lut;
-	}
-
 	gpu::CompiledShader brightnessShader()
 	{
 		return gpu::compileShader(test::readFile(test::repoPath("src/shaders/examples/brightness.frag")),
@@ -200,7 +190,7 @@ TEST_SUITE("render")
 	TEST_CASE("a LUT pass: an identity keeps the frame, an inverting LUT inverts it, the amount blends")
 	{
 		test::TestFrame input = gradient(), output(256, 4, 0);
-		gpu::LutData inverted = invertLut();
+		gpu::LutData inverted = test::invertLut();
 
 		test::forEachGpu([&](gpu::Context& context) {
 			gpu::Lut identityLut, invertLut;
@@ -232,7 +222,7 @@ TEST_SUITE("render")
 	TEST_CASE("the LUT before or after a shader: the order of the passes")
 	{
 		test::TestFrame input = gradient(), output(256, 4, 0);
-		gpu::LutData inverted = invertLut();
+		gpu::LutData inverted = test::invertLut();
 		gpu::CompiledShader brightness = brightnessShader();
 
 		test::forEachGpu([&](gpu::Context& context) {
@@ -261,7 +251,7 @@ TEST_SUITE("render")
 	TEST_CASE("a shader samples the LUT as iChannel1 through iLut (an identity by default)")
 	{
 		test::TestFrame input = gradient(), output(256, 4, 0);
-		gpu::LutData inverted = invertLut();
+		gpu::LutData inverted = test::invertLut();
 		gpu::CompiledShader shader = gpu::compileShader(
 			"void main() { vec4 c = texture(iChannel0, uv); fragColor = vec4(iLut(c.rgb), c.a); }\n", "ilut.glsl");
 
@@ -287,7 +277,7 @@ TEST_SUITE("render")
 	TEST_CASE("four passes ping-pong through the work images")
 	{
 		test::TestFrame input = gradient(), output(256, 4, 0);
-		gpu::LutData inverted = invertLut();
+		gpu::LutData inverted = test::invertLut();
 		gpu::CompiledShader brightness = brightnessShader();
 
 		test::forEachGpu([&](gpu::Context& context) {
