@@ -38,7 +38,7 @@ namespace ReaShader::gpu
 
 		void bindInput(Context& context, VkImageView input) override;
 		void bindLut(Context& context, VkImageView lut); // bound every frame like the input
-		void setAmount(float mix);						 // LUT Mix, 0..1
+		void setAmount(float mix);						 // the LUT node's Mix, 0..1
 
 		void record(VkCommandBuffer commandBuffer, const Image& target, const ShaderInputs& inputs) override;
 

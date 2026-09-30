@@ -87,24 +87,67 @@ namespace test
 		return mismatches(in, out, [&](double v) { return brighten(v, brightness); });
 	}
 
-	// The LUT part of a project state: `lut` stored as the plugin stores it (it would have parsed it on upload)
-	inline nlohmann::json projectLut(const std::string& name, const ReaShader::gpu::LutData& lut, const std::string& mode)
+	// an example shader compiled here, stored as the plugin stores it (it would have compiled it on upload)
+	inline nlohmann::json compiledExample(const std::string& exampleShader)
+	{
+		return ReaShader::gpu::toJson(
+			ReaShader::gpu::compileShader(readFile(repoPath("src/shaders/examples") / exampleShader), exampleShader));
+	}
+
+	// A shader node of a project's chain: an example shader, optionally bypassed, optionally with a LUT (its
+	// iChannel1). Its name is the file's stem; its params are named "<uid>/<member>".
+	inline nlohmann::json shaderNode(uint32_t uid, const std::string& exampleShader, bool bypass = false,
+									 const std::string& lutName = "", const ReaShader::gpu::LutData* lut = nullptr)
+	{
+		return { { "uid", uid },
+				 { "kind", "shader" },
+				 { "name", std::filesystem::path(exampleShader).stem().string() },
+				 { "bypass", bypass },
+				 { "data", compiledExample(exampleShader) },
+				 { "lut",
+				   { { "name", lutName }, { "data", lut ? ReaShader::gpu::toJson(*lut) : nlohmann::json() } } } };
+	}
+
+	// A LUT node of a project's chain, stored as the plugin stores it (it would have parsed it on upload).
+	// Its Mix param is named "<uid>/mix".
+	inline nlohmann::json lutNode(uint32_t uid, const std::string& name, const ReaShader::gpu::LutData& lut,
+								  bool bypass = false)
+	{
+		return { { "uid", uid },
+				 { "kind", "lut" },
+				 { "name", name },
+				 { "bypass", bypass },
+				 { "data", ReaShader::gpu::toJson(lut) } };
+	}
+
+	// A project state as the plugin saves it: a chain of nodes (shaderNode, lutNode), param values by name,
+	// the logo on or off
+	inline std::string projectState(nlohmann::json chain, nlohmann::json params = nlohmann::json::object(),
+									bool logo = false)
+	{
+		return nlohmann::json{
+			{ "version", 4 }, { "params", params }, { "device", 0 }, { "logo", logo }, { "chain", chain }
+		}.dump();
+	}
+
+	// The LUT part of a version 3 project state (before chains)
+	inline nlohmann::json v3ProjectLut(const std::string& name, const ReaShader::gpu::LutData& lut,
+									   const std::string& mode)
 	{
 		return { { "name", name }, { "mode", mode }, { "data", ReaShader::gpu::toJson(lut) } };
 	}
 
-	// A project state as the plugin saves it: optionally with an example shader, compiled here (the plugin
-	// would have compiled it on upload), the logo on or off, param values by name, and a LUT (projectLut)
-	inline std::string projectState(const std::string& exampleShader, bool logo,
-									nlohmann::json params = nlohmann::json::object(),
-									nlohmann::json lut = { { "name", "" }, { "mode", "after" }, { "data", nullptr } })
+	// A version 3 project state (before chains): optionally an example shader, the logo on or off, param
+	// values by name, and a LUT (v3ProjectLut) with its mode
+	inline std::string v3ProjectState(const std::string& exampleShader, bool logo,
+									  nlohmann::json params = nlohmann::json::object(),
+									  nlohmann::json lut = { { "name", "" }, { "mode", "after" }, { "data", nullptr } })
 	{
 		nlohmann::json compiled;
 		std::string name;
 		if (!exampleShader.empty())
 		{
-			compiled = ReaShader::gpu::toJson(ReaShader::gpu::compileShader(
-				readFile(repoPath("src/shaders/examples") / exampleShader), exampleShader));
+			compiled = compiledExample(exampleShader);
 			name = std::filesystem::path(exampleShader).stem().string();
 		}
 		return nlohmann::json{ { "version", 3 },

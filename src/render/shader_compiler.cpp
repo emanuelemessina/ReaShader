@@ -28,7 +28,7 @@ namespace ReaShader::gpu
 layout(location = 0) in vec2 uv;                          // 0..1 over the frame, (0, 0) = top left
 layout(location = 0) out vec4 fragColor;
 layout(set = 0, binding = 0) uniform sampler2D iChannel0; // the input video frame
-layout(set = 0, binding = 2) uniform sampler3D iChannel1; // the LUT (an identity unless the LUT mode is "In shader")
+layout(set = 0, binding = 2) uniform sampler3D iChannel1; // the shader node's LUT (an identity when it has none)
 
 layout(push_constant) uniform ReaShaderInputs
 {

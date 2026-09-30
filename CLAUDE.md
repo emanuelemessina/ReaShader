@@ -33,9 +33,9 @@ How the code got here (the VST3 → CLAP migration, rejected alternatives, past 
 
 ## Open items
 
-**LUT support (`.cube`) is done** (2026-09-30; how it was built is in `.claude/history.md`). Next feature: **arbitrary chains of shaders and LUTs in one instance**. The detailed plan, with design, batches, tests and open questions, is in [.claude/plan-chains.md](.claude/plan-chains.md): read it first and follow it batch by batch. Other LUT formats are not planned (`.cube` only). **Batches 1 (stable param ids) and 2 (renderer chain) are done** (2026-09-30); next is batch 3 (plugin node model, state v4, protocol).
+**LUT support (`.cube`) and chains of shaders and LUTs are done** (2026-09-30; how they were built is in `.claude/history.md`, the chains' plan and decisions in [.claude/plan-chains.md](.claude/plan-chains.md)). Other LUT formats are not planned (`.cube` only). There is no queued roadmap: ask the user what's next.
 
-**The test application is complete** (69 tests). What's left is keeping the fake host faithful to REAPER.
+**The test application is complete** (80 tests). What's left is keeping the fake host faithful to REAPER.
 
 **Host test rules:** host tests talk to the plugin only through CLAP and the REAPER extension, with no test hooks in the plugin. A shader arrives through state (`test::projectState`, which compiles with the linked `gpu::compileShader` as tooling).
 
@@ -55,8 +55,7 @@ When one is verified, change the host, mark it *observed*, and update `doc/testi
 - the debug build with sync validation on (performance and `rs.log` in REAPER);
 - the rebuilt installer: uninstall asking about uploaded shaders and LUTs, and no tasks page;
 - all of LUT support (the manual test in `doc/testing.md` §5, steps 6–8), including the `SHADER_READ` barrier change (`gpu.h`) on an Intel GPU;
-- stable param ids (chains batch 1): host automation of LUT Mix and shader sliders, web UI slider edits reaching REAPER, and whether a project saved before it (LUT Mix was id 1, now 65; shader params were 2.., now 1..) keeps its automation envelopes;
-- the renderer chain (chains batch 2): a shader and a LUT in each mode (`before`, `after`, `shader`), LUT Mix, switching the shader or LUT while playing, switching the GPU, and `iFrame` in a shader that uses it.
+- chains (batches 3–4): the chain editor (add, the same shader twice, reorder, bypass, swap, remove, a shader's LUT), automation surviving a reorder, save/reload, a project saved before chains (v3) opening as the matching chain, `grain.frag` (`iFrame`), and REAPER's generic param list labels (`<node>: <slider>`): the manual test in `doc/testing.md` §5, steps 4–9.
 
 **Repo notes:**
 - `.claude/` is in `.gitignore`, but `.claude/history.md` is tracked (moved with `git mv`), so it's still committed. Whether it should stay tracked is the user's call.

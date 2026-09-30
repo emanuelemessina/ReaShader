@@ -126,3 +126,11 @@ The user's proposals from the cleanup's handoff (`doc/proposals.md`, now deleted
 - **What the user saw:** `brightness` on a resized top track brightened the whole video window, including the tracks below and the empty canvas.
 - **Real cause:** FX order. "Track opacity/zoom/pan" came *before* ReaShader in the track's chain. That preset composites the track over the tracks below, so ReaShader received the whole picture. With ReaShader first, only the track is affected.
 - **Rolled back:** a premultiplied-alpha fix (unpremultiply/premultiply passes around the chain) and a temporary input-logging diagnostic were written for it, then reverted. Whether REAPER's RGBA frames are premultiplied or straight is still unverified. Don't assume either without checking in REAPER, e.g. a half-transparent frame through an identity shader.
+
+## Chains of shaders and LUTs (September 2026)
+
+Replaced "one shader, one LUT, a LUT mode" with an ordered chain of up to 16 nodes per instance, in 4 batches, each approved by the user (the plan and its decisions are in `.claude/plan-chains.md`): stable param ids, the renderer's `setChain`, the plugin's node model with state v4, then the chain editor UI and docs.
+- **Decisions made with the user:** 16 nodes; an upload stores the file and appends a node; reorder with up/down buttons (no drag and drop); no generic Mix on shader nodes. The LUT mode is gone: a LUT is a node of its own, or a shader node's `iChannel1`.
+- **Stable ids:** a param's CLAP id is `1 + uid * 64 + slot`, not its index, so automation stays with its node when nodes move. Batch 1 introduced them on the old model (shader = node 0, LUT = node 1), so v3 projects' ids already matched and the v3 migration keeps them (LUT Mix id 65 = node 1's Mix).
+- **Renderer reuse by pointer:** nodes hold `shared_ptr<const ...>` content, so "unchanged" is a pointer comparison. `iFrame` moved into each `ShaderPass`, which made reuse observable in tests (a kept node's `iFrame` keeps counting).
+- **Bugs found by the tests:** a range-for over `ui.last("snapshot")["chain"]` iterated a destroyed temporary (pre-C++23 lifetime rules); `uidOf` only accepted unsigned JSON numbers, but JSON built in memory (the v3 migration) has signed ones.

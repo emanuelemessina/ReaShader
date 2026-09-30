@@ -128,30 +128,119 @@ fieldset{
     margin-bottom: 10px;
 }
 
-.picker{
+.icon-button{
     display: flex;
-    flex-wrap: wrap;
-    align-items: stretch;
-    gap: 8px;
-    margin-bottom: 10px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 .5rem;
+    min-width: 2rem;
+    cursor: pointer;
+}
 
-    select{
-        flex-grow: 1;
+// the chain editor: one card per node, then a row to add each kind
+#chain{
+    .nodes{
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-bottom: 10px;
     }
 
-    .icon-button{
+    .empty{
+        margin: 0;
+        color: c.$w-50;
+        font-size: .8rem;
+    }
+
+    .add{
+        display: flex;
+        flex-wrap: wrap;
+        align-items: stretch;
+        gap: 8px;
+        margin-bottom: 8px;
+
+        select{
+            flex-grow: 1;
+        }
+
+        small{
+            width: 100%;
+            color: c.$w-50;
+            font-size: .65rem;
+            overflow-wrap: anywhere;
+        }
+    }
+}
+
+.node{
+    padding: 8px;
+    border: 1px solid c.$w-50;
+    background-color: c.$b-50;
+
+    .node-header{
+        display: flex;
+        flex-wrap: wrap;
+        align-items: stretch;
+        gap: 6px;
+
+        .position{
+            display: flex;
+            align-items: center;
+            min-width: 1.2em;
+            color: c.$w-50;
+            font-family: monospace;
+        }
+
+        .kind{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 4.5em;
+            padding: 0 6px;
+            border: 1px solid c.$accent;
+            font-size: .65rem;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+
+        select{
+            flex-grow: 1;
+            min-width: 0;
+        }
+
+        .bypass{
+            display: flex;
+            align-items: center;
+            font-size: .75rem;
+        }
+
+        .icon-button{
+            padding: .3rem .5rem;
+        }
+    }
+
+    .node-lut{
         display: flex;
         align-items: center;
-        justify-content: center;
-        padding: 0 .5rem;
-        cursor: pointer;
+        gap: 8px;
+        margin-top: 8px;
+        font-size: .8rem;
+
+        label{
+            color: c.$w-50;
+        }
+
+        select{
+            flex-grow: 1;
+        }
     }
 
-    small{
-        width: 100%;
-        color: c.$w-50;
-        font-size: .65rem;
-        overflow-wrap: anywhere;
+    .params{
+        margin-top: 8px;
+    }
+
+    &.bypassed .node-body{
+        opacity: .4;
     }
 }
 
@@ -287,13 +376,6 @@ fieldset{
         line-height: 1.6;
         cursor: pointer;
     }
-}
-
-#lut .modes{
-    display: flex;
-    flex-wrap: wrap;
-    column-gap: 1.25rem;
-    margin-bottom: 4px;
 }
 
 @keyframes spin{

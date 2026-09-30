@@ -1,6 +1,6 @@
 /**
  * @file
- * @brief The parameter list: fixed and shader params, lock-free values.
+ * @brief The parameter list: the plugin's own params and the chain nodes', lock-free values.
  * @author Emanuele Messina (https://github.com/emanuelemessina)
  * @copyright Copyright (c) Emanuele Messina. All rights reserved.
  *            Licensed under the MIT License: see https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE
@@ -27,7 +27,8 @@ namespace ReaShader::Parameters
 
 	// Param ids:
 	// - the plugin's own params have fixed ids (AudioGain)
-	// - a node's params get 1 + node * kNodeSlots + slot, so their ids don't change when the list changes around them
+	// - a chain node's params get 1 + node uid * kNodeSlots + slot, so their ids don't change when the list
+	//   changes around them (nodes added, removed or moved)
 	constexpr uint32_t kMaxNodes = 16;
 	constexpr uint32_t kNodeSlots = 64; // params per node
 	constexpr Id nodeParamId(uint32_t node, uint32_t slot)
@@ -36,28 +37,21 @@ namespace ReaShader::Parameters
 	}
 	constexpr Id kMaxIds = nodeParamId(kMaxNodes, 0);
 
-	// The shader and the LUT, as fixed nodes
-	constexpr uint32_t kShaderNode = 0;
-	constexpr uint32_t kLutNode = 1;
-
 	// Fixed params' ids
 	constexpr Id AudioGain = 0;
-	constexpr Id LutMix = nodeParamId(kLutNode, 0); // 0 = the frame as is, 1 = fully through the LUT
 
 	// Fixed params' indices: always first in the list, in this order
 	enum DefaultIndex : uint32_t
 	{
 		AudioGainIndex,
-		LutMixIndex,
 
 		DefaultCount
 	};
 
 	enum class Group
 	{
-		Main,  // plugin params (fixed), host-only
-		Lut,   // the LUT's params (fixed), shown with the LUT in the web UI
-		Shader // params reflected from the current shader (replaced on every shader change)
+		Main, // plugin params (fixed), host-only
+		Node  // a chain node's params (replaced on every change to the chain's nodes)
 	};
 
 	// A numeric parameter
@@ -71,7 +65,15 @@ namespace ReaShader::Parameters
 		double defaultValue = 0.5;
 		double minValue = 0.0;
 		double maxValue = 1.0;
-		bool automatable = false; // exposed to the host (clap.params)
+		bool automatable = false;	  // exposed to the host (clap.params)
+		std::optional<uint32_t> node; // the chain node's uid (group Node)
+	};
+
+	// A chain node's params, in slot order
+	struct NodeParams
+	{
+		uint32_t node = 0;
+		std::vector<Param> params;
 	};
 
 	// The parameter list:
@@ -106,11 +108,12 @@ namespace ReaShader::Parameters
 		std::optional<Param> automatableAt(uint32_t index) const;
 		uint32_t automatableCount() const;
 
-		// replaces the Shader group, at ids nodeParamId(kShaderNode, i) (at most kNodeSlots);
-		// values are restored by name from `savedValues`, else defaulted
-		void replaceShaderParams(std::vector<Param> shaderParams, const ValueMap& savedValues);
+		// Replaces the Node group with `nodes`' params, in order, at ids nodeParamId(node, slot) (at most kNodeSlots
+		// per node, maxCount in all). Each value comes from `savedValues` by name, else from the param that had
+		// the same id and name (kept through a reorder, within the new range), else from its default.
+		void replaceNodeParams(std::vector<NodeParams> nodes, const ValueMap& savedValues);
 
-		// [{ id, name, label, group, units, value, defaultValue, minValue, maxValue }, ...]
+		// [{ id, name, label, group, node, units, value, defaultValue, minValue, maxValue }, ...]
 		json toJson() const;
 		// { "<name>": value, ... }
 		json valuesToJson() const;

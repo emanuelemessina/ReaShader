@@ -1,6 +1,6 @@
 /**
  * @file
- * @brief The parameter list: fixed and shader params, lock-free values.
+ * @brief The parameter list: the plugin's own params and the chain nodes', lock-free values.
  * @author Emanuele Messina (https://github.com/emanuelemessina)
  * @copyright Copyright (c) Emanuele Messina. All rights reserved.
  *            Licensed under the MIT License: see https://github.com/emanuelemessina/ReaShader/blob/main/LICENSE
@@ -12,6 +12,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <format>
 
 namespace ReaShader::Parameters
@@ -20,15 +21,15 @@ namespace ReaShader::Parameters
 	{
 		const char* groupName(Group group)
 		{
-			return group == Group::Main ? "main" : group == Group::Lut ? "lut" : "shader";
+			return group == Group::Main ? "main" : "node";
 		}
 	} // namespace
 
 	ParamList::ParamList()
 	{
 		params = {
-			{ AudioGain, "Audio Gain", "Audio Gain", Group::Main, "%", 1.0, 0.0, 1.0, true }, // 1.0 = unchanged audio
-			{ LutMix, "LUT Mix", "LUT Mix", Group::Lut, "%", 1.0, 0.0, 1.0, true },
+			// 1.0 = unchanged audio
+			{ AudioGain, "Audio Gain", "Audio Gain", Group::Main, "%", 1.0, 0.0, 1.0, true, {} },
 		};
 		for (const Param& p : params)
 			values[p.id] = p.defaultValue;
@@ -130,29 +131,50 @@ namespace ReaShader::Parameters
 		return count;
 	}
 
-	void ParamList::replaceShaderParams(std::vector<Param> shaderParams, const ValueMap& savedValues)
+	void ParamList::replaceNodeParams(std::vector<NodeParams> nodes, const ValueMap& savedValues)
 	{
 		std::lock_guard lock(mutex);
 
-		// the old shader's ids stop being params: drop their pending flags
-		for (size_t i = DefaultCount; i < params.size(); i++)
-			flaggedForHost[params[i].id] = false;
+		std::vector<Param> previous(params.begin() + DefaultCount, params.end());
 		params.resize(DefaultCount);
 
-		uint32_t slot = 0;
-		for (Param& p : shaderParams)
+		bool dropped = false;
+		for (NodeParams& node : nodes)
 		{
-			if (slot >= kNodeSlots || params.size() >= maxCount)
+			uint32_t slot = 0;
+			for (Param& p : node.params)
 			{
-				LOG(WARNING, toConsole | toFile, "Params", "Too many shader params",
-					std::format("Only the first {} are kept", slot));
-				break;
+				if (slot >= kNodeSlots || params.size() >= maxCount)
+				{
+					dropped = true;
+					break;
+				}
+				p.id = nodeParamId(node.node, slot++);
+				p.group = Group::Node;
+				p.node = node.node;
+
+				double value = p.defaultValue;
+				auto saved = savedValues.find(p.name);
+				auto same = std::find_if(previous.begin(), previous.end(),
+										 [&](const Param& old) { return old.id == p.id && old.name == p.name; });
+				if (saved != savedValues.end())
+					value = saved->second;
+				else if (same != previous.end())
+					value = std::clamp(values[p.id].load(), p.minValue, p.maxValue);
+				values[p.id] = value;
+				params.push_back(std::move(p));
 			}
-			p.id = nodeParamId(kShaderNode, slot++);
-			p.group = Group::Shader;
-			auto saved = savedValues.find(p.name);
-			values[p.id] = saved != savedValues.end() ? saved->second : p.defaultValue;
-			params.push_back(std::move(p));
+		}
+		if (dropped)
+			LOG(WARNING, toConsole | toFile, "Params", "Too many params",
+				std::format("At most {} per node and {} in all are kept", kNodeSlots, maxCount));
+
+		// ids that stop being params drop their pending flags
+		for (const Param& old : previous)
+		{
+			bool kept = std::any_of(params.begin(), params.end(), [&](const Param& p) { return p.id == old.id; });
+			if (!kept)
+				flaggedForHost[old.id] = false;
 		}
 		_index();
 	}
@@ -179,6 +201,7 @@ namespace ReaShader::Parameters
 							 { "name", p.name },
 							 { "label", p.label },
 							 { "group", groupName(p.group) },
+							 { "node", p.node ? json(*p.node) : json() },
 							 { "units", p.units },
 							 { "value", values[p.id].load() },
 							 { "defaultValue", p.defaultValue },

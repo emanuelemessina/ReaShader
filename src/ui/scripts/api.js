@@ -35,30 +35,44 @@ const native = {
         this.send({ type: "openUrl", url: url });
     },
 
-    // a compiled shader by name, "" = none
-    shaderSelect(name) {
-        this.send({ type: "shaderSelect", name: name });
-    },
-
-    // GLSL to compile and store; shaders are small text files, sent whole
+    // GLSL to compile, store and append to the chain; shaders are small text files, sent whole
     async shaderUpload(file) {
         const source = await file.text();
         this.send({ type: "shaderUpload", name: file.name, source: source });
     },
 
-    // a stored LUT by name, "" = none
-    lutSelect(name) {
-        this.send({ type: "lutSelect", name: name });
-    },
-
-    // a .cube file to parse and store, sent whole as text (a few MB at most)
+    // a .cube file to parse, store and append to the chain, sent whole as text (a few MB at most)
     async lutUpload(file) {
         const source = await file.text();
         this.send({ type: "lutUpload", name: file.name, source: source });
     },
 
-    // "before" / "after" the shader, or "shader" (the shader samples the LUT itself)
-    lutMode(mode) {
-        this.send({ type: "lutMode", mode: mode });
+    // -------- the chain: nodes by uid, stored shaders and LUTs by name --------
+
+    // kind: "shader" or "lut"; no index: last
+    nodeAdd(kind, name, index) {
+        this.send({ type: "nodeAdd", kind: kind, name: name, index: index });
+    },
+
+    nodeRemove(uid) {
+        this.send({ type: "nodeRemove", uid: uid });
+    },
+
+    nodeMove(uid, index) {
+        this.send({ type: "nodeMove", uid: uid, index: index });
+    },
+
+    nodeBypass(uid, bypass) {
+        this.send({ type: "nodeBypass", uid: uid, bypass: bypass });
+    },
+
+    // another stored shader or LUT, of the node's kind
+    nodeSet(uid, name) {
+        this.send({ type: "nodeSet", uid: uid, name: name });
+    },
+
+    // a shader node's LUT (iChannel1), "" = none
+    nodeLut(uid, name) {
+        this.send({ type: "nodeLut", uid: uid, name: name });
     },
 };
