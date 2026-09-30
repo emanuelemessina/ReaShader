@@ -83,9 +83,29 @@ Plain, descriptive names, with no project prefixes: `PLUGIN_STAGE_DIR`, `SHADERS
 
 ### Frontend (`src/ui/`)
 
+How the UI's code is organized (which script does what, rebuilding from snapshots, adding a control) is in [architecture.md](doc/architecture.md#the-uis-code).
+
+**Files:**
+
 - **UTF-8 only.** A UTF-16 `index.html` loaded through `file://` shows as garbage text. After rewriting a file, `file index.html` must not say "UTF-16".
-- **Plain sequential `<script>` tags, no ES modules:** `file://` blocks module imports.
-- **Styles:** `styles/ui.scss` plus partials in `styles/components/_*.scss`, compiled by the build to `index.css`. The CSS is a build output, never committed.
+- **Indentation:** 4 spaces in HTML, JS and SCSS. There is no formatter for them, so keep to the surrounding code.
+
+**Scripts:**
+
+- **Plain sequential `<script>` tags, no ES modules:** `file://` blocks module imports. Scripts share the global scope, and `index.html` loads them in dependency order.
+- **Only `native` (`api.js`) talks to the plugin:** one method per message, named after its `type`. Nothing else calls `window.postToNative`.
+- **No state kept in the UI:** what the page shows comes from the last `snapshot`. An action sends a message and waits for the snapshot (or `paramValue`, `chainStatus`) that answers it, rather than changing the page itself. The exceptions are immediate feedback for the user's own action: a slider's value while dragging, the about box opening or closing, and `setStatus(..., 'busy')` before a slow request.
+- **Build elements in JS** with the small `create*` helpers in `ui.js` (`createSlider`, `createSelect`, `createIconButton`), and set text with `textContent`, never `innerHTML` with data from the plugin (names come from files the user uploaded).
+- **Naming:** functions `camelCase`, verbs for what they do (`renderX` rebuilds a section from the snapshot, `createX` returns a new element, `setX` patches one in place); constant tables `UPPER_CASE` (`KINDS`); DOM ids built from an id and a prefix (`param_<id>`, `bypass_<uid>`).
+- **Comments:** a short line above a function or block, saying what it's for. Sections of a file are separated by `// -------- name --------`.
+
+**Styles:**
+
+- **Every color comes from `components/_palette.scss`,** used as `c.$name` (`@use './palette' as c;`). A new color is added there first, with a name for its role (`$error`, `$link`), not its value.
+- **One partial per kind of control** in `styles/components/_<control>.scss` (`button`, `input[type=range]`, `select`, ...), styling the element everywhere it appears. A partial that needs the palette or another partial `@use`s it itself. `ui.scss` `@use`s them, and holds the page layout and the styles of its sections.
+- **Selectors:** ids for the page's fixed sections from `index.html` (`#chain`, `#renderingDevice`, `#about`), classes for everything inside them and for elements built in JS (`.node`, `.node-header`, `.status`). Nest a section's rules inside its selector, and states as modifier classes on the element (`.node.bypassed`, `.status.busy`).
+- **Units:** `rem` for text sizes, `px` for borders.
+- **The CSS is a build output** (`index.css`, compressed), never committed.
 
 ## 4. Documentation
 

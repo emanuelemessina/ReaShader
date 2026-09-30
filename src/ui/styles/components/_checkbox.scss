@@ -27,7 +27,7 @@ input[type=checkbox] + label:before {
 input[type=checkbox]:checked + label:before {
     content: "\2714";
     background-color: c.$accent;
-    color: white;
+    color: c.$white;
     font-size: .8em;
     text-align: center;
     line-height: 15px;

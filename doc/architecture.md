@@ -187,7 +187,33 @@ REAPER calls `ReaShaderPlugin::_processVideoFrame` (`plugin/plugin.cpp`), which 
   - C++ → JS: `eval()` → `window.__reashaderOnMessage`.
   - The plugin holds a `WebUISender` (`std::function`), called under its mutex so that `clearWebUISender()` waits for any send in flight. It does nothing when no sender is registered.
 - **Ownership:** `ClapPluginState::gui` is a `unique_ptr<Gui, GuiDeleter>`. `Gui` and its deleter are defined in `gui_win32.cpp`, so the shell never needs the full type. `gui_destroy` is just `gui.reset()`: the webview is torn down first, then the window.
-- **Frontend:** `index.html` loads plain sequential `<script>` tags (no ES modules, which `file://` blocks). `styles/ui.scss`, with partials in `styles/components/_*.scss`, is compiled by the build to `index.css`.
+
+### The UI's code
+
+`src/ui/`, staged next to the plugin as `ui/` and loaded from `file://`. Its style rules are in [CONTRIBUTING.md](../CONTRIBUTING.md#frontend-srcui).
+
+```
+index.html                   the page's fixed frame: background, logo, the fieldsets #renderingDevice and #chain,
+                             the #about box; loads the scripts
+scripts/api.js               native: the only sender, one method per message to the plugin
+scripts/ui.js                builds the page from a snapshot: renderSnapshot, renderX per section, createX helpers
+scripts/client.js            receives: window.__reashaderOnMessage dispatches on type; page events (about box);
+                             sends ready last
+styles/ui.scss               the page layout and its sections' styles, compiled to index.css
+styles/components/           _palette.scss (every color) and one partial per kind of control
+```
+
+- **Load order:** plain `<script defer>` tags (no ES modules, which `file://` blocks) in dependency order: `api.js`, `ui.js`, `client.js`. They share the global scope. `client.js` runs last and sends `ready`.
+- **The plugin owns the state.** The page asks with `ready`, and the plugin answers with a `snapshot` (and sends a new one after every change: chain edits, device, state load). `renderSnapshot` rebuilds every section from it: each `renderX` empties its container (`replaceChildren`) and builds it again, so rendering the same snapshot twice gives the same page. Between snapshots, the page is only patched by `paramValue` (`setParamValue`, a slider moved by host automation) and `chainStatus` (`setStatus`, the status line, which survives snapshots).
+- **User actions only send.** A control's handler calls a `native.*` method and waits for the plugin's answer to change the page. Slow requests (uploads, adding or swapping a node) first show a busy status.
+- **Kinds of chain node** differ only through the `KINDS` table in `ui.js` (titles, accepted files, texts, upload call), so the chain editor's code is shared by shaders and LUTs.
+
+**Adding a control that changes the plugin:**
+1. the message: a `native` method in `api.js`, and its handler in `ReaShaderPlugin::handleWebUIMessage` (`plugin/plugin.cpp`, documented there);
+2. the state it changes goes into the `snapshot` (`plugin.cpp`), and the plugin sends a new snapshot after the change;
+3. the control: built in the section's `renderX` in `ui.js` (or a new section: a fieldset in `index.html` and a `renderX` called from `renderSnapshot`), reading its value from the snapshot and calling the `native` method;
+4. its styles in `ui.scss` (or a partial, for a new kind of control), with colors from the palette;
+5. the [protocol table](#5-the-web-ui-protocol) below, and a `protocol` test (see [testing.md](testing.md)).
 
 ## 5. The web UI protocol
 
