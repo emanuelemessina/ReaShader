@@ -12,6 +12,7 @@ Contents:
 2. [Layout](#2-layout)
 3. [Writing a test](#3-writing-a-test)
 4. [The fake REAPER host](#4-the-fake-reaper-host)
+5. [Manual testing in REAPER](#5-manual-testing-in-reaper)
 
 ---
 
@@ -56,7 +57,9 @@ Or run the binary directly, which is faster when only tests changed: `build/test
 test/
   CMakeLists.txt       the test application's own CMake project (never included by the main build)
   main.cpp             doctest's runner, plus teardown of the shared GPU instance
-  support/             helpers shared by the cases (no tests here): support.* for unit tests, host_helpers.h for host tests
+  support/             helpers shared by the cases (no tests here): support.* for unit tests (repoPath, readFile,
+                       TestFrame, forEachGpu, render, invertLut), host_helpers.h for host tests (checkNoProblems,
+                       frames, mismatches, brightnessMismatches, projectState, projectLut)
   host/                the fake REAPER host (no tests here; Windows only)
   cases/               the tests: one file per area, each a TEST_SUITE
   shaders/             fixtures: broken.frag
@@ -67,16 +70,16 @@ Test suites:
 
 | Suite | File | Covers |
 |---|---|---|
-| `params` | `cases/params.cpp` | the parameter list: the fixed Audio Gain, the shader group (ids, values saved by name or defaults, replacement, the size limit), values to and from JSON, `toJson` for the UI, params flagged for the host taken once with their latest value. |
-| `protocol` | `cases/protocol.cpp` | the web UI protocol on a plugin that's never activated (no GPU): `ready`'s snapshot, `paramValue` (to the host through a flush, unknown ids ignored), host automation echoed on the main thread, `shaderUpload` (stored, loaded, params rescanned; a broken one keeps the current shader), `shaderSelect` (by name, `""` for none, no paths), `logo` and `renderingDevice` saved with the project, malformed messages ignored. Uploads are stored in `resources/shaders/compiled` next to the test binary, emptied at the start of each test. `openUrl` isn't tested, since a valid URL opens the browser. |
-| `shader_compiler` | `cases/shader_compiler.cpp` | the shader contract: the examples compile, `Params` reflection and offsets, `//@param`, error line numbers, rejected resources, the stored JSON form. No GPU. |
+| `params` | `cases/params.cpp` | the parameter list: the fixed Audio Gain and LUT Mix, the shader group (ids, values saved by name or defaults, replacement, the size limit), values to and from JSON, `toJson` for the UI, params flagged for the host taken once with their latest value. |
+| `protocol` | `cases/protocol.cpp` | the web UI protocol on a plugin that's never activated (no GPU): `ready`'s snapshot, `paramValue` (to the host through a flush, unknown ids ignored), host automation echoed on the main thread, `shaderUpload` (stored, loaded, params rescanned; a broken one keeps the current shader), `shaderSelect` (by name, `""` for none, no paths), `lutUpload` (stored, loaded, listed, saved in the state; a broken one keeps the current LUT), `lutSelect`, `lutMode` (saved, unknown modes ignored), LUT Mix edits to the host, `logo` and `renderingDevice` saved with the project, malformed messages ignored. Uploads are stored in `resources/shaders/compiled` and `resources/luts` next to the test binary, emptied at the start of each test. `openUrl` isn't tested, since a valid URL opens the browser. |
+| `shader_compiler` | `cases/shader_compiler.cpp` | the shader contract: the examples compile, `Params` reflection and offsets, `//@param`, `iLut`, error line numbers, rejected resources, the stored JSON form. No GPU. |
 | `lut` | `cases/lut.cpp` | the `.cube` parser: the table as written (red fastest), comments/CRLF/unknown keywords, a 1D LUT baked into a cube, a `DOMAIN` resampled onto 0..1, errors with file and line, the stored JSON form at half precision, base64. No GPU. |
-| `render` | `cases/render.cpp` | the renderer's building blocks on **every GPU**, checked pixel by pixel: an example shader at an odd width with padded rows, `Params` values and B,G,R,A order, defaults for params not given, the logo scene over a plain copy. |
-| `host` | `cases/host_lifecycle.cpp` | the built plugin in the fake host: its descriptor, the initial param list, activate/process/deactivate twice (audio unchanged at gain 1, the video processor created and deleted), video passthrough with no shader, destroying an active plugin. |
-| `host` | `cases/host_scenarios.cpp` | project scenarios: a shader arriving with a project while active (restart, rescan, its params, frames through it) or before activation (no restart); param values at video time vs. the plugin's own; the state round trip (shader, values by name, logo); the logo over video; an unrecognized state. |
+| `render` | `cases/render.cpp` | the renderer's building blocks on **every GPU**, checked pixel by pixel: an example shader at an odd width with padded rows, `Params` values and B,G,R,A order, defaults for params not given, the logo scene over a plain copy, the LUT pass (identity, inverting, blended), a LUT before or after a shader, a shader sampling the LUT with `iLut`, four passes through the work images, consecutive frames. |
+| `host` | `cases/host_lifecycle.cpp` | the built plugin in the fake host: its descriptor, the initial param list (Audio Gain, LUT Mix), activate/process/deactivate twice (audio unchanged at gain 1, the video processor created and deleted), video passthrough with no shader, destroying an active plugin. |
+| `host` | `cases/host_scenarios.cpp` | project scenarios: a shader arriving with a project while active (restart, rescan, its params, frames through it) or before activation (no restart); param values at video time vs. the plugin's own; the state round trip (shader, LUT, values by name, logo); a LUT from a project in each mode (before/after the shader, left to the shader, alone) and LUT Mix; the logo over video; an unrecognized state. |
 
 **The build (`test/CMakeLists.txt`)** follows the main build's structure:
-- it compiles the plugin sources under unit test (`src/plugin/*`, `src/render/*`, `src/util/*`, everything except the CLAP shell and the GUI) straight into `reashader_tests`, with the plugin's warning flags;
+- it compiles the plugin sources under unit test (`src/plugin/*`, `src/render/*`, `src/util/*`, everything except the CLAP shell and the GUI) straight into `reashader_tests`, with the plugin's warning flags and `REASHADER_VERSION="test"`;
 - the host tests load the plugin built by the main build's preset of the same profile (`REASHADER_CLAP`), which the `test` task builds first;
 - it compiles the internal shaders with `glslc`, like the main build;
 - it stages `res/meshes` and `res/images` next to the binary, because the render code finds `resources/` next to its own binary.
@@ -118,7 +121,7 @@ test::forEachGpu([&](gpu::Context& context) {
     gpu::ShaderPass pass;
     pass.create(context, shader);
     gpu::FrameTargets targets;
-    test::render(context, targets, input, output, { .pass = &pass, .params = { 0.2f } });
+    test::render(context, targets, input, output, { .passes = { &pass }, .params = { 0.2f } });
     CHECK(...);
     pass.destroy(context);    // destroy what you created, before the device goes
     targets.destroy(context);
@@ -128,7 +131,10 @@ test::forEachGpu([&](gpu::Context& context) {
 - **One Vulkan instance for the whole run.** `forEachGpu` creates a device per GPU, runs the body, then destroys the device, even if a `REQUIRE` throws.
 - **Failures are tagged with the GPU** (`GPU 0: <name>`).
 - **Validation:** any validation message logged meanwhile (debug builds) fails the test. The messages come from `rs.log` next to the test binary.
-- **`test::render`** records a frame exactly like `ReaShaderRenderer::renderFrame`: upload → shader pass (or a plain copy) → scene → download.
+- **`test::render`** records a frame like `ReaShaderRenderer::renderFrame`: upload → the passes, chained by the renderer's own `FrameTargets::recordPasses` (none: a plain copy) → scene → download.
+  - `.params` go to every shader pass, whose `iChannel1` is `.shaderLut` (default: an identity).
+  - A `gpu::LutPass` gets its LUT (`bindLut`) and amount (`setAmount`) from the test.
+  - A pass object may appear only once in `.passes` (one descriptor set each).
 - **`test::TestFrame(width, height, padding)`** is a BGRA frame with `padding` extra bytes per row, like REAPER's row stride. Use odd widths and padded rows where layout matters.
 
 ---
@@ -138,7 +144,7 @@ test::forEachGpu([&](gpu::Context& context) {
 `test/host/` is a small REAPER stand-in, used by the `host` suite. It is our **model of REAPER**: what the plugin can expect from REAPER is written down there, as code.
 
 **What it does** (`host::Reaper`, `test/host/reaper.h`):
-- **Loading:** `LoadLibrary` on the `.clap`, `clap_entry.init`, the plugin factory. The thread that creates the `host::Reaper` is REAPER's **main thread**. There is one `host::Reaper` at a time, because REAPER's `GetFunc` has no context argument.
+- **Loading:** `LoadLibrary` on the `.clap`, `clap_entry.init`, the plugin factory. The thread that creates the `host::Reaper` is REAPER's **main thread**. There is one `host::Reaper` at a time, because REAPER's `GetFunc` has no context argument. `test/host/reaper_sdk.h` includes `<windows.h>` with `NOMINMAX` defined, for test code only (the plugin doesn't define it).
 - **One plugin instance**, driven like an FX on a track: `createPlugin()` (`create_plugin` + `init` + a param scan), `activate()`, `deactivate()`, `destroyPlugin()`.
 - **REAPER's threads:** `start_processing`, `process` and `stop_processing` run on an **audio** thread, and `process_frame` runs on a **video** thread (`host::HostThread`, `test/host/thread.h`). Each call waits for its thread, so a test reads top to bottom, while the plugin still sees the calls come from the right threads.
 - **`idle()`** is REAPER's main-thread timer: it calls `on_main_thread` when the plugin asked for a callback, restarts the plugin (`deactivate` + `activate`) when it asked for a restart, and flushes params when asked.
@@ -168,7 +174,7 @@ test::forEachGpu([&](gpu::Context& context) {
 
 When REAPER turns out to behave differently from the host, fix the host first and mark it observed. Then add a test that fails the way REAPER did, and fix the plugin.
 
-**Shaders in host tests** arrive the way they do in a saved project, with no test hooks in the plugin. `test::projectState("brightness.frag", logo)` (`support/host_helpers.h`) compiles an example shader with the shader compiler, as the plugin would have on upload, and embeds it in a state document. Load it with `loadState()`, then `idle()` to let the plugin apply the new params (a restart if it's active).
+**Shaders in host tests** arrive the way they do in a saved project, with no test hooks in the plugin. `test::projectState("brightness.frag", logo)` (`support/host_helpers.h`) compiles an example shader with the shader compiler, as the plugin would have on upload, and embeds it in a state document. Load it with `loadState()`, then `idle()` to let the plugin apply the new params (a restart if it's active). A LUT arrives the same way: `test::projectLut(name, lut, mode)` stores a `LutData` (e.g. `test::invertLut()`) as the plugin would have on upload, for `projectState`'s last argument.
 
 **A host test:**
 
@@ -187,3 +193,19 @@ TEST_CASE("what it checks")
     test::checkNoProblems(reaper); // FAIL_CHECK on each of reaper.problems()
 }
 ```
+
+---
+
+## 5. Manual testing in REAPER
+
+The test application runs first. Testing by hand in REAPER stays the final check, with the plugin deployed by `build+deploy`:
+
+1. Load "ReaShader" (CLAP) on a track that has a video item.
+2. Check that the FX window shows the embedded web UI, and that the UI resizes with the window.
+3. With no shader (the initial state), check that video passes through unchanged.
+4. Upload each of `resources/shaders/examples/*.frag` from the plugin folder. Each one should:
+   - appear in the shader list, with its sliders;
+   - show its params in REAPER's generic parameter list, after "Audio Gain";
+   - keep those params in sync both ways with the web UI's sliders.
+5. Upload `test/shaders/broken.frag`: the compile error shows in the UI, and the current shader stays.
+6. Click the UI's logo: the about box opens and the 3D logo spins in the video window. Closing the box removes the logo.
