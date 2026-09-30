@@ -346,8 +346,8 @@ namespace ReaShader
 			// shader params follow the default ones in the plugin's param list
 			float shaderParams[Parameters::ParamList::maxCount];
 			size_t shaderParamCount = 0;
-			for (size_t id = Parameters::DefaultCount; id < inputs.paramCount; id++)
-				shaderParams[shaderParamCount++] = (float)inputs.paramValues[id];
+			for (size_t i = Parameters::DefaultCount; i < inputs.paramCount; i++)
+				shaderParams[shaderParamCount++] = (float)inputs.paramValues[i];
 
 			gpu::ShaderInputs shaderInputs{};
 			shaderInputs.resolution[0] = (float)input.width;
@@ -376,7 +376,7 @@ namespace ReaShader
 			if (lutImage)
 			{
 				lutPass->bindLut(*context, lutImage->image.view);
-				lutPass->setAmount((float)inputs.paramValues[Parameters::LutMix]);
+				lutPass->setAmount((float)inputs.paramValues[Parameters::LutMixIndex]);
 			}
 
 			// upload -> passes (or a plain copy) -> logo -> download

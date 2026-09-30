@@ -37,6 +37,10 @@ TEST_SUITE("host")
 		CHECK(reaper.params()[1].name == "LUT Mix");
 		const host::Param* brightness = reaper.param("Brightness");
 		REQUIRE(brightness != nullptr);
+		// ids are stable, not indices: the shader's first param is 1, the LUT's Mix is 65
+		CHECK(reaper.params()[0].id == 0);
+		CHECK(reaper.params()[1].id == 65);
+		CHECK(brightness->id == 1);
 		CHECK(brightness->defaultValue == 0);
 		CHECK(brightness->minValue == 0);
 		CHECK(brightness->maxValue == 1);

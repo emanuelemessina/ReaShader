@@ -208,7 +208,7 @@ namespace ReaShader
 
 	bool ReaShaderPlugin::getParamValue(clap_id id, double* value) const
 	{
-		if (id >= params.count())
+		if (!params.contains(id))
 			return false;
 		*value = params.value(id);
 		return true;
@@ -232,7 +232,7 @@ namespace ReaShader
 
 	void ReaShaderPlugin::applyHostParamValue(clap_id id, double value)
 	{
-		if (id >= params.count())
+		if (!params.contains(id))
 			return;
 		params.setValue(id, value);
 		hostChangedParams = true;
@@ -366,13 +366,13 @@ namespace ReaShader
 		if (!output)
 			return input;
 
-		// param values at video time: parmlist[0] is wet/dry, then param i is at parmlist[i + 1]
-		// (params REAPER doesn't know yet fall back to the current value)
+		// param values at video time, by index in the param list: parmlist[0] is wet/dry, then the param at
+		// index i is at parmlist[i + 1] (params REAPER doesn't know yet fall back to the current value)
 		double paramValues[Parameters::ParamList::maxCount];
 		// while the shader's params wait for a restart, its sliders use their defaults
 		size_t paramCount = plugin->shaderParamsPending ? Parameters::DefaultCount : plugin->params.count();
-		for (size_t id = 0; id < paramCount; id++)
-			paramValues[id] = (int)id + 1 < nparms ? parmlist[id + 1] : plugin->params.value((Parameters::Id)id);
+		for (size_t i = 0; i < paramCount; i++)
+			paramValues[i] = (int)i + 1 < nparms ? parmlist[i + 1] : plugin->params.valueAt(i);
 
 		FrameView inputFrame{ w, h, input->get_rowspan(), reinterpret_cast<uint8_t*>(input->get_bits()) };
 		FrameView outputFrame{ w, h, output->get_rowspan(), reinterpret_cast<uint8_t*>(output->get_bits()) };
@@ -394,7 +394,7 @@ namespace ReaShader
 		auto* plugin = static_cast<ReaShaderPlugin*>(videoProcessor->userdata);
 		if (idx < 0 || (size_t)idx >= plugin->params.count())
 			return false;
-		*valueOut = plugin->params.value((Parameters::Id)idx);
+		*valueOut = plugin->params.valueAt((size_t)idx);
 		return true;
 	}
 

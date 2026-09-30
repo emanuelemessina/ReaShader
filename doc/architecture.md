@@ -65,7 +65,7 @@ Listed in `plugin/plugin.h`:
 
 ### `clap.params`
 
-- **Which params the host sees:** params with `automatable = true` are exposed as CLAP params: Audio Gain (host only, not in the web UI), LUT Mix, and every shader param.
+- **Which params the host sees:** params with `automatable = true` are exposed as CLAP params: Audio Gain (host only, not in the web UI), LUT Mix, and every shader param. Their CLAP ids are stable ids, not their index in the list (see [Parameters](#6-parameters)).
 - **Host automation** arrives in `process()`/`flush()` (`handleParamEvents()`) and goes into `applyHostParamValue()`, which is lock-free. It then requests a main-thread callback, and `onMainThread()` echoes the values to the web UI.
 - **Web UI edits** are flagged with `ParamList::flagForHost()`, plus `host_params->request_flush()`. `takeParamChangeForHost()` drains them into `out_events`, lock-free.
 
@@ -133,14 +133,14 @@ The GPU choice isn't a host param: it lives in state and the web UI. Changing it
 
 ### Renderer access
 
-`ReaShaderRenderer` reaches plugin data only through `getRenderingDeviceIndex`, `setRenderingDeviceIndex`, `setRenderingDevicesList` and `setShaderParams`. The plugin's param values come in with each frame (`FrameInputs`): the fixed ones by id (e.g. `Parameters::LutMix`), then the shader's.
+`ReaShaderRenderer` reaches plugin data only through `getRenderingDeviceIndex`, `setRenderingDeviceIndex`, `setRenderingDevicesList` and `setShaderParams`. The plugin's param values come in with each frame (`FrameInputs`), by index in the param list: the fixed ones first (e.g. `Parameters::LutMixIndex`), then the shader's.
 
 ## 3. The per-frame video path
 
 REAPER calls `ReaShaderPlugin::_processVideoFrame` (`plugin/plugin.cpp`), which `activate()` installs:
 
 1. `vproc->renderInputVideoFrame(0, 'RGBA')` gets the upstream frame. It is immutable, and is `Release()`d before returning.
-2. Param values at video time come from `parmlist` (`[0]` = wet/dry, param `i` at `[i + 1]`), falling back to `ParamList` for params REAPER doesn't know yet.
+2. Param values at video time come from `parmlist` (`[0]` = wet/dry, the param at index `i` at `[i + 1]`), falling back to `ParamList::valueAt()` for params REAPER doesn't know yet.
 3. `ReaShaderRenderer::renderFrame()`, under `try_lock(frameMutex)`:
    1. (re)creates `FrameTargets` if the size or row stride changed;
    2. `memcpy`s into the mapped upload buffer, and writes the shader's `Params` into its mapped UBO;
@@ -196,11 +196,13 @@ Messages are plain JSON objects with a `"type"` field. In C++ they're documented
 `src/plugin/params.*`:
 
 - **`Param`** is one plain struct: id, name (the state key), label (display), group (`Main`, `Lut` or `Shader`), units, default, min, max, automatable. Values are plain numbers within min..max. The defaults are 0..1, and shader params use their `//@param` range. CLAP param info uses the same range.
-- **Ids:** a param's id is its index in the list, which is also its CLAP param id. The plugin's fixed params come first (`DefaultId`): `AudioGain` (group `Main`, not shown in the web UI) and `LutMix` (group `Lut`, shown with the LUT). Then come the shader's (group `Shader`), from `DefaultCount` on.
+- **Index and id are different things:**
+  - The **index** is the param's position in the list: the CLAP param order (`params.get_info`) and REAPER's `parmlist` order. The fixed params come first (`DefaultIndex`): Audio Gain (group `Main`, not shown in the web UI) and LUT Mix (group `Lut`, shown with the LUT). Then come the shader's (group `Shader`), from `DefaultCount` on.
+  - The **id** is the CLAP param id, used by host automation, the web UI's `paramValue` and `ParamList::value()`. It stays the same when the list changes around the param. Audio Gain is id 0. The shader and the LUT are fixed nodes (`kShaderNode` = 0, `kLutNode` = 1), and a node's params get `nodeParamId(node, slot)` = `1 + node * 64 + slot`: the shader's params are ids 1..64, LUT Mix is 65.
 - **`ParamList`:**
   - Metadata is behind a mutex.
-  - Values are a fixed array of `std::atomic<double>` (`maxCount` = 256), so the audio and video threads never lock.
-  - `replaceShaderParams()` swaps the `Shader` group whenever a shader is loaded.
+  - Values are a fixed array of `std::atomic<double>` by id (`kMaxIds` = 1 + 16 nodes × 64), so the audio and video threads never lock. Lock-free maps go both ways: `contains(id)`, and `valueAt(index)` for the video thread.
+  - `replaceShaderParams()` swaps the `Shader` group whenever a shader is loaded. A shader keeps at most 64 params (`kNodeSlots`), and the list at most `maxCount` = 256; extra ones are dropped with a warning.
 
 ## 7. The renderer
 
