@@ -92,4 +92,4 @@ Attach to the running REAPER and dump every thread's stack:
 - Debug builds request the Khronos validation layer (if installed), with synchronization validation on. Warnings and errors go to `rs.log` next to the plugin.
 - Normal use produces none, so **any message is a bug**. The test application fails a GPU test on any of them.
 - `VK_LOADER_DEBUG=layer` shows whether the loader found the layer.
-- See [rendering.md §9](rendering.md#9-debugging) for the renderer's side, and [testing.md](testing.md) for running the GPU code without REAPER (`--test-suite=render`).
+- See [rendering.md §7.3](rendering.md#73-debugging) for the renderer's side, and [testing.md](testing.md) for running the GPU code without REAPER (`--test-suite=render`).

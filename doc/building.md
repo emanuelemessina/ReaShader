@@ -98,7 +98,7 @@ Projects saved with one don't load the other.
 
 Debug builds also:
 
-- enable the Vulkan validation layer with synchronization validation (see [rendering.md](rendering.md#9-debugging));
+- enable the Vulkan validation layer with synchronization validation (see [rendering.md](rendering.md#73-debugging));
 - create the webview with DevTools on (right click → Inspect).
 
 ## 4. What the build does

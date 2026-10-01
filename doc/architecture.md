@@ -209,7 +209,7 @@ sequenceDiagram
 - **3–4.** The renderer builds GPU objects for nodes that are new or whose content changed, keeps the others, and swaps chains while holding its frame lock.
 - **5.** The copy becomes the chain. The plugin rewrites the param slots of the nodes that changed: their names, visibility, ranges and values (see [4.2](#42-parameters)). Bypass and a shader's LUT change no params, so they skip this.
 - **6.** The page gets a status line saying what was done, then a snapshot to redraw itself from.
-- **7–9.** On the main thread, the plugin tells REAPER about the params: it first *clears* the params that went away, asking REAPER to drop their automation, then asks REAPER to *rescan* names and values, so its lists show the new params.
+- **7–9.** On the main thread, the plugin tells REAPER about the params: it first *clears* the params that went away, asking REAPER to drop their automation and modulation, then asks REAPER to *rescan* names and values, so its lists show the new params. REAPER honors the rescan but not the clear: it keeps a removed param's envelope and modulation (see [4.2](#42-parameters)).
 - **10–11.** On failure, the chain stays as it was, and the page shows the error.
 
 *In the code:* `ReaShaderPlugin::_editChain(edit, paramsChange)`, `ReaShaderRenderer::setChain`, `_notifyHostParams()`.
@@ -271,7 +271,7 @@ flowchart LR
   - a LUT node, one `Mix` param: 0 is the frame as it was, 1 is fully through the LUT, and it starts at 1. (A LUT attached to a shader node gets no Mix: blending is up to the shader.)
 - **The name REAPER shows never changes for a given param,** because REAPER keeps the name an envelope had when it was created. That's why it carries the fixed tag rather than the node's position. The tag also tells two copies of the same shader apart. The web UI shows only the slider's label, since the node's card already shows its tag and name.
 - **The host sees every value as 0 to 1,** spread over the slider's real range: CLAP lets a param's range change only when its param list changes size, which can't happen while active. So the plugin converts at the edges. The web UI, the project and the shaders use real values, and REAPER displays the real value as text (`64.500`, or `50.0 %`).
-- **Telling the host after an edit** is steps 7 to 9 of [3.3](#33-a-chain-edit). Params that went away are cleared first, so their automation doesn't drive whatever takes their id next. A loaded project clears nothing, because its envelopes come with it.
+- **Telling the host after an edit** is steps 7 to 9 of [3.3](#33-a-chain-edit). Params that went away are cleared first. The intended result is that REAPER drops their envelopes and modulation, so they don't drive whatever takes their id next. **In practice REAPER ignores the clear:** it keeps a removed param's envelope and modulation on its id, whatever flags the clear carries, and they drive the next node that takes the uid (see [gotchas.md](gotchas.md#reaper)). The plugin can't prevent this, which is why it reuses the smallest free uid: the leftover automation shows up at once, on the letter just removed ([4.1](#41-nodes)). A loaded project clears nothing, because its envelopes come with it.
 - **Values survive edits:** a param in the new chain takes its value from the project being loaded (matched by saved name), else from the param that had the same id and name before the edit (limited to the new range), else its default.
 
 *In the code:* `ParamList::replaceNodeParams`, `paramsOfNodes`, `nodeParamId`, `Param::toHost` / `toReal`, `checkSliders`. The full id scheme is in [Reference](#parameter-ids-and-values).
@@ -485,7 +485,7 @@ sequenceDiagram
 - **Every GPU object has a plain, visible lifetime:** the device lives from the first activation until the plugin is destroyed, the frame's buffers and images follow the frame size, a node's objects follow its content, and the logo's objects exist from the first time it's shown. Switching GPUs destroys everything and rebuilds it on the new one.
 - **The logo** is a small 3D scene drawn over the output while the about box is open.
 
-*In the code:* `ReaShaderRenderer::setChain`, `FrameTargets::recordPasses`, `ChainNode`, `FrameInputs`, `gpu::Scene`. Details are in [Reference](#renderer-details), and the full lifetime table is in [rendering.md](rendering.md#lifetimes).
+*In the code:* `ReaShaderRenderer::setChain`, `FrameTargets::recordPasses`, `ChainNode`, `FrameInputs`, `gpu::Scene`. Details are in [Reference](#renderer-details), and the full lifetime table is in [rendering.md](rendering.md#3-the-objects-and-how-long-they-live).
 
 ### The shader contract
 
@@ -573,7 +573,7 @@ doc/                         developer docs
   - Values (`std::atomic<double>` by id) and `used(id)` are fixed arrays, so the audio and video threads never lock.
   - Pending-for-host flags: `flagForHost(id)` sets one, `takeFlaggedForHost()` takes them one at a time (an "any flagged" marker is cleared before each scan, so a flag set during a scan isn't missed).
   - `replaceNodeParams()` sets every node slot when the chain's nodes change, and returns the ids that went away (or now hold another param).
-- **Host notification:** `_notifyHostParams()`, from `onMainThread()` or directly in `loadState()`, calls `host_params->clear(id, CLAP_PARAM_CLEAR_ALL | _AUTOMATIONS | _MODULATIONS)` for gone ids (`ParamsChange::Edit` only; `ParamsChange::Load` clears nothing), then `host_params->rescan(CLAP_PARAM_RESCAN_INFO | CLAP_PARAM_RESCAN_VALUES)`.
+- **Host notification:** `_notifyHostParams()`, from `onMainThread()` or directly in `loadState()`, calls `host_params->clear(id, CLAP_PARAM_CLEAR_ALL | _AUTOMATIONS | _MODULATIONS)` for gone ids (`ParamsChange::Edit` only; `ParamsChange::Load` clears nothing; REAPER keeps the envelopes and modulation anyway, observed), then `host_params->rescan(CLAP_PARAM_RESCAN_INFO | CLAP_PARAM_RESCAN_VALUES)`.
 - **Host automation** arrives in `process()`/`flush()` (`handleParamEvents()`) → `applyHostParamValue()`, then `onMainThread()` echoes values to the UI. **Web UI edits:** `ParamList::flagForHost()` + `host_params->request_flush()`, drained by `takeParamChangeForHost()` into `out_events`.
 
 ### The web UI protocol
@@ -624,7 +624,7 @@ Plain JSON objects with a `"type"` field. In C++ they're documented and handled 
 - **`samplesLut`:** whether `main()` reaches `iChannel1`, directly or through `iLut` (`CompiledShader::samplesLut`, from SPIRV-Reflect's entry-point bindings). The UI shows a shader's LUT selector only when it does, or while it has a LUT. It's computed on compile and on `fromJson`, never stored.
 - **Bindings:** `iChannel0` is binding 0, `Params` binding 1 (shaderc shifts uniform blocks by 1, explicit ones too), `iChannel1` binding 2. Any other resource (samplers are shifted to 3 and up), or anything outside descriptor set 0, is rejected with an error.
 - **Slider order** is SPIRV-Reflect's order of the `Params` members.
-- **Keep in sync:** `gpu::ShaderInputs` must match `ReaShaderInputs` in the preamble (std430 push-constant layout, 20 bytes). See [rendering.md §8](rendering.md#8-how-to-extend) for adding an input.
+- **Keep in sync:** `gpu::ShaderInputs` must match `ReaShaderInputs` in the preamble (std430 push-constant layout, 20 bytes). See [rendering.md §7.2](rendering.md#72-extending) for adding an input.
 
 ### Version
 
