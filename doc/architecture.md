@@ -111,7 +111,7 @@ sequenceDiagram
     R->>P: frame callback (project time, param values at that time)
     P->>R: ask for the input frame
     R-->>P: the input frame (BGRA pixels)
-    P->>P: pick each param's value
+    P->>P: choose each param's value: REAPER's from step 1, else its own
     P->>G: render this frame, if the frame lock is free
     alt lock taken, and there is something to draw
         G->>G: upload, run the chain, draw the logo, read back
@@ -125,7 +125,7 @@ sequenceDiagram
 *The steps:*
 - **1.** REAPER calls the plugin's frame callback with the project time of the frame and the value of every param *at that time*, which can differ from the current value when automation is playing.
 - **2–3.** The plugin asks REAPER for the input frame: the video as it arrives from the track and the effects before this one.
-- **4.** For each param, the plugin takes REAPER's value from step 1. For any param REAPER didn't pass, it uses its own current value.
+- **4.** The plugin builds the list of values the shaders will use for this frame: for each param, the value REAPER passed in step 1, or, if REAPER passed none for it, the plugin's own current value.
 - **5.** The plugin asks the renderer to draw. The renderer first tries to take its frame lock, which other threads hold while they change the GPU objects (a chain edit, a GPU switch).
 - **6–7.** With the lock taken, the frame is uploaded to the GPU, sent through the chain's nodes that aren't bypassed, overdrawn with the logo if it's on, and copied back, all in one GPU submission.
 - **8.** Otherwise the renderer draws nothing: the lock was busy, the renderer is inactive or has failed, or the chain is empty and the logo is off.
@@ -371,21 +371,105 @@ The scripts are plain `<script defer>` tags, because a page loaded from a file c
 
 ### 6.2 The webview and its thread
 
-**The webview lives on a thread the plugin owns, because WebView2 blocks for seconds while it starts, and can only be called from the thread that created it.**
+**The page is drawn by a webview that runs on its own thread, so that REAPER's window never freezes.** Two facts about WebView2 (the browser engine Windows provides) force this: starting it blocks for seconds, which would freeze REAPER if done on REAPER's thread, and its objects can only be used from the thread that created them. Everything else in this section follows from keeping the webview on its thread while REAPER's thread keeps working.
 
-- **Creation:** when REAPER hands the plugin its FX window, the shell creates a container window and the web UI host right away. This can't wait, because REAPER shows the window immediately after. The host only starts the webview thread, which then builds the webview and loads the page.
-- **Calling it from other threads:** every call is queued to run on the webview thread (`webview::dispatch`), since WebView2 objects only work on their own thread. A mutex protects the pointer to the webview.
-- **Messages:**
-  - page to plugin: the page calls `postToNative(json)`, which reaches `ReaShaderPlugin::handleWebUIMessage`;
-  - plugin to page: the plugin calls a *sender* function that the host registered, which runs `window.__reashaderOnMessage(msg)` in the page. Sends happen under a mutex, so unregistering the sender waits for a send in progress, and with no sender registered a send does nothing.
-- **Closing without freezing REAPER:**
-  - On Windows, the webview's `terminate()` only stops the loop of the thread that calls it, so it's queued onto the webview thread.
-  - REAPER's UI thread then waits for the webview thread to end, but keeps answering window messages while it waits (`MsgWaitForMultipleObjects` + `PeekMessageW`). Destroying the webview's windows sends messages to the container, which lives on REAPER's UI thread, so a plain wait (`join()`) would deadlock.
-- **Sizing:** the webview starts with a size of zero, so the webview thread sizes it after loading the page. The container fills the FX window when REAPER hands it over and when it's shown, since REAPER doesn't report a size when switching from its generic param list to our page.
-- **Ownership:** the shell holds the GUI through a `unique_ptr` whose deleter is defined next to the Windows code, so the cross-platform shell never needs the Windows type. Destroying the GUI closes the webview first, then the window.
-- **DevTools:** debug builds turn on the browser's developer tools (right click → Inspect).
+Two Windows terms are needed here:
+- **A window belongs to the thread that created it.** Windows delivers a window's events (resizing, closing, input) as *messages* to that thread, which handles them in its *message loop*.
+- **Sending a message to another thread's window waits for that thread to answer.** If that thread is itself waiting, both wait forever: a deadlock.
 
-*In the code:* `WebUIHost` (`webui_host.*`: `Impl::mutex`, `~WebUIHost()`), `webview::dispatch(fn)`, `bind("postToNative")` and `eval()`, the plugin's `WebUISender` (a `std::function`, removed by `clearWebUISender()`), `Gui` and `GuiDeleter` (`gui_win32.cpp`), `ClapPluginState::gui` (`unique_ptr<Gui, GuiDeleter>`, reset by `gui_destroy`), `fillParent()`, `MoveWindow` after `navigate()`.
+#### Three windows, two threads
+
+**The page sits in three nested windows: REAPER's, the plugin's container, and the webview's, and the last one belongs to the webview thread.**
+
+```mermaid
+flowchart TB
+    subgraph main["REAPER's main (UI) thread"]
+        FX["REAPER's FX window"]
+        Container["the plugin's container window<br/>created by the shell"]
+    end
+    subgraph web["the webview thread (the plugin's)"]
+        WV["the webview's windows<br/>and the WebView2 browser"]
+    end
+    FX -->|"contains"| Container
+    Container -->|"contains"| WV
+```
+
+*What to see:* the container is the boundary. Above it, everything is REAPER's thread; inside it, everything is the webview thread. Any call that crosses that line has to be handed to the other thread rather than made directly.
+
+#### Opening the window
+
+**REAPER gets its window back at once, and the webview builds itself afterwards on its own thread.**
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant R as REAPER (main thread)
+    participant S as Shell (on REAPER's thread)
+    participant W as Webview thread
+    R->>S: here is the FX window (set_parent)
+    S->>S: create the container window, fill the FX window
+    S->>W: start the webview thread
+    S-->>R: done
+    R->>S: show the window
+    S->>S: fill the FX window again
+    W->>W: build the webview (takes seconds)
+    W->>W: connect messages both ways, load the page
+    W->>W: size the webview to the container
+    W->>W: run the message loop until closed
+```
+
+*The steps:*
+- **1–2.** REAPER hands the plugin its FX window. The shell creates its container window inside it, at once: REAPER shows the window right after this call, and a window that doesn't exist yet would never appear.
+- **3–4.** The shell starts the webview thread and returns, without waiting for the webview.
+- **5–6.** REAPER shows the window, and the shell makes the container fill the FX window again, because REAPER doesn't report a size when it switches from its generic param list to the plugin's page.
+- **7.** On its own thread, the webview starts up. This is the part that takes seconds, and REAPER keeps working meanwhile.
+- **8.** It connects the two message directions (next subsection) and loads the page from the plugin folder.
+- **9.** The webview starts with a size of zero, so it's resized to fill the container.
+- **10.** The thread runs the webview's message loop, which also runs any work queued for it, until the window closes.
+
+#### Talking across threads
+
+**Anything that touches the webview from another thread is queued to run on the webview thread, never done directly** (`webview::dispatch`).
+
+- **Page to plugin:** the page calls `postToNative(json)`. The call arrives on the webview thread, which passes the message to the plugin's handler (`ReaShaderPlugin::handleWebUIMessage`).
+- **Plugin to page:** the plugin can send from any thread (the main thread for automation, the webview thread for answers). It calls a *sender*, a function the web UI host registered with it, which queues a script call, `window.__reashaderOnMessage(msg)`, to run in the page on the webview thread. With no sender registered (no window open), a send does nothing.
+- **Resizing:** when REAPER resizes the FX window, the container's new size is queued to the webview thread too, because moving another thread's window makes the caller wait for that thread.
+- **Two mutexes keep this safe:** one guards the plugin's sender, so unregistering it waits for a send in progress; one guards the host's pointer to the webview, which the webview thread creates and destroys while other threads read it.
+
+#### Closing the window
+
+**Closing has to stop the webview thread from REAPER's thread without the two waiting on each other.**
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant R as REAPER (main thread)
+    participant H as Web UI host (on REAPER's thread)
+    participant W as Webview thread
+    R->>H: destroy the GUI
+    H->>H: unregister the sender, so the plugin stops sending
+    H->>W: queue "stop your message loop"
+    H->>H: wait for the thread to end, answering window messages meanwhile
+    W->>W: the loop stops, destroy the webview
+    W->>R: the webview's windows notify the container (a message)
+    R-->>W: answered from inside the wait
+    W-->>H: the thread ends
+    H->>R: destroy the container window
+```
+
+*The steps:*
+- **1–2.** REAPER destroys the GUI. The host first unregisters the sender, waiting for any send in progress, so nothing new is queued for the page.
+- **3.** The host asks the webview thread to stop its loop by queueing the request. On Windows, stopping a message loop only works from its own thread. If the webview is still starting up, a stop flag tells it not to start its loop at all.
+- **4.** REAPER's thread waits for the webview thread to end, but keeps answering messages sent to its windows while it waits.
+- **5–7.** The webview thread destroys the webview. Destroying its windows sends messages to the container, which belongs to REAPER's thread. Because that thread is still answering (step 4), they get through. A plain wait would deadlock here, and freeze REAPER.
+- **8–9.** The thread ends, and the container window is destroyed last.
+
+#### Other details
+
+- **Ownership:** the shell holds the GUI (container window plus web UI host) through a `unique_ptr` whose deleter is defined next to the Windows code, so the cross-platform part of the shell never needs the Windows types. Destroying the GUI closes the webview first, then the window, as above.
+- **DevTools:** debug builds turn on the browser's developer tools (right click → Inspect), for the console and the page's elements.
+
+*In the code:* `WebUIHost` (`webui_host.*`: its constructor starts the thread, `Impl::mutex`, `stopRequested`, `~WebUIHost()` with `MsgWaitForMultipleObjects` + `PeekMessageW`, `resize()`), `webview::dispatch(fn)`, `bind("postToNative")` and `eval()`, the plugin's `WebUISender` (a `std::function`, set by `setWebUISender()`, removed by `clearWebUISender()`), `set_parent()` and `gui_show()` with `fillParent()` (`gui_win32.cpp`), `Gui` and `GuiDeleter`, `ClapPluginState::gui` (`unique_ptr<Gui, GuiDeleter>`, reset by `gui_destroy`), `MoveWindow` after `navigate()`.
 
 ## 7. The renderer and the shader contract
 

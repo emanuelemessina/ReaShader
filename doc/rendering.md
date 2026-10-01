@@ -268,7 +268,7 @@ The chain is a list of nodes (`ReaShaderRenderer::ChainNode`), set with `setChai
 
 **Params per node:** each node names its params in `FrameInputs::paramValues`, the plugin's values by id (`firstParam`, its node's first slot, and `paramCount`). A shader node's go to its `Params` block in order; a LUT node's one param is its Mix. Values past `FrameInputs::paramCount` get their defaults: the shader's, and 1 for a Mix.
 
-The plugin's own chain (see [architecture.md](architecture.md#the-chain)) maps one to one: `rendererChain` in `plugin.cpp` turns each of its nodes into a `ChainNode`, with its params' indices.
+The plugin's own chain (see [architecture.md](architecture.md#4-the-chain-and-its-parameters)) maps one to one: `rendererChain` in `plugin.cpp` turns each of its nodes into a `ChainNode`, with its params' indices.
 
 `FrameTargets::recordPasses` records them in order. The first pass samples `input`, the last renders to `output`, and the ones between render to `work[0]`, `work[1]`, `work[0]`, ... Each pass's input is bound right before it's recorded, so a pass object appears at most once in a chain (it has one descriptor set).
 

@@ -83,7 +83,7 @@ Plain, descriptive names, with no project prefixes: `PLUGIN_STAGE_DIR`, `SHADERS
 
 ### Frontend (`src/ui/`)
 
-How the UI's code is organized (which script does what, rebuilding from snapshots, adding a control) is in [architecture.md](doc/architecture.md#the-uis-code).
+How the UI's code is organized (which script does what, rebuilding from snapshots, adding a control) is in [architecture.md](doc/architecture.md#61-the-page).
 
 **Files:**
 
@@ -130,3 +130,24 @@ How the UI's code is organized (which script does what, rebuilding from snapshot
   - threads, params, state, the web UI protocol, or the layout → [architecture.md](doc/architecture.md);
   - the build, deploy or installer → [building.md](doc/building.md);
   - the shader contract (built-in inputs, `Params`, `//@param`) → the [examples README](src/shaders/examples/README.md).
+
+### How docs are written
+
+Docs follow Barbara Minto's _The Pyramid Principle: Logic in Writing and Thinking_: the point first, then the ideas that support it, each expanded the same way. A reader who stops after any paragraph should already have the most important part.
+
+1. **Open with the answer.** The first paragraph says what the doc is about and the one thing to take away. For an explainer, give the situation, the complication, the question it raises and the answer, in a few sentences.
+2. **Group the rest into 3 to 6 sections** that together support the opening, don't overlap, and leave nothing out. Order them by time (a process), by structure (the parts of a whole) or by importance.
+3. **Start every section with its point** in one sentence, in bold, then group the details under it. The same rule applies at every level.
+4. **Explain every term before using it.** A word that isn't everyday English, or that the doc uses in a special sense ("node", "snapshot", "pending for the host"), is defined where it first appears, or in a short table of terms after the opening. Never rely on context the reader doesn't have, such as a past discussion or the code itself.
+5. **Concepts before code names.** Prose says what things do. Function and file names come after the concept, in a closing _In the code_ line, or in a reference section at the end, and are not the subjects of sentences.
+6. **Draw what flows or connects,** with [Mermaid](https://mermaid.js.org/) blocks, which GitHub and VSCode render:
+   - `flowchart` for data flows, processes and ownership;
+   - `sequenceDiagram` for threads and messages over time, with `autonumber`;
+   - `stateDiagram-v2` for lifecycles.
+
+   **Every label says plainly who does what:** "render this frame, if the frame lock is free", not "try_lock". **Every diagram is followed by an explanation** of what to see in it; for a sequence, one line per numbered step. **An example is announced as one,** with where its names come from ("the shader `grain.frag`, as node B"), so the reader can tell the example's names from the general rule.
+
+7. **Put lookup material last:** tables of messages, ids, files and options go in a reference section, where readers look things up rather than read.
+8. **Sections are separated by their headings only,** with no horizontal rules.
+
+[architecture.md](doc/architecture.md) is the model to follow.
