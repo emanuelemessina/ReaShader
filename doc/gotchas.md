@@ -42,7 +42,7 @@ Contents:
 
 ### Web UI
 
-- **`webview::terminate()` isn't cross-thread-safe on Win32** (a bare `PostQuitMessage`), despite the library's docs. Dispatch it onto the webview thread (see [architecture.md](architecture.md#4-the-embedded-web-ui)).
+- **`webview::terminate()` isn't cross-thread-safe on Win32** (a bare `PostQuitMessage`), despite the library's docs. Dispatch it onto the webview thread (see [architecture.md](architecture.md#62-the-webview-and-its-thread)).
 - **webview's window classes are process-wide as shipped.** webview registers `webview_widget` and `webview_message` under `GetModuleHandle(nullptr)`, the _host's_ module (reaper.exe), not the plugin's. Every plugin in the process that links webview then shares those classes: the first one loaded owns their window procedures, and the next one's windows run the first one's code with its own data. With ReaShader and ReaShader (Debug) in one session, that crashed REAPER inside the other plugin's `.clap`. The build patches a copy of the header to register them under the plugin's own module (see [building.md](building.md#4-what-the-build-does)). Don't include `external/webview/.../webview.h` directly, bypassing that copy.
 - **UTF-16 frontend files break the UI:** a `file://` page gets no encoding detection, so UTF-16 shows as garbage text. Keep them UTF-8, and check with `file` after rewriting one.
 - **ES modules don't load from `file://`.** Use plain `<script>` tags in dependency order.
