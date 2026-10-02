@@ -8,13 +8,13 @@ ReaShader is a **CLAP** video-effect plugin for REAPER: it taps REAPER's video f
 
 The project's conventions and descriptions live in human docs, which are the single source of truth. These are imported here:
 
-- @CONTRIBUTING.md (workflow, runtime rules, code style, which doc to update for which change)
-- @doc/architecture.md (layout, plugin, video path, web UI + protocol, params, renderer summary, shader contract, logging)
+- @CONTRIBUTING.md (workflow, runtime rules, code style, which doc to update, how docs are written: Pyramid Principle + Mermaid)
+- @doc/architecture.md (parts, threads, the three flows, chain + params, state, web UI; reference: layout, protocol, ids, logging)
 - @doc/building.md (prerequisites, tasks, debug vs release, what the build does, dependencies, packaging)
-- @doc/gotchas.md (platform/toolchain traps, debugging crashes and hangs)
+- @doc/gotchas.md (traps grouped by symptom: crashes, freezes, automation, build, window, picture; debugging tools)
 
 Read these when working in their area (not imported, they're long):
-- [doc/rendering.md](doc/rendering.md): the renderer for readers who don't know Vulkan, every barrier of a frame, lifetimes and decisions.
+- [doc/rendering.md](doc/rendering.md): the renderer for readers who don't know Vulkan: the Vulkan concepts and why, object lifetimes, every barrier of a frame, decisions.
 - [doc/testing.md](doc/testing.md): the test application, the fake REAPER host, the manual test in REAPER.
 - [src/shaders/examples/README.md](src/shaders/examples/README.md): the shader contract for users.
 
