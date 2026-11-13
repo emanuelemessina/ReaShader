@@ -12,7 +12,7 @@ flowchart LR
     Auto -.-> C
 ```
 
-*Here is an example chain:* the video goes through each step, top to bottom in the plugin window; each step has a letter, and REAPER can automate its sliders like any plugin knob.
+_Here is an example chain:_ the video goes through each step, top to bottom in the plugin window; each step has a letter, and REAPER can automate its sliders like any plugin knob.
 
 Contents:
 
@@ -35,7 +35,7 @@ ReaShader brings the two together:
 - **Shader params are REAPER params.** Every parameter a shader declares becomes a REAPER parameter, so it can be automated, modulated or linked like any plugin knob.
 - **Color grading with LUTs.** Load a `.cube` LUT, the format most grading tools export, and apply it before or after a shader, or from inside one.
 
-It started as my own experiment in making a video processor for REAPER, and grew into a full plugin. It took a lot of blood, sweat and tears: if you benefit from it, please cite me. Thank you 🙏
+It started in 2022 as my own experiment in making a video processor for REAPER, and grew into a usable plugin. If it is useful to you, a star or a note is always appreciated. Thank you 🙏
 
 ## 2. What it does
 
