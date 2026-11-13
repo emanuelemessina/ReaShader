@@ -2,6 +2,8 @@
 
 **ReaShader is a video effect plugin for REAPER: it runs a track's video through a chain of GPU shaders and color LUTs, and every slider in it is a REAPER parameter you can automate.** You add it to a track like any audio effect, and it processes video frames instead of audio samples.
 
+<p align="center"><img src="res/images/demo.gif" alt="ReaShader demo: parameter automation, GPU switch, LUTs, chain reordering" width="720"></p>
+
 ```mermaid
 flowchart LR
     Video["your track's video"] --> A["A: a LUT<br/>e.g. Log to Rec.709"]
